@@ -66,7 +66,7 @@ ndologs_xs:
 ndologs_xs_reinstall: ndologs_xs
 	TMP_FILELIST=filelist.xs.reinstall; \
 	grep XS filelist > $$TMP_FILELIST; \
-	build-aux/fladmin -r ${ROOT_DIR} install $$TMP_FILELIST; \
+	#build-aux/fladmin -r ${ROOT_DIR} install $$TMP_FILELIST; \
 	rm -v $$TMP_FILELIST;
 
 # Working out community or enterprise version is a bit messy here. Can't do as a gnumake variable
@@ -122,11 +122,11 @@ install-extra:
 	for d in ${SUBDIRS} ; do [ -d $$d ] && ( cd $$d && make install ) || exit 1 ; done
 
 install-fladmin:
-	build-aux/fladmin -r ${ROOT_DIR} install filelist
+	#build-aux/fladmin -r ${ROOT_DIR} install filelist
 	tar -cf - --exclude=".svn" --exclude=".git*" installer/ndoutils | ( cd ${ROOT_DIR}/usr/local/nagios && tar -xvf - | xargs chown $(NAGIOS_USER):$(NAGIOS_GROUP) )
 
 install-fladmindev:
-	build-aux/fladmin -r ${ROOT_DIR} devinstall filelist
+	#build-aux/fladmin -r ${ROOT_DIR} devinstall filelist
 
 # Not sure this is needed anymore, if nagios is the development user
 # This is needed to relax permissions on a development server. Will not be
@@ -134,7 +134,7 @@ install-fladmindev:
 install-dev: install-extra install-fladmindev
 
 uninstall:
-	build-aux/fladmin uninstall filelist
+	#build-aux/fladmin uninstall filelist
 	installer/preremove && installer/remove
 
 # For Opsview Core, we create all the necessary files
