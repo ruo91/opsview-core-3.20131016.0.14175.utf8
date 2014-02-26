@@ -1,0 +1,163 @@
+{
+   "attribute" : [],
+   "hosttemplate" : [
+      {
+         "description" : "Network - Cisco Advanced checks",
+         "managementurls" : [],
+         "name" : "Network - Cisco Advanced",
+         "servicechecks" : [
+            {
+               "exception" : null,
+               "name" : "Cisco - 5 min throughput",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "Cisco - BGP Peer",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "Cisco ASA - HA status",
+               "timed_exception" : null
+            }
+         ]
+      }
+   ],
+   "servicecheck" : [
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -U $SNMPV3_USERNAME$ -P $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -e $SNMPV3_PRIVPROTOCOL$ --priv-password $SNMPV3_PRIVPASSWORD$",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Checks five minute throughput avg (inbound and outbound) for a Cisco interface",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "Cisco - 5 min throughput",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r,u,f",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_cisco_bits_sec"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Network - Cisco"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-i 173.203.100.59 -H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -U $SNMPV3_USERNAME$ -P $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -e $SNMPV3_PRIVPROTOCOL$ -x $SNMPV3_PRIVPASSWORD$",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Checks status of BGP peer",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "Cisco - BGP Peer",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r,u,f",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_cisco_bgppeer"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Network - Cisco"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -U $SNMPV3_USERNAME$ -P $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -e $SNMPV3_PRIVPROTOCOL$ -x $SNMPV3_PRIVPASSWORD$",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Checks status of Cisco CSS pair in HA mode",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "Cisco ASA - HA status",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r,u,f",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_cisco_asa_hastatus"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Network - Cisco"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      }
+   ],
+   "servicegroup" : [
+      {
+         "name" : "Network - Cisco"
+      }
+   ]
+}

@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.application_microsoft_iis
+VERSION=1.0
+ALIAS=Application - Microsoft IIS
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

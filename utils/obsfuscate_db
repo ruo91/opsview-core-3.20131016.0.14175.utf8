@@ -1,0 +1,66 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+# 	obsfuscate.pl
+#
+# DESCRIPTION:
+# 	Connects to DB and updates various fields to hide any customer data
+#
+#	Warning!!! Only use DBI commands - no Class::DBI allowed
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use Getopt::Std;
+use lib "/usr/local/nagios/lib", "/usr/local/nagios/etc";
+use Opsview;
+
+# Do not use Class::DBI methods to amend data
+
+use Crypt::PasswdMD5;
+
+my $opts = {};
+
+#getopts("t", $opts) or die "Bad options";
+
+my $dbh = Opsview->db_Main;
+
+$dbh->do( "UPDATE hosts SET name = concat('host', id)" );
+$dbh->do( "UPDATE hosts SET ip = concat(name, '.altinity')" );
+$dbh->do( "UPDATE hosts SET alias = name" );
+$dbh->do(
+    "UPDATE hosts SET snmp_community='private' WHERE (snmp_community != 'public' and snmp_community != '')"
+);
+$dbh->do( "UPDATE hostgroups SET name = concat('hostgroup', id)" );
+
+$dbh->do(
+    "UPDATE contacts SET name=concat('contact', id), username=concat('contact', id), mobile='07931365796', email='dummy\@altinity.com' WHERE username != 'admin'"
+);
+my $password = apache_md5_crypt( "initial" );
+$dbh->do( "UPDATE contacts SET password='$password' WHERE username = 'admin'"
+);
+
+$dbh->do(
+    "UPDATE hosttemplates SET name=concat('hosttemplate', id), description=concat('hosttemplate', id)"
+);
+
+$dbh->do( "UPDATE monitoringservers SET name=concat('slave', id) WHERE id >= 2"
+);

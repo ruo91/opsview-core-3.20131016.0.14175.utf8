@@ -1,0 +1,247 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+# 	notify_by_rss
+#
+# DESCRIPTION:
+# 	Run from Nagios. Will create an Atom file. See README for configuration
+#	information
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+
+use lib "/usr/local/nagios/perl/lib", "/usr/local/nagios/lib",
+  "/usr/local/nagios/etc";
+use POSIX qw(strftime);
+use XML::Atom::SimpleFeed;
+use Storable qw(retrieve_fd store_fd);
+use Fcntl qw(:flock);
+use Data::Dump qw(dump);
+use DateTime;
+use DateTime::Format::W3CDTF;
+
+sub w3cdtf {
+    my ($epoch) = @_;
+    my $dt = DateTime->from_epoch(
+        epoch     => $epoch,
+        time_zone => 'local',
+        formatter => DateTime::Format::W3CDTF->new,
+    );
+
+    # ensure stringified date returned
+    return "$dt";
+}
+
+my $alert_type;
+my (
+    $state,     $host,              $hostaddr,       $servicedesc,
+    $output,    $author,            $ackcomment,     $now,
+    $contact,   $title,             $url_params,     $item_uuid,
+    $user_uuid, $last_state_change, $atom_max_items, $atom_max_age,
+    $atom_collapsed,
+);
+
+$now = $ENV{NAGIOS_TIMET};
+if ( !$now ) {
+    warn 'To run outside of nagios set the following environment variable:', $/;
+    foreach my $env (
+        qw/ NAGIOS_TIMET NAGIOS_CONTACTNAME NAGIOS_HOSTNAME NAGIOS_HOSTADDRESS NAGIOS_NOTIFICATIONTYPE /
+      )
+    {
+        warn "\t", $env, $/;
+    }
+    warn 'and either:', $/;
+    foreach my $env (
+        qw/ NAGIOS_SERVICESTATE NAGIOS_SERVICEDESC NAGIOS_SERVICEOUTPUT NAGIOS_SERVICEACKAUTHOR NAGIOS_SERVICEACKCOMMENT NAGIOS_LASTSERVICESTATECHANGE  /
+      )
+    {
+        warn "\t", $env, $/;
+    }
+    warn 'or', $/;
+    foreach my $env (
+        qw/ NAGIOS_HOSTSTATE NAGIOS_HOSTOUTPUT NAGIOS_HOSTACKAUTHOR NAGIOS_HOSTACKCOMMENT NAGIOS_LASTHOSTSTATECHANGE  /
+      )
+    {
+        warn "\t", $env, $/;
+    }
+    die $/;
+}
+
+# This decides whether it is a host or a service problem
+if ( $ENV{NAGIOS_SERVICEDESC} ) {
+    $alert_type = "service";
+}
+else {
+    $alert_type = "host";
+}
+
+$contact = $ENV{NAGIOS_CONTACTNAME};
+$contact =~ s%/.*%%; # Remove any / in the contactname
+
+# generic across both service and host
+$host     = $ENV{NAGIOS_HOSTNAME};
+$hostaddr = $ENV{NAGIOS_HOSTADDRESS};
+
+# Get data according to type
+if ( $alert_type eq "service" ) {
+    $state             = $ENV{NAGIOS_SERVICESTATE};
+    $servicedesc       = $ENV{NAGIOS_SERVICEDESC};
+    $output            = $ENV{NAGIOS_SERVICEOUTPUT};
+    $author            = $ENV{NAGIOS_SERVICEACKAUTHOR};
+    $ackcomment        = $ENV{NAGIOS_SERVICEACKCOMMENT};
+    $title             = "$host - $servicedesc";
+    $url_params        = "type=2&host=$host&service=$servicedesc";
+    $item_uuid         = 'host:' . $host . ';service:' . $servicedesc;
+    $last_state_change = $ENV{NAGIOS_LASTSERVICESTATECHANGE};
+}
+else {
+    $state             = $ENV{NAGIOS_HOSTSTATE};
+    $output            = $ENV{NAGIOS_HOSTOUTPUT};
+    $author            = $ENV{NAGIOS_HOSTACKAUTHOR};
+    $ackcomment        = $ENV{NAGIOS_HOSTACKCOMMENT};
+    $title             = "$host";
+    $url_params        = "type=1&host=$host";
+    $item_uuid         = 'host:' . $host;
+    $last_state_change = $ENV{NAGIOS_LASTHOSTSTATECHANGE};
+}
+
+if ( $ENV{NAGIOS_NOTIFICATIONTYPE} eq "ACKNOWLEDGEMENT" ) {
+    $state = "ACKNOWLEDGEMENT of $state";
+}
+
+my $storefile = "/usr/local/nagios/atom/$contact.store";
+
+$atom_max_age = $ENV{NAGIOS__CONTACTRSS_MAXIMUM_AGE} || 1440;
+$atom_max_age *= 60; # convert to seconds rather than use minutes
+$atom_max_items = $ENV{NAGIOS__CONTACTRSS_MAXIMUM_ITEMS} || 30;
+$atom_collapsed =
+  defined( $ENV{NAGIOS__CONTACTRSS_COLLAPSED} )
+  ? $ENV{NAGIOS__CONTACTRSS_COLLAPSED}
+  : 1;
+
+my $entries;
+
+if ( -s $storefile ) {
+    open( STORE, "<", $storefile );
+    flock( STORE, LOCK_SH );
+    $entries = retrieve_fd(*STORE);
+    close(STORE);
+}
+
+if ($author) {
+    $output .= "<br /><br />Acknowledged by: $author<br />Comment: $ackcomment";
+}
+
+my $found = 0;
+if ($atom_collapsed) {
+
+    # amend existing entries rather than always force new
+    foreach my $entry (@$entries) {
+        next unless ($entry);
+        if ( $entry->{internal_id} && $entry->{internal_id} eq $item_uuid ) {
+            $found = 1;
+
+            unless ( ( $entry->{state} eq "OK" || $entry->{state} eq "UP" )
+                && $entry->{state} ne $state )
+            {
+
+                if (   $entry->{content} ne $output
+                    || $entry->{state} ne $state )
+                {
+                    $entry->{content} = $output;
+                    $entry->{title}   = "$state: $title";
+                    $entry->{state}   = $state,
+
+                      #$entry->{id}          = $item_uuid; #.":".$last_state_change,
+                }
+
+                if (   $author
+                    && $entry->{author}
+                    && $author ne $entry->{author} )
+                {
+                    $entry->{author} = $author;
+                }
+                elsif ( $author && !$entry->{author} ) {
+                    $entry->{author} = $author;
+                }
+                elsif ( !$author && $entry->{author} ) {
+                    $entry->{author} = undef;
+                }
+
+                $entry->{last_update} = time;
+                $entry->{updated}     = w3cdtf($now);
+            }
+            else {
+
+                # expire the item
+                $entry->{last_update} = 0;
+                $found = 0;
+            }
+        }
+    }
+}
+
+if ( !$found ) {
+
+    # not found, add it in
+    my $entry = {
+        published   => w3cdtf($now),
+        last_update => time,
+        internal_id => $item_uuid,
+        id          => $item_uuid . ":" . $last_state_change,
+        title       => "$state: $title",
+        link        => "?$url_params",
+        updated     => w3cdtf($now),
+        content     => $output,
+        state       => $state,
+    };
+    $entry->{author} = $author if ($author);
+    unshift( @$entries, $entry );
+}
+
+{
+    my @remove;
+
+    # remove all entries over age seconds
+    foreach my $i ( 0 .. @$entries ) {
+        if (   $entries->[$i]
+            && $entries->[$i]->{last_update} < time - $atom_max_age )
+        {
+            unshift( @remove, $i );
+        }
+    }
+
+    foreach (@remove) {
+        splice( @$entries, $_, 1 );
+    }
+}
+
+# remove more than max entries from the head of the array
+@$entries = splice @$entries, 0, $atom_max_items;
+
+open( STORE, ">", $storefile );
+flock( STORE, LOCK_EX );
+store_fd( $entries, *STORE );
+truncate( STORE, tell(STORE) );
+close(STORE);

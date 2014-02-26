@@ -1,0 +1,88 @@
+{
+   "page" : 1,
+   "totalsearchrows" : "7",
+   "totalrows" : "7",
+   "rows" : 50,
+   "totalpages" : 1,
+   "list" : [
+      {
+         "ref" : "/rest/config/attribute/4",
+         "name" : "DISK",
+         "id" : "4",
+         "servicechecks" : [
+            {
+               "ref" : "/rest/config/servicecheck/91",
+               "name" : "Disk"
+            }
+         ]
+      },
+      {
+         "ref" : "/rest/config/attribute/7",
+         "name" : "NRPE_PORT",
+         "id" : "7",
+         "servicechecks" : []
+      },
+      {
+         "ref" : "/rest/config/attribute/6",
+         "name" : "PROCESS",
+         "id" : "6",
+         "servicechecks" : [
+            {
+               "ref" : "/rest/config/servicecheck/92",
+               "name" : "Processes"
+            },
+            {
+               "ref" : "/rest/config/servicecheck/93",
+               "name" : "Windows Processes"
+            }
+         ]
+      },
+      {
+         "ref" : "/rest/config/attribute/5",
+         "name" : "URL",
+         "id" : "5",
+         "servicechecks" : []
+      },
+      {
+         "ref" : "/rest/config/attribute/3",
+         "name" : "CLUSTERNODE",
+         "id" : "3",
+         "servicechecks" : [
+            {
+               "ref" : "/rest/config/servicecheck/96",
+               "name" : "Cluster-node"
+            }
+         ]
+      },
+      {
+         "ref" : "/rest/config/attribute/2",
+         "name" : "INTERFACE",
+         "id" : "2",
+         "servicechecks" : [
+            {
+               "ref" : "/rest/config/servicecheck/101",
+               "name" : "Discards"
+            },
+            {
+               "ref" : "/rest/config/servicecheck/100",
+               "name" : "Errors"
+            },
+            {
+               "ref" : "/rest/config/servicecheck/95",
+               "name" : "Interface"
+            }
+         ]
+      },
+      {
+         "ref" : "/rest/config/attribute/1",
+         "name" : "SLAVENODE",
+         "id" : "1",
+         "servicechecks" : [
+            {
+               "ref" : "/rest/config/servicecheck/94",
+               "name" : "Slave-node"
+            }
+         ]
+      }
+   ]
+}

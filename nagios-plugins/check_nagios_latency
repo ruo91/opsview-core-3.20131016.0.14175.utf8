@@ -1,0 +1,46 @@
+#!/usr/bin/perl
+#  Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#  W: http://www.opsview.com/
+#
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software
+#  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+use warnings;
+use strict;
+use FindBin;
+use lib "$FindBin::Bin/../perl/lib";
+use Nagios::Plugin;
+
+my $np = Nagios::Plugin->new(
+    usage     => "Usage: %s",
+    version   => "0.01",
+    shortname => "LATENCY",
+);
+$np->getopts;
+
+my @results;
+open( F, "-|", "$FindBin::Bin/../bin/nagiostats",
+    "-md", "MAXACTSVCLAT,AVGACTSVCLAT,MAXPSVSVCLAT,AVGPSVSVCLAT" )
+  or $np->nagios_exit( CRITICAL, "Cannot execute nagiostats" );
+while (<F>) {
+    chop;
+    $np->nagios_exit( CRITICAL, "Unexpected result: $_" ) unless /^\d+$/;
+    $_ = $_ / 1000;
+    push @results, sprintf( "%0.03f", $_ );
+}
+close(F) or $np->nagios_exit( CRITICAL, "Cannot close nagiostats" );
+
+$np->nagios_exit( OK,
+    "Active Service Latency (max/avg) = $results[0] / $results[1], Passive Service Latency (max/avg) = $results[2] / $results[3] | maxactsvclat=$results[0] avgactsvclat=$results[1] maxpsvsvclat=$results[2] avgpsvsvclat=$results[3]"
+);

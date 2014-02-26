@@ -1,0 +1,27 @@
+#!/bin/sh
+# Start/stop the nrpe daemon.
+# chkconfig: 345 99 1
+# description: NRPE monitoring agent for Nagios
+
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+NrpeBin=/usr/local/nagios/bin/nrpe
+NrpeCfg=/usr/local/nagios/etc/nrpe.cfg
+
+case "$1" in
+start)
+        echo "Starting NRPE agent"
+        $NrpeBin -c $NrpeCfg -d
+        ps -u nagios
+        ;;
+stop)
+        echo "Stopping NRPE agent"
+        pkill -U nagios nrpe
+        ;;
+*)
+        echo "Usage: { start | stop }" 2>&1
+        exit 65
+        ;;
+esac
+exit 0

@@ -1,0 +1,121 @@
+#!/usr/bin/perl 
+#
+# AUTHORS: Rohit Deshmukh
+#   Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+use Shell qw(virsh);
+use Nagios::Plugin;
+use Data::Dump qw(dump);
+
+my $np = Nagios::Plugin->new(
+    shortname => "KVM STATUS",
+    usage     => "to check KVM_STATUS\n%s\n[-n],[-w],[-o],[-v]\n",
+    extra     => "
+    Example:  
+            to alert OK if VM is in running state 
+            check_kvm_state -n vmname -o running
+                
+            to alert WARNING if VM is in paused or blocked state
+            check_kvm_state -n vmname -w paused,blocked
+                 
+            to define warning list and ok list together
+            check_kvm_state -n vmname -o running -w paused,blocked 
+
+            Note:any vm state outside of the warning and critical list will generate critical alert.
+                :if warning and ok list not defined then pligin will always alert critical.
+                   
+            valid states running, blocked, paused, 'shut off', crashed, dying",
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help =>
+      "-w, --warning=list:list  Warning if current  instance state is in warning list ",
+);
+
+$np->add_arg(
+    spec => "ok|o=s",
+    help =>
+      "-o, --critical=list:list. ok if current  instance state is in ok list",
+);
+$np->add_arg(
+    spec     => "name|n=s",
+    help     => "-n, --name=STRING:STRING. index of the instacne",
+    required => 1,
+);
+
+$np->getopts;
+
+#valid states array
+my @valid_states =
+  ( "running", "blocked", "paused", "shut off", "crashed", "dying" );
+
+# print dump(%valid_states);
+my $warning = $np->opts->warning;
+my $ok      = $np->opts->ok;
+
+my $vm_name = $np->opts->name;
+my $vm_state;
+my $logfile = "check_kvm_state.txt";
+
+open STDERR, ">/tmp/$logfile"
+  or die $np->nagios_exit( UNKNOWN, "Can not write to the /tmp/$logfile" );
+$vm_state = virsh( "domstate", $vm_name )
+  or die $np->nagios_exit( UNKNOWN, "Can not execute virsh command" );
+close STDERR;
+
+#removing white apaces from the out put
+$vm_state =~ s/^\s+//;
+$vm_state =~ s/\s+$//;
+
+if ( $vm_state eq "" ) {
+    $np->nagios_exit( UNKNOWN, "VM name $vm_name not found" );
+}
+
+my @warning = split( ",", $warning );
+
+# print dump(@warning);
+
+my @ok = split( ",", $ok );
+
+# print dump(@ok);
+
+#creating hash lists
+my %warning_list = map { ( $_ => warning ) } @warning;
+
+#print dump(%warning_list);
+
+my %ok_list = map { ( $_ => ok ) } @ok;
+
+# print dump(%ok_list);
+#checking for valid states4
+if ( exists( $warning_list{$vm_state} ) ) {
+    $np->nagios_exit( WARNING,
+        "VM name:- $vm_name, current state is: " . $vm_state . "\n"
+    );
+}
+if ( exists( $ok_list{$vm_state} ) ) {
+    $np->nagios_exit( OK,
+        "VM name:- $vm_name,  current state is: " . $vm_state . " \n"
+    );
+}
+$np->nagios_exit( CRITICAL,
+    "VM name:- $vm_name, current state is: " . $vm_state . "\n"
+);
+1

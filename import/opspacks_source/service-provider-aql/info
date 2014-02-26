@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.service_provider_aql
+VERSION=1.0
+ALIAS=Service Provider - AQL
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

@@ -1,0 +1,105 @@
+#!/usr/bin/perl
+
+use Test::More;
+
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use Test::LongString;
+
+plan tests => 9;
+
+my $query_host = "$Bin/../bin/query_host";
+
+# Setup:
+#  * Expect localhost to resolve
+#  * Expect SNMPv1 with community of public
+#  * Expect SNMPv2 with community of public2
+#  * Expect SNMPv3 with username test, authentication protocol MD5 and authentication password setup_passphrase
+
+sub capture {
+    my $args = shift;
+    local $/ = undef;
+    open( F, "$query_host -H localhost -t $args |" )
+      or die "Cannot run query_host";
+    my $output = <F>;
+    close F;
+    return $output;
+}
+
+$/ = "\n\n";
+while ( my $record = <DATA> ) {
+    chomp $record;
+    my ( $args, $output ) = $record =~ /^(.*?)\n(.*)/s;
+    $output .= "\n";
+
+    like( capture($args), qr/$output/ );
+}
+
+__DATA__
+-C public -p 1
+<data>
+  <host sysDescr="Linux opsviewdev46 2.6.18-6-686 #1 SMP Tue Jun 17 21:31:27 UTC 2008 i686">
+    <interface id="1" ifAlias="" ifDescr="lo" ifLink="up" ifSpeed="10Mbit/s" ifStatus="up" />
+    <interface id="2" ifAlias="" ifDescr="eth4" ifLink="up" ifSpeed="10Mbit/s" ifStatus="up" />
+    <interface id="3" ifAlias="" ifDescr="eth3" ifLink="up" ifSpeed="10Mbit/s" ifStatus="up" />
+    <interface id="4" ifAlias="" ifDescr="sit0" ifLink="down" ifSpeed="0kbit/s" ifStatus="down" />
+  </host>
+</data>
+
+-C public2
+<data>
+  <host sysDescr="Linux opsviewdev46 2.6.18-6-686 #1 SMP Tue Jun 17 21:31:27 UTC 2008 i686">
+    <interface id="1" ifAlias="" ifDescr="lo" ifLink="up" ifSpeed="10Mbit/s" ifStatus="up" />
+    <interface id="2" ifAlias="" ifDescr="eth4" ifLink="up" ifSpeed="10Mbit/s" ifStatus="up" />
+    <interface id="3" ifAlias="" ifDescr="eth3" ifLink="up" ifSpeed="10Mbit/s" ifStatus="up" />
+    <interface id="4" ifAlias="" ifDescr="sit0" ifLink="down" ifSpeed="0kbit/s" ifStatus="down" />
+  </host>
+</data>
+
+-p 3 -u test -a md5 -A setup_passphrase
+<data>
+  <host sysDescr="Linux .*">
+    <interface id="1" ifAlias="" ifDescr="lo" ifLink="up" ifSpeed="10Mbit/s" ifStatus="up" />
+    <interface id="2" ifAlias="" ifDescr="eth4" ifLink="up" ifSpeed="10Mbit/s" ifStatus="up" />
+    <interface id="3" ifAlias="" ifDescr="eth3" ifLink="up" ifSpeed="10Mbit/s" ifStatus="up" />
+    <interface id="4" ifAlias="" ifDescr="sit0" ifLink="down" ifSpeed="0kbit/s" ifStatus="down" />
+  </host>
+</data>
+
+-C public -p 2c
+<data>
+  <host sysDescr="Linux opsviewdev46 2.6.18-6-686 #1 SMP Tue Jun 17 21:31:27 UTC 2008 i686">
+    <interface id="1" ifAlias="" ifDescr="lo" ifLink="up" ifSpeed="10Mbit/s" ifStatus="up" />
+    <interface id="2" ifAlias="" ifDescr="eth4" ifLink="up" ifSpeed="10Mbit/s" ifStatus="up" />
+    <interface id="3" ifAlias="" ifDescr="eth3" ifLink="up" ifSpeed="10Mbit/s" ifStatus="up" />
+    <interface id="4" ifAlias="" ifDescr="sit0" ifLink="down" ifSpeed="0kbit/s" ifStatus="down" />
+  </host>
+  <warning>Cannot connect with SNMPv2c: No response from remote host 'localhost'. Trying with SNMPv1</warning>
+</data>
+
+-C notright -p 1
+<data>
+  <error>Cannot get sysDescr - check community string: No response from remote host 'localhost'</error>
+</data>
+
+-C notright -p 2c
+<data>
+  <error>Cannot get sysDescr - check community string: No response from remote host 'localhost'</error>
+  <warning>Cannot connect with SNMPv2c: No response from remote host 'localhost'. Trying with SNMPv1</warning>
+</data>
+
+-p 3 -u dummy -a md5 -A dummy
+<data>
+  <error>Cannot connect with SNMPv3: Received usmStatsUnknownUserNames.0 Report-PDU with value \d+ during synchronization</error>
+</data>
+
+-p 3 -u test -a md5 -A dummy
+<data>
+  <error>Cannot connect with SNMPv3: Received usmStatsWrongDigests.0 Report-PDU with value \d+ during synchronization</error>
+</data>
+
+-p 1
+<data>
+  <error>No snmp community specified - not checking for SNMP</error>
+</data>

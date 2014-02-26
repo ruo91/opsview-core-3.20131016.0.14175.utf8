@@ -1,0 +1,141 @@
+#!/bin/bash
+# $Id$
+#
+# Script:
+#   script.ksh
+#
+# Usage:
+#   <Normal usage of this file - how/when is it used>
+#
+# Options:
+#   -v   - print version and exit
+#   -h   - print help text and exit
+#   -d   - print debug output while running the script
+#
+# Parameters:
+#   <Specific parameters for the script>
+#
+# Purpose:
+#   <Brief description of the scripts purpose>
+#
+# Processing:
+#   Detailed description of the process flow - virtually the pseudo code>
+#
+# Dependencies:
+#   <list of any know dependancies which this script requires>
+#
+# Limitations:
+#   <Any known or perceived limitations with the script - be honest now !!>
+#
+# Enhancements:
+#   <Any future enhancements which would either make this script
+#   more useful or fix any know limitations>
+#
+# Notes:
+#   <Any relevant extra notes about this code>
+#
+# Authors and Copyright:
+#    Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    This software is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+############################################################################
+PATH=/usr/bin:/bin:/usr/sbin:/sbin:/usr/local/bin
+
+VERSION=$(
+	echo '$Revision: 0.01 $ ($Date: 2000/01/01 00:00:00 $)' | \
+	sed -e 's/$Revision: //' \
+	-e 's/$Date: //' \
+	-e 's/ \$//g'
+)
+
+SCRIPT=${0}
+SCRIPTDIR=$(cd ${SCRIPT%/*} 1>/dev/null ; pwd)
+SCRIPTNM=${0##*/}
+
+# After getting correct path, set remaining directories relative to here,
+# assuming this script is running out of the bin directory
+BIN=${SCRIPTDIR%/*}/bin
+ETC=${SCRIPTDIR%/*}/etc
+LIB=${SCRIPTDIR%/*}/lib
+LOG=/var/local/$SCRIPTNM
+
+DATE=$(date '+%d%m%y')
+TIME=$(date '+%H%M%S')
+
+NAGIOSDIR=/usr/local/nagios
+
+# leave -d (debug) as a hidden option
+USAGE="Usage: ${SCRIPTNM} [vh] <params> [...]"
+
+# Sort all command line options
+while getopts ':dvh' KEY $*
+do
+	case $KEY in
+		v)	echo "$SCRIPTNM: $VERSION" ; exit 0 ;;
+		d)	DEBUG="true";;
+
+		# Note - have to do it this way as case in ksh cannot "fall through"
+		h)	echo "$USAGE" ; exit 0 ;;
+		?)	echo "FATAL: Unknown option $OPTARG"; echo "$USAGE" ; exit 0 ;;
+	esac
+done
+
+# Remove all options catered for above from command line
+shift $(($OPTIND - 1))
+
+# some useful functions
+die() { echo "$@" >> /dev/stderr; exit 1; }
+warn() { echo "$@" >> /dev/stderr; }
+
+# Start script here
+echo "Stopping Nagios"
+$NAGIOSDIR/bin/rc.opsview stop
+echo "Stopping Opsview agent"
+$NAGIOSDIR/bin/rc.opsview-agent stop
+echo "Recreating database"
+$NAGIOSDIR/bin/db_opsview db_install
+echo "Complete steps after opspacks"
+PERL5LIB="/usr/local/nagios/lib:/usr/local/nagios/perl/lib:/opt/opsview/perl/lib/perl5" $NAGIOSDIR/import/opsview_master_post_opspacks $NAGIOSDIR/import/opsview_master.def;
+echo "Initialising database"
+$NAGIOSDIR/bin/populate_db.pl initial
+echo "Creating runtime database"
+$NAGIOSDIR/bin/db_runtime db_install
+echo "Removing Nagios data files"
+for F in downtime.dat retention.dat objects.cache comments.dat; do
+	test -f $NAGIOSDIR/var/$F && rm $NAGIOSDIR/var/$F
+done
+test -d $NAGIOSDIR/var/rw/stress && rm -r $NAGIOSDIR/var/rw/stress
+echo "Cleaning out rrd files"
+rm -rf $NAGIOSDIR/var/rrd/*
+echo "Cleaning out nagios log files"
+rm -rf $NAGIOSDIR/var/archives/*
+rm -rf $NAGIOSDIR/var/log/*
+> $NAGIOSDIR/var/nagios.log
+#echo "Cleaning out nagios backups"
+#rm -rf $NAGIOSDIR/var/backups/*
+if [ -d $NAGIOSDIR/var/ndologs.archive/ ]; then
+    echo "Cleaning out ndologs.archive"
+    rm -rf $NAGIOSDIR/var/ndologs.archive/
+fi
+if [ -d $NAGIOSDIR/var/perfdatarrd.archive/ ]; then
+    echo "Cleaning out perfdatarrd.archive"
+    rm -rf $NAGIOSDIR/var/perfdatarrd.archive/
+fi
+
+echo "Generating blank configuration and starting Nagios"
+$NAGIOSDIR/bin/rc.opsview gen_config full_perf
+echo "Starting Opsview agent"
+$NAGIOSDIR/bin/rc.opsview-agent start

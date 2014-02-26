@@ -1,0 +1,239 @@
+#!/usr/bin/perl
+
+################################################################
+# Nagios SMTP client v1.5                                      #
+# Author James Peel - james.peel@opsview.com                   #
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved #
+################################################################
+
+use MIME::Lite;
+use Net::SMTP;
+use Time::HiRes qw(gettimeofday);
+
+$configfilepath = "/usr/local/nagios/etc";
+$queuelength    = 0;
+@work = (); # array containing hosts for sent SMTP messages
+
+$from_address = "nagios\@nagios.cmgl.com";
+$to_address   = "";                       # calculated from the target hostname
+$targetdomain = "nagios.cmgl.com";
+$subject      = '';
+$message = "SMTP routing test from Nagios network monitor\n";
+
+scan_messagequeue();
+
+my $smtphost = "";
+foreach $smtphost (@work) {
+    my $timestamp = gettimeofday;
+    update_messagequeue( $smtphost, $timestamp, "sent", )
+      ;                                   # We'll make this assumption
+    my $status = generate_message( $smtphost, $timestamp );
+    if ( $status eq "failed" ) {
+        update_messagequeue( $smtphost, $timestamp, "failed", )
+          ; # If message fails we'll correct previous assumption
+    }
+    sleep 5;
+}
+
+sub generate_message {
+
+    my $servername = @_[0];
+    my $timestamp  = @_[1];
+    my $status     = "sent";
+
+    $to_address = "$servername.nagios\@$targetdomain";
+
+    my $subject = "$servername:$timestamp";
+
+    # Create the initial text of the message
+    my $mime_msg = MIME::Lite->new(
+        From    => $from_address,
+        To      => $to_address,
+        Subject => $subject,
+        Type    => 'multipart/mixed',
+
+        # Data => $message
+    ) or $status = "failed";
+
+    $mime_msg->attach(
+        Type => 'TEXT',
+        Data => $message
+    ) or $status = "failed";
+
+    $filename = '/usr/local/nagios_smtp/word.doc';
+
+    # Attach the test file
+    $mime_msg->attach(
+        Type => 'application/word',
+
+        # Encoding => 'base64',
+        Path     => $filename,
+        Filename => $filename,
+
+        #Disposition => 'attachment'
+    ) or $status = "failed";
+
+    # my $message_body = $mime_msg->body_as_string();
+    my $message_body = $mime_msg->as_string();
+
+    # Create a new SMTP object
+    $smtp = Net::SMTP->new(
+        $servername,
+        Debug   => 0,
+        Timeout => 30
+    ) or $status = "failed";
+
+    if ( $status eq "failed" ) {
+        print "Failed to open a connection to $servername\n";
+    }
+    else {
+        $smtp->mail($from_address);
+        $smtp->to($to_address);
+
+        $smtp->data();
+        $smtp->datasend($message_body);
+        $smtp->dataend();
+
+        # Close the connection
+        $smtp->quit();
+        print "Message sent from $from_address to $to_address ($servername)\n";
+    }
+
+    return ($status);
+}
+
+################################################################
+# Updates SMTP message queue                                     #
+################################################################
+
+sub update_messagequeue {
+
+    my $servername = @_[0];
+    my $timestamp  = @_[1];
+    my $status     = @_[2];
+
+    my @temparray = ();
+    my $row       = 0;
+
+    # Opens queue and locks file
+
+    if ( open FILE, "<$configfilepath/smtpmessagequeue.db" ) {
+        if ( flock( FILE, 2 ) ) {
+
+            # print "opened file and established lock\n";
+        }
+    }
+    else {
+        print "Can't open file $configfilepath/smtpmessagequeue.db";
+    }
+
+    # Reads queue
+
+    @temparray = <FILE>;
+    foreach $line (@temparray) {
+        ( $queue[$row][0], $queue[$row][1], $queue[$row][2], $queue[$row][3] )
+          = split( /:/, $line );
+        $row++;
+    }
+
+    $queuelength = $row;
+
+    # print "$row rows read from queue\n";
+
+    # Updates array with new message info
+
+    my $row = 0;
+    while ( $row < $queuelength ) {
+        if ( $status eq "failed" ) {
+            if ( $queue[$row][0] eq $servername ) {
+                if ( $queue[$row][2] eq $timestamp ) {
+                    $queue[$row][1] = $status;
+                }
+            }
+        }
+        else {
+            if ( $queue[$row][0] eq $servername ) {
+                if ( $queue[$row][1] eq "queued" ) {
+                    $queue[$row][1] = $status;
+                    $queue[$row][2] = $timestamp;
+                }
+            }
+        }
+        $row++;
+    }
+
+    # Writes updates to queue
+
+    open FILE, ">$configfilepath/smtpmessagequeue.db"
+      or die "Can't open file $configfilepath/smtpmessagequeue.db $1";
+    my $row = 0;
+    while ( $row < $queuelength ) {
+        if ( $queue[$row][0] eq "" ) {
+        }
+        else {
+            print FILE
+              "$queue[$row][0]:$queue[$row][1]:$queue[$row][2]:$queue[$row][3]:\n";
+        }
+        $row++;
+    }
+
+    # print "$row rows written back to queue\n";
+
+    # Close queue and release lock
+
+    close FILE;
+
+}
+
+################################################################
+# Scans SMTP message queue for work                            #
+################################################################
+
+sub scan_messagequeue {
+    my @temparray = ();
+    my $row       = 0;
+
+    # Opens queue and locks file
+
+    if ( open FILE, "<$configfilepath/smtpmessagequeue.db" ) {
+    }
+    else {
+        print "Can't open file $configfilepath/smtpmessagequeue.db for reading";
+    }
+
+    # Reads queue
+
+    @temparray = <FILE>;
+    foreach $line (@temparray) {
+        ( $queue[$row][0], $queue[$row][1], $queue[$row][2] ) =
+          split( /:/, $line );
+        $row++;
+    }
+
+    $queuelength = $row;
+
+    # print "$row rows read from queue\n";
+
+    # Now we scan the array for any interesting bits
+
+    my $row  = 0;
+    my $hits = 0;
+    while ( $row < $queuelength ) {
+        if ( $queue[$row][1] eq "queued" ) {
+            push( @work, $queue[$row][0] );
+            $hits++;
+        }
+        $row++;
+    }
+    if ( $hits == 0 ) {
+        print "Nothing to do...\n";
+    }
+    if ( $hits == 1 ) {
+        print "Found 1 message in queue, processing now...\n";
+    }
+    if ( $hits > 1 ) {
+        print "Found $hits messages in queue, processing now...\n";
+    }
+}
+
+close FILE;

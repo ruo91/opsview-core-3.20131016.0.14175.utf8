@@ -1,0 +1,241 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin/../perl/lib", "$Bin/../lib";
+use Nagios::Plugin qw(OK UNKNOWN %ERRORS %STATUS_TEXT);
+use Runtime;
+use Runtime::Searches;
+
+my $np = Nagios::Plugin->new(
+    shortname => "CLUSTER",
+    usage     => "Usage: %s --host=STRING",
+    blurb =>
+      "Get a summarised status of clustered hosts by returning their overall status. There are two algorithms:
+  * by_service - for each service, get a percentage of OK versus the total across all hosts. Services must be on all hosts
+  * by_host - for each host, mark as GOOD if all services are OK, otherwise BAD. Calculate percentage
+      GOOD hosts versus the total number of hosts
+
+When a percentage is calculated, an overall state is calculated from the percent_warning and percent_critical
+threshold parameters.",
+    extra => "
+Example: 
+    If you have:
+            hostA hostB hostC by_service%
+    svc1    OK    OK    OK    100%
+    svc2    OK    CRIT  OK    67%
+    svc3    OK    OK    WARN  67%
+    by_host GOOD  BAD   BAD
+
+    and --percent_warning=\@40:70 --percent_critical=\@0:40, then
+    by_host would return CRIT as the percentage of 33% (as 33% of the hosts are GOOD) is in critical range, whereas
+    by_service would return WARNING because the highest failure state of each row is in warning range
+",
+);
+
+# Just don't state that keyword is repeatable at the moment
+$np->add_arg(
+    spec => 'host|H=s@',
+    help =>
+      '-H, --host=STRING\n    String can include SQL wildcards, such as "dns%"',
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "algorithm=s",
+    help =>
+      "--algorithm=NAME.\n   Algorithm to use to calculate overall state of keyword. Defaults to by_host. Other options: by_service",
+    default => "by_host",
+);
+
+$np->add_arg(
+    spec => "ignore_handled|ignore-handled",
+    help =>
+      "--ignore-handled. If set, handled services are considered OK when calculating the percentage",
+);
+
+$np->add_arg(
+    spec => "percent_critical=s",
+    help =>
+      "--percent_critical=RANGE. If in this range (based on algorithm), raise a CRITICAL",
+);
+
+$np->add_arg(
+    spec => "percent_warning=s",
+    help =>
+      "--percent_warning=RANGE. If in this range (based on algorithm), raise a WARNING",
+);
+
+$np->getopts;
+
+my $valid_algorithms = {
+    by_host    => 1,
+    by_service => 1,
+};
+my $algorithm =
+  exists $valid_algorithms->{ $np->opts->algorithm }
+  ? $np->opts->algorithm
+  : "by_host";
+
+my $hosts = $np->opts->host;
+
+my $search = { host => $hosts };
+my $service_list = Runtime::Searches->list_services( "", $search );
+
+if ( $service_list->{summary}->{total} == 0 ) {
+    $np->nagios_exit( UNKNOWN,
+        "No services found for hosts " . join( ", ", @$hosts )
+    );
+}
+
+if ( $algorithm eq "by_service" ) {
+    $service_list =
+      Runtime::Searches->convert_to_group_by_service($service_list);
+}
+if ( $np->opts->verbose >= 3 ) {
+    require Data::Dump;
+    print Data::Dump::dump($service_list), "\n";
+}
+my $overall_state   = OK;
+my @messages        = ();
+my $badobject_limit = 5;
+my $messages_limit  = 5;
+my $messages_prefix = "  * ";
+my $extra_text      = "";
+if ( $algorithm eq "by_service" ) {
+
+    # For each service
+    foreach my $s ( @{ $service_list->{list} } ) {
+
+        # Ignore services that are not on all hosts
+        next
+          if $s->{summary}->{total}
+          != $service_list->{summary}->{host}->{total};
+
+        # Work out percent value of ok versus total
+        my $ok = $s->{summary}->{ok} || 0;
+        if ( $np->opts->ignore_handled ) {
+            $ok = $s->{summary}->{handled} || 0;
+        }
+        my $percentage = $ok / $s->{summary}->{total} * 100;
+
+        # Get a status for the service
+        my $this_state = $np->check_threshold(
+            check    => $percentage,
+            warning  => $np->opts->percent_warning,
+            critical => $np->opts->percent_critical,
+        );
+
+        # If failure, add to list of messages
+        if ( $this_state != OK ) {
+
+            # Loop through hosts and find the bad ones
+            my @badhosts;
+            foreach my $host ( @{ $s->{hosts} } ) {
+                if ( $np->opts->ignore_handled ) {
+                    push @badhosts, $host->{name} if $host->{unhandled};
+                }
+                else {
+                    push @badhosts, $host->{name} unless $host->{state} eq "ok";
+                }
+            }
+
+            # Limit number of badhosts to display
+            if ( scalar @badhosts > $badobject_limit ) {
+                @badhosts =
+                  ( splice( @badhosts, 0, $badobject_limit ), "..." );
+            }
+            push @messages,
+              join( " ",
+                $s->{name}, sprintf( "%d", $percentage ) . "%",
+                $STATUS_TEXT{$this_state}, "Hosts:" . join( ",", @badhosts ),
+              );
+            $overall_state = $np->max_state( $overall_state, $this_state );
+        }
+    }
+
+}
+elsif ( $algorithm eq "by_host" ) {
+
+    # For each host, work out host_failure (if anything has failed on host)
+    my $ok_hosts = 0;
+    foreach my $h ( @{ $service_list->{list} } ) {
+        my @badservices = ();
+        my $ok = $h->{summary}->{ok} || 0;
+        if ( $np->opts->ignore_handled ) {
+            $ok = $h->{summary}->{handled} || 0;
+        }
+        my $host_failure = ( $ok != $h->{summary}->{total} );
+
+        # If failure, get list of services that are problems
+        if ($host_failure) {
+            foreach my $s ( @{ $h->{services} } ) {
+                if ( $np->opts->ignore_handled ) {
+                    push @badservices, $s->{name} if $s->{unhandled};
+                }
+                else {
+                    push @badservices, $s->{name} unless $s->{state} eq "ok";
+                }
+            }
+
+            # Limit number of badservices to display
+            if ( scalar @badservices > $badobject_limit ) {
+                @badservices =
+                  ( splice( @badservices, 0, $badobject_limit ), "..." );
+            }
+            push @messages,
+              join( " ", $h->{name}, "Services:" . join( ",", @badservices ), );
+        }
+        else {
+            $ok_hosts++;
+        }
+    }
+
+    # Calculate percentage of hosts OK versus total
+    my $percentage =
+      $ok_hosts / $service_list->{summary}->{host}->{total} * 100;
+
+    $extra_text = sprintf( "%d", $percentage ) . "% ";
+
+    # Work out state to return
+    $overall_state = $np->check_threshold(
+        check    => $percentage,
+        warning  => $np->opts->percent_warning,
+        critical => $np->opts->percent_critical,
+    );
+
+}
+
+print "CLUSTER - $extra_text" . $STATUS_TEXT{$overall_state} . "\n";
+
+# Limit number of messages
+if ( scalar @messages > $messages_limit ) {
+    @messages = ( splice( @messages, 0, $messages_limit ), "..." );
+}
+
+print join( "\n",
+    ( map { $messages_prefix . $_ } @messages ),
+    ( @messages ? "" : () )
+);
+exit $overall_state;

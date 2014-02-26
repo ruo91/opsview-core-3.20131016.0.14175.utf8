@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.infrastructure_sensatronics
+VERSION=1.0
+ALIAS=Infrastructure - Sensatronics
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

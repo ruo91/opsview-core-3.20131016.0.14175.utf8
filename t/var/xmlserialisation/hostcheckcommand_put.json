@@ -1,0 +1,26 @@
+{
+      "priority" : "100",
+      "plugin" : {
+         "ref" : "/rest/config/plugin/check_tcp",
+         "name" : "check_tcp"
+      },
+      "hosts" : [
+         {
+            "ref" : "/rest/config/host/14",
+            "name" : "doesnt_exist_1"
+         },
+         {
+            "ref" : "/rest/config/host/15",
+            "name" : "doesnt_exist_2"
+         },
+         {
+            "ref" : "/rest/config/host/16",
+            "name" : "singlehostgroup"
+         }
+      ],
+      "name" : "pingupdate",
+      "args" : "-H $HOSTADDRESS$ --bad soldier",
+      "id" : "15",
+      "uncommitted" : "1"
+   }
+

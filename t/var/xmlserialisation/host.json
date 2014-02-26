@@ -1,0 +1,95 @@
+{
+      "snmpv3_privprotocol" : null,
+      "flap_detection_enabled" : "1",
+      "hosttemplates" : [
+         {
+            "ref" : "/rest/config/hosttemplate/4",
+            "name" : "Blank"
+         }
+      ],
+      "event_handlers" : [ { "name":"DHCP", "command":"testy" } ],
+      "keywords" : [],
+      "check_period" : {
+         "ref" : "/rest/config/timeperiod/3",
+         "name" : "nonworkhours"
+      },
+      "hostattributes" : [
+         {
+            "arg1" : null,
+            "value" : "/remote",
+            "name" : "DISK"
+         },
+         {
+            "arg1" : null,
+            "value" : "opsviewd",
+            "name" : "PROCESS"
+         }
+      ],
+      "id" : "22",
+      "notification_period" : {
+         "ref" : "/rest/config/timeperiod/1",
+         "name" : "24x7"
+      },
+      "notification_options" : "d,r",
+      "name" : "monitored_by_cluster",
+      "rancid_vendor" : null,
+      "snmp_community" : "slave1234",
+      "hostgroup" : {
+         "ref" : "/rest/config/hostgroup/5",
+         "name" : "Leaf2"
+      },
+      "enable_snmp" : "1",
+      "monitored_by" : {
+         "ref" : "/rest/config/monitoringserver/3",
+         "name" : "Cluster"
+      },
+      "alias" : "Host to be monitored by slave",
+      "uncommitted" : "1",
+      "parents" : [],
+      "retry_check_interval" : "4",
+      "icon" : {
+         "name" : "SYMBOL - Wireless network"
+      },
+      "exceptions" : [],
+      "ip" : "monitored_by_clusterip",
+      "use_mrtg" : "0",
+      "servicechecks" : [
+         {
+            "ref" : "/rest/config/servicecheck/45",
+            "name" : "Check Loadavg"
+         },
+         {
+            "ref" : "/rest/config/servicecheck/44",
+            "name" : "Check Memory"
+         },
+         {
+            "ref" : "/rest/config/servicecheck/91",
+            "name" : "Disk"
+         },
+         {
+            "ref" : "/rest/config/servicecheck/29",
+            "name" : "TCP/IP"
+         }
+      ],
+      "use_rancid" : "0",
+      "nmis_node_type" : "server",
+      "snmpv3_authpassword" : "",
+      "snmp_version" : "2c",
+      "use_nmis" : "1",
+      "rancid_connection_type" : "ssh",
+      "timed_exceptions" : [],
+      "snmpv3_authprotocol" : null,
+      "rancid_username" : null,
+      "rancid_password" : null,
+      "excludedservicechecks" : [{ "name": "/" } ],
+      "check_command" : {
+         "ref" : "/rest/config/hostcheckcommand/7",
+         "name" : "NRPE (on port 5666)"
+      },
+      "check_attempts" : "15",
+      "check_interval" : "25",
+      "notification_interval" : "60",
+      "snmpv3_privpassword" : "",
+      "snmpv3_username" : "",
+      "other_addresses" : ""
+}

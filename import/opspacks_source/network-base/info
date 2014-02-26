@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.network_base
+VERSION=1.0
+ALIAS=Network - Base
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

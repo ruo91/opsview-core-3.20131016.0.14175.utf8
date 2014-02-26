@@ -1,0 +1,442 @@
+{
+   "attribute" : [
+      {
+         "arg1" : "",
+         "arg2" : "",
+         "arg3" : "",
+         "arg4" : "",
+         "name" : "INTERFACE",
+         "value" : ""
+      }
+   ],
+   "hosttemplate" : [
+      {
+         "description" : "SNMP checks for devices supporting MIB-II",
+         "managementurls" : [],
+         "name" : "SNMP - MIB-II",
+         "servicechecks" : [
+            {
+               "exception" : null,
+               "name" : "Discards",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "Errors",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "Interface",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "Interface Poller",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "Interface Status",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "SNMP Agent",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "Uptime Restart",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "Uptime",
+               "timed_exception" : null
+            }
+         ]
+      }
+   ],
+   "servicecheck" : [
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -U $SNMPV3_USERNAME$ -P $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -e $SNMPV3_PRIVPROTOCOL$ -x $SNMPV3_PRIVPASSWORD$",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Status of SNMP agent",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 1,
+         "markdown_filter" : "0",
+         "name" : "SNMP Agent",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_sysinfo"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Network - SNMP MIB-II"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "3",
+         "args" : "%INTERFACE:1% -D %INTERFACE:4% -H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -u $SNMPV3_USERNAME$ -A $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -x $SNMPV3_PRIVPROTOCOL$ -X $SNMPV3_PRIVPASSWORD$",
+         "attribute" : {
+            "name" : "INTERFACE"
+         },
+         "calculate_rate" : "no",
+         "cascaded_from" : {
+            "name" : "Interface Poller"
+         },
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Passive"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "SNMP interface discards per minute",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "Discards",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_linkstatus"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Network - SNMP MIB-II"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "3",
+         "args" : "%INTERFACE:1% -E %INTERFACE:3% -H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -u $SNMPV3_USERNAME$ -A $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -x $SNMPV3_PRIVPROTOCOL$ -X $SNMPV3_PRIVPASSWORD$",
+         "attribute" : {
+            "name" : "INTERFACE"
+         },
+         "calculate_rate" : "no",
+         "cascaded_from" : {
+            "name" : "Interface Poller"
+         },
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Passive"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "SNMP interface errors per minute",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "Errors",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_linkstatus"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Network - SNMP MIB-II"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "3",
+         "args" : "-i -o %INTERFACE:1% %INTERFACE:2% -H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -u $SNMPV3_USERNAME$ -A $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -x $SNMPV3_PRIVPROTOCOL$ -X $SNMPV3_PRIVPASSWORD$",
+         "attribute" : {
+            "name" : "INTERFACE"
+         },
+         "calculate_rate" : "no",
+         "cascaded_from" : {
+            "name" : "Interface Poller"
+         },
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Passive"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [
+            {
+               "name" : "SNMP Agent"
+            }
+         ],
+         "description" : "SNMP interface throughput",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "Interface",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_linkstatus"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Network - SNMP MIB-II"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTNAME$",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [
+            {
+               "name" : "SNMP Agent"
+            }
+         ],
+         "description" : "SNMP interface polling",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : null,
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "Interface Poller",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_interfaces_cascade"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Network - SNMP MIB-II"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -U $SNMPV3_USERNAME$ -P $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -e $SNMPV3_PRIVPROTOCOL$ -x $SNMPV3_PRIVPASSWORD$",
+         "attribute" : null,
+         "calculate_rate" : "",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [
+            {
+               "name" : "SNMP Agent"
+            }
+         ],
+         "description" : "Raises an alerts if status for any interface changes (up / down)",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "Interface Status",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_interfaces"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Network - SNMP MIB-II"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -U $SNMPV3_USERNAME$ -P $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -e $SNMPV3_PRIVPROTOCOL$ -x $SNMPV3_PRIVPASSWORD$",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : {
+            "name" : "Uptime"
+         },
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Passive"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Uptime of SNMP agent usually equivalent to device uptime",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "Uptime Restart",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_uptime"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "0",
+         "servicegroup" : {
+            "name" : "Network - SNMP MIB-II"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "1",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-T $HOSTNAME$ --cascade -H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -U $SNMPV3_USERNAME$ -P $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -e $SNMPV3_PRIVPROTOCOL$ -x $SNMPV3_PRIVPASSWORD$",
+         "attribute" : null,
+         "calculate_rate" : "",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [
+            {
+               "name" : "SNMP Agent"
+            }
+         ],
+         "description" : "Uptime",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "Uptime",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_uptime"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Network - SNMP MIB-II"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      }
+   ],
+   "servicegroup" : [
+      {
+         "name" : "Network - SNMP MIB-II"
+      }
+   ]
+}

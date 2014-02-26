@@ -1,0 +1,26 @@
+#
+# Check dependancies.  Do not use 'depend' file as this prevents
+# upgrading running smoothly
+#
+depends="opsview-perl"
+fail=
+
+echo "## Verifying package dependencies."
+
+for pkg in $depends; do
+	pkginfo -q $pkg.\*
+
+	if [ $? -ne 0 ]; then
+		if [ -z "$fail" ]; then
+			echo "WARNING:"
+		fi
+		echo "    The <$pkg> package is a prerequisite package and"
+		echo "    should be installed."
+		fail=1
+	fi
+done
+
+if [ -n "$fail" ]; then
+	echo
+	exit 1
+fi

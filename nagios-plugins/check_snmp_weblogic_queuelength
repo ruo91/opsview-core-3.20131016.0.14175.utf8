@@ -1,0 +1,126 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#       Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+use strict;
+use warnings;
+
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+
+my $np = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => "check}_snmp_weblogic_queuelength",
+    version   => "1.1",
+    blurb     => "Checks the thread pool runtime queue length",
+    snmp      => {
+        "snmp-version" => 1,
+        "snmp-timeout" => 2,
+    },
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w, --warning=INTEGER
+    Warning threshold},
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c, --critical=INTEGER
+    Critical threshold},
+    required => 1,
+);
+
+$np->getopts;
+
+my $warning  = $np->opts->warning;
+my $critical = $np->opts->critical;
+
+my $s = $np->snmp;
+
+my $oid_testoid     = ".1.3.6.1.4.1.140.625.10.1.0";
+my $oid_queuelength = ".1.3.6.1.4.1.140.625.367.1.35";
+my $num_threads     = 0;
+my $perfdata        = "";
+
+# Call this when you know you'll get a single value back
+sub get_oid_value {
+    our ( $oid, $result, $status, $returnstring );
+
+    $oid = shift(@_);
+
+    if ( !defined( $s->get_next_request($oid) ) ) {
+        if ( !defined( $s->get_request($oid_testoid) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return -1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return -1;
+        }
+    }
+
+    foreach ( $s->var_bind_names() ) {
+        $result = $s->var_bind_list()->{$_};
+        if ( $_ !~ /^$oid/ ) {
+            print "UNKNOWN - OID does not exist!\n";
+            exit 3;
+        }
+    }
+
+    return $result;
+}
+
+if ( !defined( $s->get_request($oid_testoid) ) ) {
+    if ( !defined( $s->get_request($oid_testoid) ) ) {
+        print "Agent not responding\n";
+        exit 1;
+    }
+}
+
+$num_threads = get_oid_value($oid_queuelength);
+
+if ( $num_threads eq -1 ) {
+    print "UNKNOWN - Plugin error, couldn't retrieve OID\n";
+    exit 3;
+}
+
+# Performance data
+$perfdata = "queuelength=$num_threads";
+
+# Show appropriate message (we don't have a critical state)
+if ( $num_threads > $critical ) {
+    print "CRITICAL - $num_threads threads in queue |$perfdata\n";
+    exit 2;
+}
+elsif ( $num_threads > $warning ) {
+    print "WARNING - $num_threads threads in queue |$perfdata\n";
+    exit 1;
+}
+else {
+    print "OK - $num_threads threads in queue |$perfdata\n";
+    exit 0;
+}

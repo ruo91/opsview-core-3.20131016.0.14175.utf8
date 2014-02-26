@@ -1,0 +1,31 @@
+/* CSS Specific to the Events View */
+
+/* pagination */
+.page_num { font-style: italic; font-size: 120%; }
+.page_prev_links a, .page_next_links a { font-weight: bold; font-size: 100%; cursor: pointer; }
+.page_prev_links a:hover, .page_next_links a:hover { font-size: 120%; }
+
+/* view options box */
+.options_box { width: 500px; }
+
+/* summary of filter options */
+#filter_summary {
+    text-align: left;
+}
+
+/* timeline */
+#event_timeline { height: 300px; border: 1px solid #aaa; 
+                  z-index: 0; margin-top: 10px; overflow-x:hidden; overflow-y:scroll;
+                  background-color: rgb(238, 238, 238);
+                  text-align: left; /* needed or ie6&7 breaks */  }
+
+/* data table */
+#event_table { }
+
+#event_table tr td img.menu { display: block; float: right; clear: none; }
+
+/* new event alerts */
+.new_event td { font-weight: bold; background-color: yellow; }
+
+#newevents { font-weight: bold; background-color: yellow; border: 3px solid white; }
+

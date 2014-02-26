@@ -1,0 +1,281 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+
+my $np = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => "check_snmp_vmware_gueststate",
+    version   => "0.4",
+    blurb     => "Checks the power and OS status of guest VMs",
+    snmp      => {
+        "snmp-version" => "2c",
+        "snmp-timeout" => 5,
+        "v1-fallback"  => 1,
+    },
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w, --warning=INTEGER
+    Warning threshold for VMs powered on},
+    default => 0,
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c, --critical=INTEGER
+    Critical threshold for VMs powered on},
+    default => 0,
+);
+
+$np->add_arg(
+    spec => "runningcritical|d=s",
+    help => qq{-d, --runningcritical=INTEGER
+    Critical threshold for VMs running},
+    default => 0,
+);
+
+$np->add_arg(
+    spec => "runningwarning|x=s",
+    help => qq{-x, --runningwarning=INTEGER
+    Warning threshold for VMs running},
+    default => 0,
+);
+
+$np->getopts;
+
+my $warning  = $np->opts->warning;
+my $critical = $np->opts->critical;
+
+my $s = $np->snmp;
+
+# Call this when you know you'll get a single value back
+sub get_oid_value {
+    our ( $oid, $result, $status, $returnstring );
+
+    $oid = shift(@_);
+
+    if ( !defined( $s->get_request($oid) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            return 3;
+        }
+        else {
+
+            #print "SNMP OID does not exist\n";
+            return "";
+        }
+    }
+
+    foreach ( $s->var_bind_names() ) {
+        $result = $s->var_bind_list()->{$_};
+    }
+
+    if ( $result eq "noSuchObject" || $result eq "noSuchInstance" ) {
+        return "";
+    }
+
+    return $result;
+}
+
+sub get_vm_state {
+    my $name = lc(shift);
+    my $i    = 0;
+    our ( $result, $store, $vm_data, $response, $hostname );
+    my $hint_host = "";
+
+    # Use a hint if we have one
+    if ( -f $hint_file ) {
+        $store     = lock_retrieve($hint_file);
+        $hint_host = $store->{$name};
+    }
+
+    # Move the hint host to the top of the list, if it's
+    # an option
+    if ( grep( /^${hint_host}$/, @hostnames ) ) {
+        my $item;
+        while ( @hostnames[0] ne $hint_host ) {
+            $item = shift(@hostnames);
+            push( @hostnames, $item );
+        }
+    }
+
+    foreach $hostname (@hostnames) {
+        next if ( create_snmp_session($hostname) > 0 );
+
+        $response = $s->get_table( $oid_vmbase . $oid_vm_name );
+        next if !defined($response);
+
+        %$response = reverse %$response;
+        my ($vmname) = grep( /^$name$/i, keys(%$response) );
+        if ($vmname) {
+
+            # Found the VM, write a hint for next time
+            $store->{$name} = $hostname;
+            lock_store( $store, $hint_file );
+
+            my $i = $response->{$vmname};
+            $i =~ s/.*\.//;
+            $result = get_oid_value( $oid_vmbase . $oid_state . $i );
+            return $result;
+        }
+    }
+
+    print 'VM not found; availables hosts are: ',
+      join( ", ", sort( keys(%$response) ) ), $/;
+    exit 3;
+}
+
+sub get_vm_state_totals {
+    our ( $pwr_state, $os_state );
+    my $i         = 0;
+    my $power_on  = 0;
+    my $power_off = 0;
+    my $os_on     = 0;
+    my $os_off    = 0;
+
+    # Avoid accidental infinite loops by limiting
+    # ourselves to 100 VMs
+    while ( $i < 100 ) {
+        $pwr_state = get_oid_value( $oid_vmbase . $oid_pwr_state . $i );
+        $os_state  = get_oid_value( $oid_vmbase . $oid_os_state . $i );
+
+        if ( $os_state eq "" && $pwr_state eq "" ) {
+            last;
+        }
+        else {
+            if ( $pwr_state eq "poweredOn" ) {
+                $power_on++;
+            }
+            else {
+                $power_off++;
+            }
+
+            if ( $os_state eq "running" ) {
+                $os_on++;
+            }
+            else {
+                $os_off++;
+            }
+        }
+
+        $i++;
+    }
+
+    return ( $power_on, $power_off, $os_on, $os_off );
+}
+
+sub create_snmp_session {
+    my $snmp_host = shift(@_);
+
+    # Create the SNMP session
+    $version = "2c";
+    ( $s, $e ) = Net::SNMP->session(
+        -community => $community,
+        -hostname  => $snmp_host,
+        -version   => $version,
+        -timeout   => $timeout,
+        -port      => $port,
+    );
+
+    if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+
+        # If we can't connect using SNMPv1 lets try as SNMPv2
+        $s->close();
+        sleep 0.5;
+        $version = "1";
+        ( $s, $e ) = Net::SNMP->session(
+            -community => $community,
+            -hostname  => $snmp_host,
+            -version   => $version,
+            -timeout   => $timeout,
+            -port      => $port,
+        );
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            return 1;
+        }
+    }
+
+    if ( $s->error ) {
+        print "SNMP Error: ", $s->error, $/;
+        return 1;
+    }
+
+    #set the session size to be bigger
+    $s->max_msg_size(65535);
+    if ( $s->error ) {
+        print "SNMP Error: ", $s->error, $/;
+        return 1;
+    }
+
+    return 0;
+}
+
+# Aggregate mode or specific?
+if ( $mode eq "aggregate" ) {
+    if ( create_snmp_session( @hostnames[0] ) != 0 ) {
+        print "UNKNOWN - " . $s->error . "\n";
+        exit 3;
+    }
+    my @result      = get_vm_state_totals();
+    my $pwr_on      = shift(@result);
+    my $pwr_off     = shift(@result);
+    my $os_on       = shift(@result);
+    my $os_off      = shift(@result);
+    my $provisioned = $os_on + $os_off;
+    my $result_text = "OK";
+    my $result_code = 0;
+
+    # Check thresholds
+    if (   ( $runcrit > 0 && $os_on > $runcrit )
+        || ( $pwrcrit > 0 && $pwr_on > $pwrcrit ) )
+    {
+        $result_text = "CRITICAL";
+        $result_code = 2;
+    }
+    elsif (( $runwarn > 0 && $os_on > $runwarn )
+        || ( $pwrwarn > 0 && $pwr_on > $pwrwarn ) )
+    {
+        $result_text = "WARNING";
+        $result_code = 1;
+    }
+
+    # No warning/critical states, just informational
+    print
+      "$result_text - $pwr_on/$pwr_off pwr on/off, $os_on/$os_off OS running/not running, total $provisioned| "
+      . "powered_on=$pwr_on;$pwrwarn;$pwrcrit;; powered_off=$pwr_off;;;; os_on=$os_on;$runwarn;$runcrit;; os_off=$os_off;;;; provisioned=$provisioned;;;;\n";
+    exit $result_code;
+}
+else {
+    my $state = get_vm_state($vm_name);
+    if ( $state eq "poweredOn" || $state eq "running" ) {
+        print "OK - VM $vm_name is $state | vmstate=1;;;;\n";
+        exit 0;
+    }
+    else {
+        print "CRITICAL - VM $vm_name is $state | vmstate=0;;;;\n";
+        exit 2;
+    }
+}

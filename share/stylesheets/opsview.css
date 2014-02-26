@@ -1,0 +1,131 @@
+/*
+
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This file is part of Opsview
+
+Opsview is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+Opsview is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Opsview; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+*/
+/* This stylesheet holds basics for the entire site */
+/* This will supercede admin.css over time */
+
+body {
+	margin-top: 0;
+	margin-left: 0;
+	margin-right: 0;
+	margin-bottom: 15px;
+	background-color: #FFFFFF;
+	color: #333333;
+	font-size: 8pt;
+	padding-top: 1em;
+	padding-bottom: 1em;
+	padding-left: 0.25em;
+	padding-right: 0.25em;
+}
+
+p {
+	font-family: arial,serif;
+	font-size: 8pt;
+}
+
+/* frontpage is the main view */
+td.frontpage {
+	vertical-align: top;
+}
+
+
+/* For help boxes */
+pre.helpbox {
+        text-align: left;
+        font-size: 8pt;
+        padding-left: 0.5em;
+        padding-right: 0.5em;
+        overflow: auto;
+        border: 1px solid #8cacbb;
+        background-color: #EEEEEE;
+}
+
+
+/* Drag and drop */
+a.draggables {
+	text-decoration: none;
+	color: #000000;
+}
+	
+
+/* Main Opsview footer */
+#opsview_footer {
+	position: fixed;
+	border-top: 1px solid #DDD000;
+	border-bottom: 2px solid #F5F5F5;
+	background-color: #F5F5F5;
+	width: 100%;
+	left: 0;
+	bottom: 0;
+	text-align: left;
+	color: #AAA000;
+	font-size: 10px;
+}
+
+#opsview_footer p {
+	float: left;
+	margin: 0;
+	padding-top: 4px;
+	padding-left: 35px;
+}
+
+#opsview_footer p.right {
+	float: right;
+	padding-right: 35px;
+}
+
+#opsview_footer a:link, #opsview_footer a:visited {
+	color: #888000;
+	text-decoration: none;
+}
+
+#opsview_footer img.lights {
+	background-color: #F5F5F5;
+	vertical-align: top;
+	border: 0;
+}
+
+/* Nagiosgraph */
+
+#nagiosgraph h1 {
+	text-align: left;
+}
+#nagiosgraph h2 {
+	text-align: left;
+	clear: both;
+}
+#nagiosgraph img {
+	float: left;
+	padding-right: 10px;
+	margin-bottom: 2em;
+	margin-left: 15px;
+}
+#nagiosgraph div.graphs, #nagiosgraph div#footer {
+	clear: both;
+}
+#nagiosgraph div.graph_description {
+	margin-top: 0;
+	padding-top: 70px;
+}
+#nagiosgraph br {
+	clear: none;
+}
+

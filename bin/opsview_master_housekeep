@@ -1,0 +1,431 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#	opsview_master_housekeep
+#
+# DESCRIPTION:
+#	Run on opsview master
+#	Invoked via rc.opsview housekeep
+#	Should not cause problems if run too often
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib $Bin, "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+use Log::Log4perl;
+use Carp;
+use Opsview;
+use Opsview::Auditlog;
+use Opsview::Systempreference;
+use Runtime;
+
+# Get start time so we can measure how long it takes to keep house
+my $start_time = time();
+
+sub get_params();
+
+my $rootdir = "/usr/local/nagios";
+
+# Get parameters
+my ( $comparison, $limits ) = get_params();
+
+Log::Log4perl::init_and_watch( "$rootdir/etc/Log4perl.conf", 30 );
+my $logger = Log::Log4perl->get_logger( "opsview_master_housekeep" );
+$logger->info( "Starting nightly housekeeping" );
+
+my $audit_log_retention = Opsview::Systempreference->audit_log_retention;
+$logger->info( "Audit log retention (days): $audit_log_retention" );
+
+$logger->info( "Starting audit log housekeeping" );
+Opsview::Auditlog->delete_old_auditlogs($audit_log_retention);
+
+# Databases to perform delete on.
+my $opsview = Opsview->db_Main;
+my $runtime = Runtime->db_Main;
+
+# These are moved from ndo2db into here, to reduce daemon workload. Fixed cutoff period
+my $one_week_cutoff =
+  $runtime->selectrow_array( "SELECT (NOW() - INTERVAL 7 DAY) FROM DUAL" );
+
+# Entries to these tables are blocked from getting to DB. This will prune to ensure systems don't unnecessarily have data sitting
+my $thirty_day_cutoff =
+  $runtime->selectrow_array( "SELECT (NOW() - INTERVAL 30 DAY) FROM DUAL" );
+
+$logger->info( "Starting Opsview Housekeeping" );
+
+# Delete api session keys after 1 day so that check_opsview_update can calculate
+$logger->info( "Starting api_sessions housekeeping" );
+$opsview->do(
+    "DELETE FROM api_sessions WHERE expires_at < UNIX_TIMESTAMP(NOW()-INTERVAL 1 DAY)"
+);
+
+# also tidy up normal sessions table
+$logger->info( "Starting sessions housekeeping" );
+$opsview->do(
+    "DELETE FROM sessions WHERE expires < UNIX_TIMESTAMP(NOW()-INTERVAL 7 DAY)"
+);
+
+$logger->info( "Starting Runtime Housekeeping" );
+
+# remove old nagios_servicechecks data
+#$runtime->do( "DELETE FROM nagios_servicechecks WHERE start_time <= ?", {}, $data_cutoff );
+db_delete(
+    database       => $runtime,
+    table          => 'nagios_servicechecks',
+    column         => 'start_time',
+    cut_off        => $one_week_cutoff,
+    primary_column => 'servicecheck_id',
+);
+
+# remove old nagios_hostchecks data
+#$runtime->do( DELETE FROM nagios_hostchecks WHERE start_time <= ?", {}, $data_cutoff );
+db_delete(
+    database       => $runtime,
+    table          => 'nagios_hostchecks',
+    column         => 'start_time',
+    cut_off        => $one_week_cutoff,
+    primary_column => 'hostcheck_id',
+);
+
+#$runtime->do (DELETE FROM nagios_conninfo WHERE connect_time  <= ?", {}, $data_cutoff );
+db_delete(
+    database       => $runtime,
+    table          => 'nagios_conninfo',
+    column         => 'connect_time',
+    cut_off        => $one_week_cutoff,
+    primary_column => 'conninfo_id',
+);
+
+#$runtime->do( "DELETE FROM nagios_logentries WHERE logentry_time <= ?",    {}, $thirty_day_cutoff );
+db_delete(
+    database       => $runtime,
+    table          => 'nagios_logentries',
+    column         => 'logentry_time',
+    cut_off        => $thirty_day_cutoff,
+    primary_column => 'logentry_id',
+);
+
+#$runtime->do( "DELETE FROM nagios_timedevents WHERE scheduled_time <= ?",  {}, $thirty_day_cutoff );
+db_delete(
+    database       => $runtime,
+    table          => 'nagios_timedevents',
+    column         => 'scheduled_time',
+    cut_off        => $thirty_day_cutoff,
+    primary_column => 'timedevent_id',
+);
+
+#$runtime->do( "DELETE FROM nagios_systemcommands WHERE start_time <= ?",   {}, $thirty_day_cutoff );
+db_delete(
+    database       => $runtime,
+    table          => 'nagios_systemcommands',
+    column         => 'start_time',
+    cut_off        => $thirty_day_cutoff,
+    primary_column => 'systemcommand_id',
+);
+
+#$runtime->do( "DELETE FROM nagios_externalcommands WHERE entry_time <= ?", {}, $thirty_day_cutoff );
+db_delete(
+    database       => $runtime,
+    table          => 'nagios_externalcommands',
+    column         => 'entry_time',
+    cut_off        => $thirty_day_cutoff,
+    primary_column => 'externalcommand_id',
+);
+
+# Don't do any pruning when audit_log_retention is 0
+if ( $audit_log_retention > 0 ) {
+
+    # Need this stored in variable because otherwise it is a roaming target
+    my $audit_log_cutoff = $runtime->selectrow_array(
+        "SELECT (NOW() - INTERVAL $audit_log_retention DAY) FROM DUAL"
+    );
+
+    #$runtime->do( "DELETE FROM nagios_contactnotificationmethods WHERE start_time <= ?", {}, $audit_log_cutoff );
+    db_delete(
+        database       => $runtime,
+        table          => 'nagios_contactnotificationmethods',
+        column         => 'start_time',
+        cut_off        => $audit_log_cutoff,
+        primary_column => 'contactnotificationmethod_id',
+    );
+
+    # Must be after contactnotificationmethods due to foreign keys
+    #$runtime->do( "DELETE FROM nagios_contactnotifications WHERE start_time <= ?", {}, $audit_log_cutoff );
+    db_delete(
+        database       => $runtime,
+        table          => 'nagios_contactnotifications',
+        column         => 'start_time',
+        cut_off        => $audit_log_cutoff,
+        primary_column => 'contactnotification_id',
+    );
+
+    #$runtime->do( "DELETE FROM nagios_notifications WHERE start_time <= ?", {}, $audit_log_cutoff );
+    db_delete(
+        database       => $runtime,
+        table          => 'nagios_notifications',
+        column         => 'start_time',
+        cut_off        => $audit_log_cutoff,
+        primary_column => 'notification_id',
+    );
+
+    #$runtime->do( "DELETE FROM nagios_commenthistory WHERE entry_time <= ?",   {}, $audit_log_cutoff );
+    db_delete(
+        database       => $runtime,
+        table          => 'nagios_commenthistory',
+        column         => 'entry_time',
+        cut_off        => $audit_log_cutoff,
+        primary_column => 'commenthistory_id',
+    );
+
+    #$runtime->do( "DELETE FROM nagios_acknowledgements WHERE entry_time <= ?", {}, $audit_log_cutoff );
+    db_delete(
+        database       => $runtime,
+        table          => 'nagios_acknowledgements',
+        column         => 'entry_time',
+        cut_off        => $audit_log_cutoff,
+        primary_column => 'acknowledgement_id',
+    );
+
+    #$runtime->do( "DELETE FROM nagios_flappinghistory WHERE event_time <= ?",  {}, $audit_log_cutoff );
+    db_delete(
+        database       => $runtime,
+        table          => 'nagios_flappinghistory',
+        column         => 'event_time',
+        cut_off        => $audit_log_cutoff,
+        primary_column => 'flappinghistory_id',
+    );
+
+    # Need to the != because this field defaults to this value when downtime not completed
+    #$runtime->do( "DELETE FROM nagios_downtimehistory WHERE actual_end_time != '0000-00-00 00:00:00' and actual_end_time <= ?", {}, $audit_log_cutoff );
+    db_delete(
+        database       => $runtime,
+        table          => 'nagios_downtimehistory',
+        column         => 'actual_end_time',
+        cut_off        => $audit_log_cutoff,
+        primary_column => 'downtimehistory_id',
+    );
+
+    #$runtime->do( "DELETE FROM nagios_eventhandlers WHERE start_time <= ?",{}, $audit_log_cutoff );
+    db_delete(
+        database       => $runtime,
+        table          => 'nagios_eventhandlers',
+        column         => 'start_time',
+        cut_off        => $audit_log_cutoff,
+        primary_column => 'eventhandler_id',
+    );
+
+    #$runtime->do( "DELETE FROM nagios_statehistory WHERE state_time <= ?", {}, $audit_log_cutoff );
+    #
+    db_delete(
+        database       => $runtime,
+        table          => 'nagios_statehistory',
+        column         => 'state_time',
+        cut_off        => $audit_log_cutoff,
+        primary_column => 'statehistory_id',
+    );
+
+    # We leave nagios_processevents because this is very small
+
+}
+
+# Having successfully completed, record both:
+# - the current time
+# - how long housekeeping took
+# in the metadata table
+update_or_create( 'last_housekeeping_time', 'UNIX_TIMESTAMP(NOW())' );
+
+my $end_time = time();
+my $duration = $end_time - $start_time;
+update_or_create( 'housekeeping_duration', $duration );
+
+$logger->info( "Housekeeping completed" );
+
+# With the priority set to 'low' the data removal will run at a
+# much lower priority than a plain DELETE otherwise some queries
+# can be locked out of a table for far too long, causing other problems
+# A straight DELETE that takes 60 seconds will take closer to 240 seconds
+# this way, but its much lighter on the system
+sub db_delete {
+    my (%arg_for) = @_;
+
+    $arg_for{comparison} ||= $comparison;
+
+    # Set priority if defined
+    if ( defined( $arg_for{priority} ) && $arg_for{priority} eq "low" ) {
+        $arg_for{priority} = 'LOW_PRIORITY';
+    }
+    else {
+        $arg_for{priority} = '';
+    }
+
+    # Limit the deletion if specified in params file.
+    if ( defined($limits) ) {
+        $arg_for{limit} ||= 'LIMIT ' . $limits;
+    }
+    else {
+        $arg_for{limit} ||= '';
+    }
+
+    for my $required (qw/ database table column cut_off /) {
+        croak "Argument '$required' missing" if ( !$arg_for{$required} );
+    }
+
+    $logger->info( "- $arg_for{table}" );
+
+    # perform deletes in batches of 1000 to prevent table locking and
+    # preventing queuing up other (more important) queries
+    my $count = 1;
+
+    # if an primary key column has been provided use that instead
+    # as the search can be quicker when using the ID column instead
+    # of the datetime colum
+    if ( defined( $arg_for{primary_column} ) ) {
+        my $sql = "
+            SELECT MAX( $arg_for{ primary_column } )
+            FROM $arg_for{table}
+            WHERE $arg_for{column} $arg_for{comparison} '$arg_for{cut_off}'
+        ";
+        $logger->debug( "Fetching primary key $sql" );
+        my $primary_column_value =
+          $arg_for{database}->selectcol_arrayref($sql)->[0];
+        if ($primary_column_value) {
+            $sql = "
+                DELETE $arg_for{priority}
+                FROM $arg_for{table}
+                WHERE $arg_for{primary_column} $arg_for{comparison} '$primary_column_value'
+                $arg_for{limit}
+            ";
+            $logger->debug( "Running (primary key): $sql" );
+            my $total = 0;
+            while ( $count != 0 ) {
+                $count = $arg_for{database}->do($sql);
+                $total += $count;
+            }
+            $logger->info( "- $arg_for{table}: removed $total rows" );
+        }
+    }
+    else {
+        my $sql = "
+            DELETE $arg_for{priority}
+            FROM $arg_for{table}
+            WHERE $arg_for{column} $arg_for{comparison} '$arg_for{cut_off}'
+            $arg_for{limit}
+        ";
+        $logger->debug( "Running (no primary key): $sql" );
+        my $total = 0;
+        while ( $count != 0 ) {
+            $count = $arg_for{database}->do($sql);
+            $total += $count;
+        }
+        $logger->info( "Removed $total rows" );
+    }
+}
+
+sub get_params() {
+    my $comparison;
+    my $limits;
+
+    #Path to parameters file
+    my $file = "$rootdir/etc/housekeeping.conf";
+
+    # Read the file and put lines into an array, close file once done
+    if ( open( INFO, '<', $file ) ) {
+
+        my @lines = <INFO>;
+        close(INFO);
+
+        # Loopiing through each line
+        foreach my $line (@lines) {
+            chomp($line);
+
+            if ($line) {
+                if ( substr( $line, 0, 6 ) eq "limits" ) {
+
+                    # parameter limits found, now obtain the data part
+                    $limits = substr(
+                        $line,
+                        rindex( $line, '=' ) + 1,
+                        ( length($line) - rindex( $line, '=' ) )
+                    );
+
+                    # Remove white space from start/end of string
+                    trim( \$limits );
+                }
+                elsif ( substr( $line, 0, 10 ) eq "comparison" ) {
+
+                    # parameter limits found, now obtain the data part
+                    $comparison = substr(
+                        $line,
+                        index( $line, '=' ) + 1,
+                        ( length($line) - index( $line, '=' ) )
+                    );
+
+                    # Remove white space from start/end of string
+                    trim( \$comparison );
+                }
+            }
+        }
+    }
+
+    if ( !defined($comparison) ) {
+        $comparison = '<=';
+    }
+
+    return ( $comparison, $limits );
+}
+
+sub trim($) {
+    my $trimmed_str = shift;
+    $$trimmed_str =~ s/^\s+//;
+    $$trimmed_str =~ s/\s+$//;
+}
+
+sub update_or_create {
+    my ( $key, $value ) = @_;
+    my $entry = $opsview->selectrow_array(
+        qq{
+            SELECT value
+            FROM metadata
+            WHERE name = '$key'
+        }
+    );
+
+    if ( defined $entry ) {
+        $opsview->do(
+            qq{
+                UPDATE metadata
+                SET value = $value
+                WHERE name = '$key'
+            }
+        );
+    }
+    else {
+        $opsview->do(
+            qq{
+                INSERT INTO metadata (name,value)
+                VALUES ('$key', $value);
+            }
+        );
+    }
+}

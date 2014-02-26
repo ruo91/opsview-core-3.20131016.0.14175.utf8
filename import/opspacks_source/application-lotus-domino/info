@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.application_lotus_domino
+VERSION=1.0
+ALIAS=Application - Lotus Domino
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

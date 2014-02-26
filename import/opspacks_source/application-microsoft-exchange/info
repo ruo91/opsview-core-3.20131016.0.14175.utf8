@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.application_microsoft_exchange
+VERSION=1.0
+ALIAS=Application - Microsoft Exchange
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

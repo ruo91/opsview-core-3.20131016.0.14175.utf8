@@ -1,0 +1,70 @@
+#!/usr/bin/env perl
+#
+#
+# SYNTAX:
+# 	reset_uncommittted
+#
+# DESCRIPTION:
+# 	Sets the flag for uncommitted to be 0. This means there was
+# 	a succcessful configuration loaded.
+# 	This cannot be in nagconfgen, because need to confirm a good
+# 	nagios configuration in rc.opsview
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+use Opsview;
+use Opsview::Host;
+use Opsview::Schema;
+
+# Reset uncommitted flag
+my $schema     = Opsview::Schema->my_connect;
+my @resultsets = qw(
+  Hosts Contacts
+  Servicechecks
+  Hosttemplates
+  Keywords
+  Hostgroups Servicegroups
+  Roles Hostcheckcommands
+  Notificationmethods
+  Timeperiods
+  Notificationprofiles
+  Sharednotificationprofiles
+  Attributes
+);
+
+foreach my $rs (@resultsets) {
+    $schema->resultset($rs)->search( { uncommitted => 1 } )
+      ->update( { uncommitted => 0 } );
+}
+
+my $admin_classes = Opsview->admin_classes;
+foreach $_ (@$admin_classes) {
+    my $class = "Opsview::$_";
+    my $it = $class->search( uncommitted => 1 );
+    while ( my $o = $it->next ) {
+        $o->uncommitted(0);
+        $o->update;
+    }
+}
+$schema->resultset("Metadata")->find("uncommitted")->update( { value => 0 } );

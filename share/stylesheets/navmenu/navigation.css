@@ -1,0 +1,929 @@
+/*
+Item Name : CSS3 Mega Drop Down Menu
+Author URI : http://codecanyon.net/user/Pixelworkshop/
+Item URI : http://codecanyon.net/item/css3-mega-drop-down-menu/126387
+Version : 4.2
+*/
+
+/*
+
+TABLE OF CONTENTS
+
+01 MENU BAR
+02 DROP DOWN MENU
+03 CONTENT STYLING
+04 CONTACT FORM
+05 LIGHT THEME
+06 DARK THEME
+07 COLORS
+08 TOUCH SCREEN DEVICES
+
+*/
+
+
+
+/*  _______________________________________
+
+	01 MENU BAR
+    _______________________________________  */
+
+
+
+/* IMPORTANT NOTICE
+   If you're using the whole width menu, you should use at least a reset like :
+   * {margin:0; padding:0;}
+   Otherwise, some browsers may add margins and won't place the menu properly.
+   It generally helps to include a CSS reset like :
+   http://meyerweb.com/eric/tools/css/reset/
+   Keep in mind that a reset must be placed first, before any other CSS markup.
+*/
+
+#opsview_system_messages {
+	font-size: 8pt;
+    font-family: Verdana, Arial, Helvetica, sans-serif;
+    height: 12px;
+    position: fixed;
+    color: black;
+    text-align: center;
+    top: 0;
+    width: 100%;
+/* We set this to be higher than all other elements, as it is for important messages */
+    z-index: 20000;
+}
+
+#opsview_system_messages a:link, a:visited {
+    color: black;
+    text-decoration: none;
+}
+
+#opsview_system_messages a:hover {
+    color: black;
+    text-decoration: underline;
+}
+
+#opsview_system_messages.opsview_error {
+    background: #FF5555;
+}
+
+#opsview_system_messages.opsview_warning {
+    background: #FFDB58;
+}
+
+#opsview_system_messages.opsview_notification {
+    background: #FFF8DC;
+}
+
+.opsview_wrapper_menu {
+	width: 980px;
+	margin:0 auto;
+	display:block;
+	position: relative;
+}
+
+.opsview_wrapper_menu .opsview_menu {
+    list-style:none;
+    width:940px;
+    margin:0 auto;
+    height:43px;
+    padding:0 20px 0 20px;
+    -webkit-border-radius: 10px;
+    -moz-border-radius: 10px;
+    border-radius: 10px;
+}
+
+.opsview_wrapper_menu_full {
+    margin:0;
+    position: relative;
+}
+
+.opsview_wrapper_menu_full .opsview_menu {
+    width:100%;
+    padding:0;
+    height:43px;
+}
+
+.opsview_wrapper_menu_full .opsview_menu_whole_width {
+    list-style:none;
+    width:940px;
+    margin:0 auto;
+    height:43px;
+    padding:0;
+}
+
+.opsview_menu li {
+	float:left;
+	text-align:center;
+	position:relative;
+	margin-right:20px;
+	margin-top:6px;
+	border:none;
+}
+.opsview_menu .opsview_fullwidth {
+	position: static !important;
+}
+.opsview_menu li:hover {
+	border-bottom:none;
+	margin-right:19px;
+    -webkit-border-radius: 5px 5px 0 0;
+	-moz-border-radius: 5px 5px 0 0;
+    border-radius: 5px 5px 0 0;
+}
+.opsview_menu li.opsview_nodrop:hover {
+	padding: 4px 10px 4px 9px;
+    -webkit-border-radius: 5px;
+	-moz-border-radius: 5px;
+    border-radius: 5px;
+}
+.opsview_menu li.opsview_nodrop:hover a {
+	padding: 0;
+}
+.opsview_menu li a {
+	color: #EEEEEE;
+	outline:0;
+	padding: 5px 10px 3px 10px;
+	text-decoration:none;
+	display:block;
+}
+.opsview_menu li:hover a {
+	text-shadow: none;
+	position:relative;
+	z-index:11;
+	padding: 4px 9px 4px 9px;
+}
+.opsview_menu li:hover div a {
+	display:inline;
+}
+.opsview_menu li .opsview_drop,
+.opsview_menu li:hover .opsview_drop {
+	padding-right:27px;
+}
+
+/* Right aligned menu item */
+
+.opsview_menu li.opsview_right {
+	float:right;
+	right:0;
+	margin-right:0;
+}
+.opsview_menu li.opsview_right:hover {
+	margin-right:-1px;
+}
+
+
+
+/*  _______________________________________
+
+	02 DROP DOWN MENU
+    _______________________________________  */
+
+
+
+/* Left & right aligned common styles */
+
+.opsview_menu .opsview_dropdown_1column,
+.opsview_menu .opsview_dropdown_2columns,
+.opsview_menu .opsview_dropdown_3columns,
+.opsview_menu .opsview_dropdown_4columns,
+.opsview_menu .opsview_dropdown_5columns,
+.opsview_menu .opsview_dropdown_fullwidth {
+	margin:4px auto;
+	left:-999em;
+	position:absolute;
+	padding:10px;
+	text-align:left;
+	-webkit-border-radius: 0 5px 5px 5px;
+	-moz-border-radius: 0 5px 5px 5px;
+	border-radius: 0 5px 5px 5px;
+}
+
+/* Drop Downs Sizes */
+
+.opsview_menu .opsview_dropdown_1column {width: 145px;}
+.opsview_menu .opsview_dropdown_2columns {width: 300px;}
+.opsview_menu .opsview_dropdown_3columns {width: 455px;}
+.opsview_menu .opsview_dropdown_4columns {width: 610px;}
+.opsview_menu .opsview_dropdown_5columns {width: 765px;}
+.opsview_menu .opsview_dropdown_fullwidth {
+	width: 920px;
+    -webkit-border-radius:5px;
+	-moz-border-radius:5px;
+    border-radius:5px;
+}
+.opsview_menu li .opsview_first_fullwidth {
+    -webkit-border-radius: 0 5px 5px 5px;
+	-moz-border-radius: 0 5px 5px 5px;
+    border-radius: 0 5px 5px 5px;
+}
+
+/* Showing Drop Down on Mouse Hover - Left aligned */
+
+.opsview_menu li:hover .opsview_dropdown_1column,
+.opsview_menu li:hover .opsview_dropdown_fullwidth {
+	left:21px;
+	top:20px;
+	display: block;
+}
+
+/* Showing Drop Down on Mouse Hover - Right aligned */
+
+.opsview_menu li .opsview_align_right {
+    -webkit-border-radius: 5px 0 5px 5px;
+	-moz-border-radius: 5px 0 5px 5px;
+    border-radius: 5px 0 5px 5px;
+}
+.opsview_menu li:hover .opsview_align_right {
+	left:auto;
+	right:-1px;
+	top:20px;
+}
+.opsview_menu li.opsview_right:hover .opsview_dropdown_fullwidth {
+	right:18px;
+	top:20px;
+}
+
+
+/* Columns Sizes */
+
+.opsview_menu .opsview_col_1,
+.opsview_menu .opsview_col_2,
+.opsview_menu .opsview_col_3,
+.opsview_menu .opsview_col_4,
+.opsview_menu .opsview_col_5,
+.opsview_menu .opsview_col_6 {
+	float: left;
+	margin-left: 10px;
+}
+.opsview_menu .opsview_col_1 {width:145px;}
+.opsview_menu .opsview_col_2 {width:300px;}
+.opsview_menu .opsview_col_3 {width:455px;}
+.opsview_menu .opsview_col_4 {width:610px;}
+.opsview_menu .opsview_col_5 {width:765px;}
+.opsview_menu .opsview_col_6 {width:920px;}
+
+/* IMPORTANT */
+
+/* Use the firstcolumn class for the items that stick to the left edge of the dropdown */
+.opsview_menu .opsview_firstcolumn {
+	margin-left: 0; /* Clearing margin & left */
+	clear: left;
+}
+
+
+
+/*  _______________________________________
+
+	03 CONTENT STYLING
+    _______________________________________  */
+
+
+
+.opsview_menu p,
+.opsview_menu ul,
+.opsview_menu li,
+.opsview_menu h2,
+.opsview_menu h3 {
+	font-size:13px;
+	font-family:Verdana, Arial, Helvetica, sans-serif;
+	line-height:15px;
+	text-align:left;
+    word-wrap: break-word;
+}
+.opsview_menu p {
+	font-size:12px;
+	line-height:18px;
+	margin:0;
+	margin-bottom:10px;
+}
+.opsview_menu .opsview_strong {
+	font-weight:bold;
+}
+.opsview_menu .opsview_italic {
+	font-style:italic;
+}
+.opsview_menu h2,
+.opsview_menu h3 {
+	margin-top:7px;
+}
+.opsview_menu h2 {
+	font-weight:400;
+	font-size:21px;
+	margin-bottom:18px;
+	padding-bottom:11px;
+}
+.opsview_menu h3 {
+	font-weight:bold;
+	font-size:12px;
+	margin-bottom:14px;
+	padding-bottom:7px;
+}
+.opsview_menu li:hover div a {
+	text-decoration:none;
+	text-shadow:none;
+	border:none;
+	padding:0;
+}
+.opsview_menu .opsview_pusher { /* Use this pucher if you want to give more vertical spacing between your rows of content */
+	margin-top:18px;
+}
+
+/* Images styles */
+
+.opsview_menu .opsview_imgshadow_dark,
+.opsview_menu .opsview_imgshadow_light {
+	padding:4px;
+	margin-top:5px;
+}
+.opsview_menu .opsview_img_left { /* Image sticks to the left */
+	width:auto;
+	float:left;
+	margin:2px 15px 5px 0;
+}
+.opsview_menu .opsview_img_right { /* Image sticks to the right */
+	width:auto;
+	float:right;
+	margin:2px 0 5px 15px;
+}
+
+/* Box styles */
+
+.opsview_menu li .opsview_black_box,
+.opsview_menu li .opsview_dark_grey_box {
+	color: #eeeeee;
+	padding:4px 6px 4px 6px;
+    -webkit-border-radius: 5px;
+	-moz-border-radius: 5px;
+    border-radius: 5px;
+}
+
+/* Standard lists styles */
+
+.opsview_menu li ul {
+	list-style:none;
+	padding:0;
+	margin:0 0 12px 0;
+}
+.opsview_menu li ul li {
+	font-size:12px;
+	line-height:24px;
+	position:relative;
+	padding:0;
+	margin:0;
+	float:left;
+	text-align:left;
+	width:145px;
+}
+.opsview_menu li ul li a {
+	padding:0;
+}
+.opsview_menu li ul li:hover {
+	background:none;
+	border:none;
+	padding:0;
+	margin:0;
+}
+
+/* Greybox lists styles */
+
+.opsview_menu li .opsview_greybox li {
+	margin:0 0 4px 0;
+	padding:4px 6px 4px 6px;
+	width:131px;
+    -webkit-border-radius: 5px;
+	-moz-border-radius: 5px;
+    border-radius: 5px;
+}
+.opsview_menu li .opsview_greybox li:hover {
+	padding:4px 6px 4px 6px;
+	margin:0 0 4px 0;
+}
+
+/* Other lists styles */
+
+.opsview_menu li .opsview_plus li {
+	margin:0 0 4px 0;
+	padding:0 0 0 21px;
+	width:109px;
+}
+.opsview_menu li .opsview_plus li:hover {
+	padding:0 0 0 21px;
+	margin:0 0 4px 0;
+}
+
+/* Social Icons */
+
+.opsview_menu li ul.opsview_social {
+	list-style:none;
+	margin:0;
+	padding:0;
+}
+.opsview_menu li ul.opsview_social li {
+	padding-top:5px;
+	margin:0 12px 12px 0;
+	float:left;
+	position:relative;
+	display:inline;
+	width:32px;
+}
+.opsview_menu li ul.opsview_social li img {
+	border:none;
+}
+.opsview_menu li ul.opsview_social li:hover {
+	padding-top:5px;
+	margin:-1px 12px 12px 0;
+}
+.opsview_menu li ul.opsview_social li span {
+	display:none;
+}
+
+/*  _______________________________________
+
+	05 LIGHT THEME
+    _______________________________________  */
+
+
+
+.opsview_menu_light_theme ul li:hover,
+.opsview_menu_light_theme ul li.opsview_nodrop:hover {
+	background:#dedede;
+	border:1px solid #444444;
+}
+.opsview_menu_light_theme ul li:hover a {
+	color:#161616;
+	border-bottom:1px solid #dedede;
+}
+.opsview_menu_light_theme ul .opsview_dropdown_1column,
+.opsview_menu_light_theme ul .opsview_dropdown_2columns,
+.opsview_menu_light_theme ul .opsview_dropdown_3columns,
+.opsview_menu_light_theme ul .opsview_dropdown_4columns,
+.opsview_menu_light_theme ul .opsview_dropdown_5columns,
+.opsview_menu_light_theme ul .opsview_dropdown_fullwidth {
+	background:#dedede;
+	border:1px solid #444444;
+}
+.opsview_menu_light_theme ul h2,
+.opsview_menu_light_theme ul h3 {
+	border-bottom:1px solid #888888;
+}
+.opsview_menu_light_theme ul .opsview_imgshadow_dark { /* Better style on dark background */
+	background:#FFFFFF;
+	border:1px solid #333333;
+	-moz-box-shadow:0 0 5px #000000;
+	-webkit-box-shadow:0 0 5px #000000;
+	box-shadow:0 0 5px #000000;
+}
+.opsview_menu_light_theme ul .opsview_imgshadow_light { /* Better style on light background */
+	background:#FFFFFF;
+	border:1px solid #777777;
+	-webkit-box-shadow:0 0 5px #666666;
+	-moz-box-shadow:0 0 5px #666666;
+	box-shadow:0 0 5px #666666;
+}
+.opsview_menu_light_theme ul li .opsview_black_box {
+	color:#ffffff;
+	background-color:#333333;
+	-webkit-box-shadow:inset 0 0 3px #000000;
+	-moz-box-shadow:inset 0 0 3px #000000;
+	box-shadow:inset 0 0 3px #000000;
+}
+.opsview_menu_light_theme ul li .opsview_dark_grey_box {
+	color:#ffffff;
+	background-color:#555555;
+	-webkit-box-shadow:inset 0 0 3px #111111;
+	-moz-box-shadow:inset 0 0 3px #111111;
+	box-shadow:inset 0 0 3px #111111;
+}
+.opsview_menu_light_theme ul li .opsview_greybox li {
+	background:#F4F4F4;
+	border:1px solid #bbbbbb;
+}
+.opsview_menu_light_theme ul li .opsview_greybox li:hover {
+	background:#ffffff;
+	border:1px solid #aaaaaa;
+}
+
+.opsview_menu_light_theme ul .opsview_contact_form input:focus,
+.opsview_menu_light_theme ul .opsview_contact_form input:hover {
+	box-shadow: rgba(0,0,0, 0.7) 0 0 3px;
+	-moz-box-shadow: rgba(0,0,0, 0.7) 0 0 3px;
+	-webkit-box-shadow: rgba(0,0,0, 0.7) 0 0 3px;
+	border:1px solid #333333;
+}
+.opsview_menu_light_theme ul .opsview_contact_form input {
+	color: #FFFFFF;
+	background-color:#222222;
+	border:1px solid #0A0A0A;
+}
+.opsview_menu_light_theme ul .opsview_contact_form input.opsview_button {
+	background-color:#1E1E1E;
+	border:1px solid #0A0A0A;
+	color:#cccccc;
+}
+.opsview_menu_light_theme ul .opsview_contact_form input.opsview_button:hover {
+	color:#eeeeee;
+	background-color:#222222;
+	border:1px solid #000000;
+}
+.opsview_menu_light_theme .opsview_menu li:hover div a {
+	border-bottom:none;
+}
+.opsview_menu_light_theme .opsview_menu li.opsview_noactive a {
+	color:#eeeeee;
+}
+
+
+/*  _______________________________________
+
+	08 TOUCH SCREEN DEVICES
+    _______________________________________  */
+
+
+
+.opsview_menu li.opsview_noactive,
+.opsview_menu li.opsview_noactive:hover {
+	background:none;
+	border:none;
+	margin-right:20px;
+}
+.opsview_menu li.opsview_noactive a {
+	padding: 5px 27px 3px 10px;
+	border-bottom:none;
+}
+.opsview_menu li.opsview_noactive.opsview_right {
+	margin-right:0;
+}
+
+/*
+ *  OPSVIEW
+ */
+
+body {
+    margin: 0;
+    padding: 0;
+}
+
+.opsview_navigation_wrapper {
+	width:100%;
+    min-width:876px;
+	height:76px;
+	background:#FFF;
+    position: fixed;
+    top: 0px;
+/* This needs to be higher than ExtJS stuff, but no higher, otherwise windows appear below the navigation */
+    z-index: 19001;
+    font-size: 8pt;
+}
+#opsview_navigation_logo_row {
+	width:100%;
+	height:50px;
+	background: #3E2155;
+    clear:both;
+}
+
+#opsview_search_form-wrapper {
+    height: 35px;
+    width: 180px;
+    margin: 7px 20px 0 0;
+    float: right;
+    position: relative;
+}
+
+#opsview_search-form {
+    position: relative;
+    background: url("../../images/search-bk.png") no-repeat scroll center center transparent;
+    display: inline;
+    float: right;
+    height: 35px;
+    line-height: 35px;
+    text-align: left;
+    font-size: 14px;
+    position: relative;
+    width: 171px;
+    margin: 0;
+    padding: 0;
+}
+
+#opsview_search-form div {
+    margin: 0;
+    padding: 0;
+}
+#opsview_search-block-form {
+    float: right;
+    height: 35px;
+    line-height: 35px;
+    position: relative;
+    width: 171px;
+}
+#opsview_form-item {
+    display: inline;
+}
+#opsview_sidenav_search_autocomplete {
+    background: none repeat scroll 0 0 transparent;
+    border: medium none;
+    margin: 0 0 0 20px;
+    padding: 0;
+    font-size: 14px;
+    font-family: Verdana,Arial,Helvetica,sans-serif;
+}
+
+#opsview_edit-submit {
+    background: none repeat scroll 0 0 #FFFFFF;
+    border: medium none;
+    margin: 0;
+    padding: 0;
+    position: absolute;
+    right: 10px;
+    top: 8px;
+    border-radius: 5px 5px 5px 5px;
+    color: #FFFFFF;
+    cursor: pointer;
+    font-size: 1.1em;
+}
+
+
+.opsview_menu_opsview {
+	background-color: #F3F2F2;
+	background-image: -webkit-gradient(linear, left top, left bottom, from(#EAEAEA), to(#C1C0C0));
+	background: -webkit-linear-gradient(top, #EAEAEA, #C1C0C0);
+	background: -moz-linear-gradient(top, #EAEAEA, #C1C0C0);
+	background: -o-linear-gradient(top, #EAEAEA, #C1C0C0);
+	background: -ms-linear-gradient(top, #EAEAEA, #C1C0C0);
+	background: linear-gradient(top, #EAEAEA, #C1C0C0);
+    filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#EAEAEA', endColorstr='#C1C0C0');
+}
+.opsview_wrapper_menu .opsview_menu_opsview {
+    -webkit-border-radius: 0px;
+    -moz-border-radius: 0px;
+    border-radius: 0px;
+    border: none;
+}
+.opsview_wrapper_menu_full .opsview_menu_opsview {
+	border-bottom: 1px solid #444;
+}
+.opsview_menu_light_theme .opsview_menu_opsview li:hover div a {color:#444;}
+.opsview_menu_light_theme .opsview_menu_opsview li:hover div a:hover {color:#9e90aa;}
+.opsview_menu_light_theme .opsview_menu_opsview li ul li a:hover {color:#777;}
+
+.opsview_navigation_wrapper .opsview_wrapper_menu {
+	background-color: #F3F2F2;
+	background-image: -webkit-gradient(linear, left top, left bottom, from(#EAEAEA), to(#C1C0C0));
+	background: -webkit-linear-gradient(top, #EAEAEA, #C1C0C0);
+	background: -moz-linear-gradient(top, #EAEAEA, #C1C0C0);
+	background: -o-linear-gradient(top, #EAEAEA, #C1C0C0);
+	background: -ms-linear-gradient(top, #EAEAEA, #C1C0C0);
+	background: linear-gradient(top, #EAEAEA, #C1C0C0);
+    width: 100%;
+    height: 25px;
+    margin: 1px 0 0;
+}
+
+.opsview_navigation_wrapper .opsview_wrapper_menu .opsview_menu_opsview {
+    width:auto;
+    margin: 0;
+}
+
+.opsview_navigation_wrapper .opsview_menu .opsview_dropdown_fullwidth {
+    width: 940px;
+}
+
+.opsview_navigation_wrapper .opsview_menu .opsview_dropdown_fullwidth.opsview_notpadded {
+    padding: 0;
+}
+
+.opsview_navigation_wrapper .opsview_menu .opsview_dropdown_fullwidth_padded {
+    padding: 10px;
+    position: relative;
+    width: 940px;
+}
+
+.opsview_navigation_wrapper .opsview_menu li.opsview_right:hover {
+	margin-right:-2px;
+}
+
+.opsview_navigation_wrapper .opsview_menu li.opsview_nodrop:hover {
+	margin-right:36px;
+}
+
+.opsview_navigation_wrapper .opsview_menu .opsview_dropdown_autocolumn {width: auto;}
+
+.opsview_navigation_wrapper .opsview_menu .opsview_col_auto {
+	float: left;
+	margin-left: 20px;
+}
+.opsview_navigation_wrapper .opsview_menu .opsview_col_auto {width:auto;}
+
+.opsview_navigation_wrapper hr.opsview_divider {
+	border-style: solid none none;
+	border-width: 1px 0 0;
+	border-color: #888888;
+}
+
+.opsview_navigation_wrapper .opsview_opsview_lights_box {
+	background-color:#9ed515;
+	text-shadow:none;
+    /*
+	text-shadow:1px 1px 1px #000000;
+    */
+	-webkit-box-shadow:inset 0 0 3px #111111;
+	-moz-box-shadow:inset 0 0 3px #111111;
+	box-shadow:inset 0 0 3px #111111;
+
+	padding:4px 6px 4px 6px;
+    -webkit-border-radius: 5px;
+	-moz-border-radius: 5px;
+    border-radius: 5px;
+}
+
+.opsview_navigation_wrapper .opsview_menu_light_theme .opsview_menu_opsview .opsview_opsview_lights_box a,
+.opsview_navigation_wrapper .opsview_menu_light_theme .opsview_menu_opsview .opsview_opsview_lights_box a:hover,
+.opsview_navigation_wrapper .opsview_menu_light_theme .opsview_menu_opsview .opsview_opsview_lights_box li:hover div a,
+.opsview_navigation_wrapper .opsview_menu_light_theme .opsview_menu_opsview .opsview_opsview_lights_box li:hover div a:hover {
+	color:#313030;
+}
+
+
+.opsview_navigation_wrapper .opsview_align_center {
+	text-align: center;
+}
+
+#opsview_account_wrapper {
+    float: right;
+    padding: 0;
+    display: inline;
+    height: 25px;
+    line-height: 25px;
+    position: relative;
+    margin: 12px 0 0 0;
+    width: 50px; /* If this is too long, it clashes with the CTA buttons */
+}
+
+#opsview_account_wrapper_menu {
+	background: #3E2155;
+    width: 100%;
+    height: 25px;
+    margin: 0;
+/* See navigation_wrapper. Needs to be same level */
+    z-index: 19001;
+    /* Need nowrap, so that longer usernames and "Not logged in" will extend to left */
+    white-space: nowrap;
+}
+/* Need this so that text under will wrap */
+.opsview_statusline {
+    white-space: normal;
+}
+
+#opsview_account_wrapper_menu .opsview_menu_opsview {
+	background: #3E2155;
+    filter: none;
+}
+
+#opsview_account_wrapper_menu .opsview_menu_opsview {
+	border: 1px solid #3E2155;
+	border-top: 1px solid #3E2155;
+
+/*
+    width: 100%;
+*/
+    -webkit-border-radius: 0px;
+    -moz-border-radius: 0px;
+    border-radius: 0px;
+}
+
+.opsview_x-box-inner .opsview_navigation_wrapper .opsview_marketing_menubox .opsview_firstcolumn.opsview_col_1 {
+    width:70px;
+    padding: 0 10px 0 10px;
+}
+
+.opsview_navigation_wrapper .opsview_marketing_menubox .opsview_firstcolumn.opsview_col_1 {
+    width:70px;
+    padding: 0 10px 0 10px;
+}
+
+.opsview_navigation_wrapper .opsview_marketing_menubox {
+    color: #333333;
+    background-color: #adacac;
+    border-top: thin dotted #838383;
+	text-align:left;
+    overflow:hidden;
+}
+
+.opsview_navigation_wrapper .opsview_menu .opsview_dropdown_fullwidth_padded.opsview_marketing_menubox {
+    padding: 10px 0 0 0;
+    width: 100%;
+}
+
+.opsview_menu li .opsview_marketing_menubox {
+    -webkit-border-radius: 0px 0px 5px 5px;
+    -moz-border-radius: 0px 0px 5px 5px;
+    border-radius: 0px 0px 5px 5px;
+}
+
+.opsview_menu li .opsview_marketing_menubox a img {
+    border: none;
+}
+
+.opsview_navigation_wrapper .opsview_marketing_menubox h3 {
+    border: none;
+    margin-bottom: 0;
+    padding-bottom: 5px;
+}
+
+.opsview_wrapper_menu .opsview_menu {
+    height: 25px;
+}
+
+.opsview_menu li {
+    margin-top: 2px;
+}
+
+.opsview_menu li a {
+	color: #020101;
+	outline:0;
+	padding: 2px 10px 1px 10px;
+	text-decoration:none;
+	display:block;
+	text-shadow: none;
+}
+.opsview_menu li:hover a {
+	text-shadow: none;
+	position:relative;
+	padding: 1px 9px 5px 9px;
+}
+.opsview_menu li.opsview_right:hover a.opsview_drop {
+	text-shadow: none;
+	position:relative;
+	padding: 1px 28px 5px 8px;
+}
+
+#opsview_account_wrapper_menu .opsview_menu li.opsview_right:hover a.opsview_drop {
+	color: #020101;
+	text-shadow: none;
+	position:relative;
+	padding: 1px 28px 8px 8px;
+	background:url("img/arrow_down1.png") no-repeat right 7px;
+}
+
+#opsview_account_wrapper_menu .opsview_menu li.opsview_right a.opsview_drop {
+	color: #EEEEEE;
+	outline:0;
+	padding: 1px 28px 8px 8px;
+	text-decoration:none;
+	display:block;
+	text-shadow: none;
+	background:url("img/arrow_down2.png") no-repeat right 8px;
+}
+.opsview_menu li.opsview_right:hover a.opsview_drop.opsview_drop_right,
+.opsview_menu li.opsview_right a.opsview_drop.opsview_drop_right {
+    padding: 0;
+}
+
+
+.opsview_menu li.opsview_nodrop:hover {
+	padding: 1px 10px 0px 9px;
+}
+
+.opsview_menu .opsview_dropdown_1column,
+.opsview_menu .opsview_dropdown_fullwidth {
+	-moz-box-shadow:6px 8px 6px -5px #333333;
+	-webkit-box-shadow:6px 8px 6px -5px #333333;
+	box-shadow:6px 8px 6px -5px #333333;
+}
+
+#opsview_navigation_logo_container {
+    float: left;
+    padding-left: 15px;
+    padding-top: 12px;
+}
+
+#demo_opsview_cta_buttons {
+    width:320px;
+    display:inline-block;
+    z-index:19001;
+    left:50%;
+    right:50%;
+    position:absolute;
+    margin:0px;
+    padding:0px;
+    margin-left:-160px;
+    padding-top:8px;
+}
+#demo_opsview_cta_buttons a {
+    background:url('../../images/CTA_button_demo_normal.png') no-repeat scroll center top transparent;
+    text-decoration: none !important;
+    display:block;
+    text-align:center;
+    color:#ffffff;
+    font-size:1.1em;
+    font-weight:bold;
+    line-height:35px;
+    height:35px;
+    width:160px;
+    padding:0;
+    margin:0;
+    border:none;
+    float:left;
+}
+#demo_opsview_cta_buttons a:hover {
+    background-image:url('../../images/CTA_button_demo_hover.png');
+    text-decoration: none !important;
+    color: #C90041;
+}

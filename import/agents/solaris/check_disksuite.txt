@@ -1,0 +1,3 @@
+Check status of Sun Disksuite, returns OK if not problems detected
+
+No arguments required

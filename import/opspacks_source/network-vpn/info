@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.network_vpn
+VERSION=1.0
+ALIAS=Network - VPN
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

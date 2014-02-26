@@ -1,0 +1,150 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#	retrieve_opsview_info
+#
+# DESCRIPTION:
+#	Invoked from master via check_opsview_slave_node plugin.
+#	Return code:
+#	  0 - OK
+#	  1 - Error with retrieval message to stdout
+#	Outputs (when successful):
+#	  OK: {epoch time} {status.dat time}
+#	Otherwise, will output the error seen to stdout
+#	-N means do not test NSCA
+#
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+use IO::Socket;
+
+use lib '/usr/local/nagios/perl/lib';
+use lib '/usr/local/nagios/lib';
+
+use Opsview::Slave::Config;
+
+sub my_die {
+    print @_;
+    exit 1;
+}
+
+# Do not use 2: this is used by the process-cache-data script as an error condition. 3 means "no data"
+my $nsca_status = 3;
+my $nsca_file   = "/usr/local/nagios/var/nsca.status";
+my $nsca_error;
+if ( -r $nsca_file ) {
+    open N, $nsca_file;
+    { local $/ = undef; $nsca_status = <N>; }
+    chomp $nsca_status;
+}
+if ( $nsca_status eq "2" ) {
+    $nsca_error =
+      `echo "" | /usr/local/nagios/bin/send_nsca -H localhost -c /usr/local/nagios/etc/send_nsca.cfg 2>&1`;
+    if ( $? == 0 ) {
+
+        # Bit of a contradiction here. This could happen after a migration to NRD, so we rm the status file
+        # so the next run will not error
+        unlink($nsca_file);
+        $nsca_error =
+          "Test send_nsca worked correctly so resetting status file - next check should pass";
+    }
+}
+
+my $now = time;
+my $status_time;
+
+my $status_file = Opsview::Slave::Config->status_dat;
+if ( !-e $status_file ) {
+    my_die "Status file does not exist", $/;
+}
+
+$status_time = ( stat($status_file) )[9];
+
+my $slaveresults_dir = "/usr/local/nagios/var/slaveresults";
+my $nrd_backlog      = 0;
+my $nrd_maxage       = 0;
+if ( -e $slaveresults_dir ) {
+    opendir( DIR, $slaveresults_dir )
+      or my_die( "Cannot open slaveresults dir" );
+    my @files = sort ( grep !/^\.\.?\z/, readdir DIR );
+    closedir DIR;
+    $nrd_backlog = scalar @files;
+    if ($nrd_backlog) {
+        $nrd_maxage = int( time() - $files[0] );
+    }
+}
+
+my $slaveresults_error = "";
+
+# Do not check for error here - file may not exist. We avoid doing a -e as there is a race condition
+if ( open( ERROR, "/usr/local/nagios/var/slaveresults.error" ) ) {
+    local $/ = undef;
+    $slaveresults_error = <ERROR>;
+    close ERROR;
+}
+
+print <<"EOF";
+OK
+slaveresults_backlog=$nrd_backlog
+slaveresults_maxage=$nrd_maxage
+nsca=$nsca_status
+now=$now
+status=$status_time
+slaveresults_error=$slaveresults_error
+EOF
+
+if ($nsca_error) {
+    $nsca_error =~ s/\n/ /;
+    print "nsca_error=$nsca_error\n";
+}
+
+my @port_forwards = qw( 2345 4125 5667 5669 );
+
+foreach my $port (@port_forwards) {
+    my $socket = IO::Socket::INET->new(
+        PeerAddr => '127.0.0.1',
+        PeerPort => $port,
+        Proto    => 'tcp',
+        Type     => SOCK_STREAM,
+        Timeout  => 5,
+    );
+
+    print "port_$port=";
+
+    if ($socket) {
+
+        # NRD will write a WARN message if no data is sent. This sends a TEST message, thus proving it can get to the other end okay
+        # Requires NRD to be updated to ignore TEST in the header
+        if ( $port eq "5669" ) {
+            print $socket "TEST\n";
+        }
+        print 'ok', $/;
+        close($socket);
+    }
+    else {
+        print 'fatal', $/;
+    }
+}
+
+exit 0;

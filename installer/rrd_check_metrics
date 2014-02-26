@@ -1,0 +1,138 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+# 	rrd_check_metrics [-t]
+#
+# DESCRIPTION:
+# 	Reads all Opsview 3 rrd labels to work out if it is a possible candidate for label truncation
+#	Only works when the new rrd is created with the full label
+#	Prints all metrics that are exactly 19 characters, and the RRD's last update time
+#	Prints candidates where the 19 char name is a subset of their name, and their last update time
+#	Prompt if want to rename the RRD into the new one
+#	-t for test mode. Just print out the candidates and assume do not want to change
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use lib "/usr/local/nagios/lib", "/usr/local/nagios/perl/lib";
+use strict;
+use Getopt::Std;
+use File::Copy;
+
+# May need later to merge RRDs together
+#use RRDs;
+#use XML::LibXML;
+
+my $opts = {};
+getopts( "t", $opts );
+
+my $rrddir     = "/usr/local/nagios/var/rrd";
+my $target_dir = $rrddir;
+if ( $opts->{t} ) {
+    $target_dir = "/tmp/migrate_rrds.test";
+    mkdir $target_dir unless ( -d $target_dir );
+}
+
+opendir D, "$rrddir" or die "Cannot open $rrddir: $!";
+my @hostnames = grep !/\.\.?$/, readdir D;
+closedir D;
+
+# Get list of all metrics
+foreach my $host (@hostnames) {
+    opendir S, "$rrddir/$host" or die "Cannot open $rrddir/$host: $!";
+    my @servicenames = grep !/\.\.?$/, readdir S;
+    closedir S;
+
+    foreach my $service (@servicenames) {
+        opendir M, "$rrddir/$host/$service"
+          or die "Cannot open $rrddir/$host/$service: $!";
+        my @metrics = grep !/\.\.?$/, readdir M;
+        closedir M;
+
+        compare_metrics( "$rrddir/$host/$service", \@metrics );
+    }
+}
+
+sub compare_metrics {
+    my ( $dir, $metrics_array ) = @_;
+    my $metrics_hash = {};
+    map { $metrics_hash->{$_} = length($_) } @$metrics_array;
+
+    my @all_names = keys %$metrics_hash;
+    foreach my $name (@all_names) {
+
+        # Candidate for truncation
+        if ( $metrics_hash->{$name} == 19 ) {
+            my $mtime = localtime( ( stat("$dir/$name/value.rrd") )[9] );
+            my $candidates;
+            foreach my $possible (@all_names) {
+                next if $possible eq $name;
+                if ( $name eq substr( $possible, 0, 19 ) ) {
+                    $candidates->{$possible} =
+                      localtime( ( stat("$dir/$possible/value.rrd") )[9] );
+                }
+            }
+            print
+              "Possibly truncated in $dir:\n Metric name: $name (mtime=$mtime)\n";
+            foreach my $candidate ( keys %$candidates ) {
+                print " Candidate: $candidate (mtime="
+                  . $candidates->{$candidate} . ")\n";
+            }
+
+            prompt_replace( $dir, $name, keys %$candidates );
+
+            print "\n";
+        }
+    }
+}
+
+sub prompt_replace {
+    my ( $dir, $old, @candidates ) = @_;
+    return if $opts->{t};
+    my $new;
+    if ( scalar @candidates > 1 ) {
+
+        # Prompt with which to replace
+        print
+          "There are multiple candidates. Choose the name of the one to replace with (will confirm before moving)\nName: ";
+        $_ = <STDIN>;
+        chop;
+        $new = $_;
+    }
+    else {
+        $new = shift @candidates;
+    }
+    print
+      "Move $old to $new?\nThis will delete the newly created RRD and move the older one in place\nYou will lose data between the old RRDs last update time and now [y|N]: ";
+    $_ = <STDIN>;
+    if (/[Yy]/) {
+        move( "$dir/$old/value.rrd", "$dir/$new/value.rrd" )
+          or die "Cannot move to $dir/$new/value.rrd: $!";
+        if ( -e "$dir/$old/thresholds.rrd" ) {
+            move( "$dir/$old/thresholds.rrd", "$dir/$new/thresholds.rrd" )
+              or die "Cannot move to $dir/$new/thresholds.rrd: $!";
+        }
+        rmdir("$dir/$old") or die "Cannot remove $dir/$old: $!";
+        print "Moved\n";
+    }
+    else {
+        print "Ignoring\n";
+    }
+}

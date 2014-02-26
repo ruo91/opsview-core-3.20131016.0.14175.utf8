@@ -1,0 +1,35 @@
+{
+   "hosttemplates" : [
+      {
+         "name" : "Network - Base"
+      },
+      {
+         "name" : "OS - Unix Base"
+      },
+      {
+         "name" : "Application - Opsview Common"
+      },
+      {
+         "name" : "Application - Opsview Master"
+      }
+   ],
+   "keywords" : [
+      {
+         "name" : "opsview"
+      },
+      {
+         "name" : "opsview-components"
+      }
+   ],
+   "hostattributes" : [
+      {
+         "arg2" : null,
+         "arg1" : null,
+         "value" : "/",
+         "arg4" : null,
+         "name" : "DISK",
+         "arg3" : null
+      }
+   ],
+   "name" : "opsview"
+}

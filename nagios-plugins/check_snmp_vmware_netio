@@ -1,0 +1,389 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#	Written by Neil Ferguson
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+use warnings;
+use strict;
+
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+use Storable qw(lock_store lock_retrieve);
+
+my $script = "check_snmp_vmware_netio";
+
+my $np = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => $script,
+    version   => "0.2",
+    blurb => "Reports the network throughput on a specified VMware interface",
+    snmp  => {
+        "snmp-version" => "2c",
+        "snmp-timeout" => 5,
+        "v1-fallback"  => 1,
+    },
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w, --warning=INTEGER
+    Warning threshold (KB/sec)},
+    default => 0,
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c, --critical=INTEGER
+    Critical threshold (KB/sec)},
+    default => 0,
+);
+
+$np->add_arg(
+    spec => "vm|v=s",
+    help => qq{-v, --vm=STRING
+    VM name (alternatively, specify MAC)},
+);
+
+$np->add_arg(
+    spec => "mac|m=s",
+    help => qq{-m, --mac=STRING
+    MAC address},
+);
+
+$np->add_arg(
+    spec => "input|i",
+    help => qq{-i, --input
+    Warning and Critical on in throughput},
+);
+
+$np->add_arg(
+    spec => "output|o",
+    help => qq{-o, --output
+    Warning and Critical on out throughput},
+);
+
+$np->getopts;
+
+my $warning   = $np->opts->warning;
+my $critical  = $np->opts->critical;
+my $vm_name   = "";
+my $vm_mac    = "";
+my $mode      = "name";
+my @hostnames = split( ',', $np->opts->hostname );
+
+my $hintdir   = "/usr/local/nagios/var/plugins/vmware/";
+my $hint_file = $hintdir;
+
+my $warn_in  = 0;
+my $crit_in  = 0;
+my $warn_out = 0;
+my $crit_out = 0;
+
+if ( $np->opts->vm ) {
+    $vm_name   = $np->opts->vm;
+    $hint_file = "${hint_file}esx_hint-${vm_name}.dat";
+}
+elsif ( $np->opts->mac ) {
+    $mode      = "mac";
+    $vm_mac    = $np->opts->mac;
+    $hint_file = "${hint_file}esx_hint-${vm_mac}.dat";
+}
+if ( $np->opts->input && $np->opts->output ) {
+    print
+      "Specify either of -i or -o, or specify neither option to mean 'both'\n";
+    usage();
+    exit 3;
+}
+if ( $np->opts->input ) {
+    $warn_in = $warning;
+    $crit_in = $critical;
+}
+elsif ( $np->opts->output ) {
+    $warn_out = $warning;
+    $crit_out = $critical;
+}
+else {
+    $warn_in  = $warning;
+    $crit_in  = $critical;
+    $warn_out = $warning;
+    $crit_out = $critical;
+}
+
+my $retval            = 3;
+my $retmsg            = 3;
+my $perfdata          = "";
+my $throughput_in     = 0;
+my $throughput_in_kb  = 0;
+my $throughput_out    = 0;
+my $throughput_out_kb = 0;
+
+my $oid_sysDescr = ".1.3.6.1.2.1.1.1.0";
+my $oid_namebase = ".1.3.6.1.4.1.6876.2.1.1.2";
+my $oid_vmidbase = ".1.3.6.1.4.1.6876.2.1.1.7.";
+my $oid_nicbase  = ".1.3.6.1.4.1.6876.3.4.1.3";
+my $oid_macbase  = ".1.3.6.1.4.1.6876.3.4.1.4.";
+my $oid_rxbase   = ".1.3.6.1.4.1.6876.3.4.1.9.";
+my $oid_txbase   = ".1.3.6.1.4.1.6876.3.4.1.7.";
+
+my $store_dir = "/usr/local/nagios/var/plugins/check_snmp_vmware_netio/";
+my $store_fn  = "${store_dir}/$script.dat";
+my $store;
+
+my $s = $np->snmp;
+
+# Call this when you know you'll get a single value back
+sub get_oid_value {
+    our ( $oid, $result, $status, $returnstring );
+
+    $oid = shift(@_);
+
+    if ( !defined( $s->get_request($oid) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            print "SNMP agent not responding\n";
+            exit 3;
+        }
+        else {
+            print "SNMP OID does not exist\n";
+            exit 3;
+        }
+    }
+
+    foreach ( $s->var_bind_names() ) {
+        $result = $s->var_bind_list()->{$_};
+    }
+
+    return $result;
+}
+
+sub sane_units {
+
+    # Input should be in kilobytes - we'll convert to something more human readible
+    my $kbits    = shift(@_);
+    my $gigabits = 1024 * 1024;
+    my $megabits = 1024;
+
+    # Gigabits
+    if ( $kbits > $gigabits ) {
+        return int( ( 100 * $kbits ) / $gigabits ) / 100 . " GB/s";
+    }
+    elsif ( $kbits > $megabits - 1 ) {
+        return int( ( 100 * $kbits ) / $megabits ) / 100 . " MB/s";
+    }
+    else {
+        return $kbits . " KB/s";
+    }
+}
+
+sub get_vm_id {
+    my $name = shift;
+    my $i    = 0;
+    our ( $result, $store, $vm_data, $response, $hostname );
+    my $hint_host = "";
+
+    # Use a hint if we have one
+    if ( -f $hint_file ) {
+        $store     = lock_retrieve($hint_file);
+        $hint_host = $store->{$name};
+    }
+
+    # Move the hint host to the top of the list, if it's
+    # an option
+    if ( grep( /^${hint_host}$/, @hostnames ) ) {
+        my $item;
+        while ( $hostnames[0] ne $hint_host ) {
+            $item = shift(@hostnames);
+            push( @hostnames, $item );
+        }
+    }
+
+    foreach $hostname (@hostnames) {
+        next if ( create_snmp_session($hostname) > 0 );
+
+        $response = $s->get_table($oid_namebase);
+        next if !defined($response);
+        %$response = reverse %$response;
+
+        if ( exists $response->{$name} ) {
+
+            # Found the VM, write a hint for next time
+            $store->{$name} = $hostname;
+            lock_store( $store, $hint_file );
+
+            my $i = $response->{$name};
+            $i =~ s/.*\.//;
+            $result = get_oid_value( $oid_vmidbase . $i );
+            return $result;
+        }
+    }
+
+    return undef;
+}
+
+sub get_nic_id {
+    my $oid_base = shift;
+    my $name     = shift;
+    my $i        = 0;
+    our ( $result, $store, $vm_data, $response, $hostname );
+    my $hint_host = "";
+
+    # Use a hint if we have one
+    if ( -f $hint_file ) {
+        $store     = lock_retrieve($hint_file);
+        $hint_host = $store->{$name};
+    }
+
+    # Move the hint host to the top of the list, if it's
+    # an option
+    if ( grep( /^${hint_host}$/, @hostnames ) ) {
+        my $item;
+        while ( $hostnames[0] ne $hint_host ) {
+            $item = shift(@hostnames);
+            push( @hostnames, $item );
+        }
+    }
+
+    foreach $hostname (@hostnames) {
+        next if ( create_snmp_session($hostname) > 0 );
+
+        $response = $s->get_table($oid_base);
+        next if !defined($response);
+
+        %$response = reverse %$response;
+        if ( exists $response->{$name} ) {
+
+            # Found the VM, write a hint for next time
+            $store->{$name} = $hostname;
+            lock_store( $store, $hint_file );
+
+            my $i = $response->{$name};
+            $i =~ s/.*\.//;
+            return $i;
+        }
+    }
+
+    return undef;
+}
+
+sub get_nic_data {
+    my $mode      = shift(@_);
+    my $vm        = shift(@_);
+    my $mac       = shift(@_);
+    my $storename = $vm;
+    my $txrate    = 0;
+    my $rxrate    = 0;
+    our ( $vmid, $nic, $rxkb, $txkb );
+
+    if ( $mode eq "name" ) {
+
+        # Get VM ID
+        $vmid = get_vm_id($vm);
+        return undef unless defined($vmid);
+
+        # Get NIC ID from VM ID
+        $nic = get_nic_id( $oid_nicbase, $vmid );
+    }
+    else {
+        # Store by MAC not by name
+        $storename = $mac;
+
+        # Get NIC ID from MAC ID
+        $nic = get_nic_id( $oid_macbase, $mac );
+    }
+
+    # Ensure we have a NIC id
+    return undef unless defined($nic);
+
+    # Get throughputs
+    $rxkb = get_oid_value( $oid_rxbase . $nic );
+    $txkb = get_oid_value( $oid_txbase . $nic );
+
+    # Retrieve info from store if it exists
+    if ( -f $store_fn ) {
+        $store = lock_retrieve($store_fn);
+    }
+
+    if ( defined( $store->{$storename} ) ) {
+        my $time = $store->{$storename}[0];
+        $rxrate = ( $rxkb - $store->{$storename}[1] ) / ( time() - $time );
+        $txrate = ( $txkb - $store->{$storename}[2] ) / ( time() - $time );
+
+        if ( $rxrate < 0 ) { $rxrate = 0; }
+        if ( $txrate < 0 ) { $txrate = 0; }
+    }
+
+    # Always write current data
+    $store->{$storename} = [ time(), $rxkb, $txkb ];
+    lock_store( $store, $store_fn );
+
+    # Calculate rates
+    return ( int( 100 * $rxrate ) / 100, int( 100 * $txrate ) / 100 );
+}
+
+sub create_snmp_session {
+    my $snmp_host = shift(@_);
+    $s = $np->snmp(
+        {
+            hostname         => $snmp_host,
+            undef_on_failure => 1
+        }
+    );
+
+    if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+        print "SNMP agent not responding\n";
+        return 1;
+    }
+
+    return 0;
+}
+
+# Check what the value is
+( $throughput_in_kb, $throughput_out_kb ) =
+  get_nic_data( $mode, $vm_name, $vm_mac );
+
+# Check we got some data
+if ( !defined($throughput_in_kb) ) {
+    print "UNKNOWN - Could not find data for the specified interface\n";
+    exit 3;
+}
+
+$throughput_in  = sane_units($throughput_in_kb);
+$throughput_out = sane_units($throughput_out_kb);
+
+$retmsg =
+  " - $throughput_in in, $throughput_out out | throughput_in=$throughput_in_kb;$warn_in;$crit_in;; throughput_out=$throughput_out_kb;$warn_out;$crit_out;;\n";
+
+if (   ( $throughput_in_kb > $crit_in && $crit_in > 0 )
+    || ( $throughput_out_kb > $crit_out && $crit_out > 0 ) )
+{
+    print "CRITICAL $retmsg";
+    exit 2;
+}
+elsif (( $throughput_in_kb > $warn_in && $warn_in > 0 )
+    || ( $throughput_out_kb > $warn_out && $warn_out > 0 ) )
+{
+    print "WARNING $retmsg";
+    exit 1;
+}
+else {
+    print "OK $retmsg";
+    exit 0;
+}

@@ -1,0 +1,13 @@
+check_wmi v1.0
+
+
+Returns value of given WMI class / property combination
+
+Usage: check_wmi -C <class> -P <property> -w <warning threshold> -c <critical threshold>
+
+Options: -C             WMI Class (Eg: Win32_OperatingSystem)
+         -P             Property (Eg: NumberOfProcesses)
+         -w             Warning threshold (integer)
+         -c             Critical threshold (integer)
+
+

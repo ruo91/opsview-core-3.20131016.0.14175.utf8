@@ -1,0 +1,11 @@
+# OPSVIEW-START
+# Do not remove comment above. Everything between OPSVIEW-START and OPSVIEW-END
+# will be automatically installed as part of an Opsview slave install/upgrade
+0,5,10,15,20,25,30,35,40,45,50,55 * * * * /usr/local/nagios/bin/mrtg_genstats.sh > /dev/null 2>&1
+11 3 * * * . /usr/local/nagios/bin/profile && /usr/local/nagios/bin/opsview_cronjobs daily
+22 2,6,10,14,18,22 * * * . /usr/local/nagios/bin/profile && /usr/local/nagios/bin/opsview_cronjobs 4hourly
+0,5,10,15,20,25,30,35,40,45,50,55 * * * * /usr/local/nagios/bin/call_nmis nmis.pl type=collect mthread=true >/dev/null 2>&1
+34 0,4,8,12,16,20 * * * /usr/local/nagios/bin/call_nmis nmis.pl type=update mthread=true >/dev/null 2>&1
+%SLAVE% * * * * /usr/local/nagios/bin/rsync_nmis_database
+13,28,43,58 * * * * /usr/local/nagios/bin/sync_cluster_node_status
+# OPSVIEW-END

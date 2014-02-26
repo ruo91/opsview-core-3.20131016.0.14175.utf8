@@ -1,0 +1,405 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#	send2slaves [-p] [-s] [slave ...]
+#	send2slaves -t
+#
+# DESCRIPTION:
+#	Sends all program files under /usr/local/nagios to slaves
+#	-t is for testing connections
+#	If -p or -s is not specified, will send all
+#	-p sends the plugins directory (libexec)
+#	-s sends the snmp directory
+#	slave must be the name of the slave, as defined in hosts table
+#	If no slaves specified, will run for all
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use Getopt::Std;
+use FindBin qw($Bin);
+use lib "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+use Opsview;
+use Opsview::Config;
+use Opsview::Monitoringserver;
+use File::Basename;
+use Log::Log4perl;
+use Parallel::Forker;
+
+my $opts = {};
+getopts( "tpsh", $opts ) or die "Incorrect options";
+
+if ( $opts->{h} ) {
+    print <<"!EOF!";
+  Usage: 
+    $0 [-p] [-s] [slave ...]
+    $0 -t [slave ...]
+    $0 -h
+  Where:
+    -h: This help text
+    -t: Test connections
+    -p: Sends libexec (plugins) directory only
+    -s: Sends snmp directory only
+  If neither -p or -s is used, will send all
+  If no slaves are specified, will run for all
+!EOF!
+    exit 1;
+}
+
+my $force  = 0;
+my $errors = 0;
+my @slaves;
+if (@ARGV) {
+    foreach my $slave_name (@ARGV) {
+        @_ = Opsview::Monitoringclusternode->search_by_node_name($slave_name);
+        if ( scalar @_ == 0 ) {
+            die "No slaves found with name $slave_name";
+        }
+        elsif ( scalar @_ > 1 ) {
+            die "Got more than one slave with '$slave_name':\n - "
+              . join( "\n - ", map { $_->name } @_ ) . "\n";
+        }
+        push @slaves, @_;
+    }
+    $force = 1;
+}
+else {
+    @slaves = Opsview::Monitoringclusternode->retrieve_all_activated;
+}
+
+if ( !@slaves ) {
+    print "No slaves defined. Finishing", $/;
+    exit 0;
+}
+
+if ( $opts->{t} ) {
+    foreach my $node (@slaves) {
+        my $cmd  = $node->ssh_command( "hostname" );
+        my $host = `$cmd`;
+        chomp $host;
+        if ( $? != 0 ) {
+            print "Error connecting to ", $node->ip, $/;
+            $errors++;
+            next;
+        }
+        print 'Connected to ', $node->name, " ($host)", $/;
+
+        # Need to use array version because of the quotes in args which need to be preserved
+        @_ = $node->ssh_command( "perl -e 'print time'" );
+        open SSH, "-|", @_ or die "Cannot open command";
+        my $time = <SSH>;
+        close SSH;
+        if ( time - $time > 2 ) {
+            print "Error: time on $host is not in sync with master", $/;
+            $errors++;
+        }
+    }
+    if ($errors) {
+        print "Errors: $errors", $/;
+        exit 1;
+    }
+    else {
+        print "No errors in communicating to monitoring servers", $/;
+    }
+    exit;
+}
+
+Log::Log4perl::init( "$Bin/../etc/Log4perl.conf" );
+my $logger = Log::Log4perl->get_logger( "send2slaves" );
+$logger->add_appender(
+    Log::Log4perl::Appender->new(
+        "Log::Log4perl::Appender::Screen",
+        stderr => 0
+    )
+);
+$logger->info( "Starting" );
+
+my $Fork = Parallel::Forker->new;
+$SIG{CHLD} = sub { Parallel::Forker::sig_child($Fork) };
+$SIG{TERM} = sub {
+    $Fork->kill_tree_all('TERM') if $Fork && $Fork->in_parent;
+    die "Quitting...\n";
+};
+
+$Fork->max_proc( Opsview::Config->max_parallel_tasks );
+
+# Create tar of all requisite files
+my $base         = "/usr/local/nagios";
+my $full_install = 1;
+my $dirs;
+my $install_opts = "-nr"
+  ; # Restart opsview-slave (-r) and tell it to use latest install_slave (-n)
+if ( $opts->{p} ) {
+    $dirs         = "libexec";
+    $install_opts = "-p";
+    $full_install = 0;
+}
+if ( $opts->{s} ) {
+    $dirs .= " snmp/load";
+    $install_opts = "-s";
+    $full_install = 0;
+}
+$dirs = $dirs
+  || "bin doc lib libexec sbin share snmp opsview-plugins perl installer nmis/bin nmis/cgi-bin nmis/htdocs nmis/lib nmis/mibs nmis/conf etc/logrotate.conf etc/Log4perl-slave.conf";
+if ( -e "$base/etc/nrpe.cfg" ) {
+    $dirs .= " etc/nrpe.cfg";
+}
+if ( -e "$base/etc/profile_local" ) {
+    $dirs .= " etc/profile_local";
+}
+if ( $full_install && -d "/opt/opsview/perl" ) {
+    $dirs .= " -C / opt/opsview/perl";
+}
+
+$logger->info( "Creating tar file" );
+
+# This file must end in ".gz", because the uncompressing that occurs later assumes
+# that the filename is without the .gz
+my $tarball;
+my $compressed_tarball = "/tmp/opsview.tar.$$.gz";
+chdir( "$base" );
+
+# Must exclude these NMIS configuration files. These are created at reload time
+# We also exclude the static files, that are master only
+system(
+    "tar --gzip --exclude=perl/man --exclude=.svn --exclude=nmis.conf --exclude=nodes.csv --exclude=master.csv --exclude=slave.csv --exclude=slaves.csv --exclude=nmis/htdocs/reports --exclude=share/static --exclude=share/mrtg -cf $compressed_tarball $dirs"
+  ) == 0
+  or $logger->logdie( "Cannot create tarball" );
+
+my $install = "$base/bin/install_slave";
+
+# Send tar to each monitoring server
+foreach my $node (@slaves) {
+
+    my $node_name = $node->name;
+
+    # always ignore passive slaves
+    if ( $node->monitoringcluster->is_passive ) {
+        $logger->info( "Ignoring passive " . $node_name );
+        next;
+    }
+
+    unless ($force) {
+        if ( $node->monitoringcluster->is_activated ) {
+            $logger->info( "Processing for " . $node_name );
+        }
+        else {
+            $logger->info( "Ignoring non-activated " . $node_name );
+            next;
+        }
+    }
+
+    $Fork->schedule(
+        run_on_start  => sub { exit send_to_node($node) },
+        run_on_finish => sub {
+            my ( $Forker, $rc ) = @_;
+            $logger->debug("Got rc=$rc for $node_name");
+            $errors++ if ($rc);
+        },
+        name  => "${node_name}_send",
+        label => "send",
+    );
+}
+
+$Fork->ready_all;
+$Fork->wait_all;
+
+if ($errors) {
+    $logger->error( "Errors requiring manual intervention: $errors" );
+}
+else {
+    $logger->info( "All monitoring servers successfully updated" );
+}
+
+$Fork->write_tree( filename => "$base/var/log/send2slaves.debug" );
+
+unlink $compressed_tarball;
+unlink $tarball if $tarball;
+exit $errors;
+
+sub create_uncompressed_tarball {
+    unless ($tarball) {
+        $tarball = $compressed_tarball;
+        $tarball =~ s/\.gz$//;
+
+        # There is an assumption that gunzip is going to remove the ".gz"
+        # This section is for supporting Opsview 2.6 slaves - can be removed in future
+        #system("gunzip $compressed_tarball") == 0 or $logger->logdie("Cannot uncompress tarball");
+        $logger->logdie(
+            "Support for Opsview 2.6 slaves now removed - contact support if this affects you"
+        );
+    }
+}
+
+sub send_to_node {
+    my $node      = shift;
+    my $node_name = $node->name;
+
+    my $sudo = "";
+    my $cmd;
+
+    # Check for install file
+    $cmd = $node->ssh_command( "$install -h" );
+    my $version = `$cmd`;
+    my $rc      = $?;
+    $rc = $rc >> 8;
+    if ( $rc == 127 ) {
+
+        # Not found - check for /usr/local/nagios/tmp and put there
+        # Using this location as it will always be a local filesystem (some servers have NFS home directories)
+        # This target directory should be locked down so no world write access
+        # install_slave needs to know where to look too
+        my $target_dir = "/usr/local/nagios/tmp";
+
+        $logger->info( "Checking for $target_dir" );
+        $cmd = $node->ssh_command( "test -d $target_dir" );
+        if ( system($cmd) != 0 ) {
+            $logger->error(
+                    "No $target_dir on "
+                  . $node->ip
+                  . " - must create. Moving to next server"
+            );
+            return 1;
+        }
+
+        # Send tarball
+        $logger->info( "New slave - sending tarball and install_slave script"
+        );
+        $cmd = $node->scp_file_out( $compressed_tarball,
+            "$target_dir/opsview.tar.gz" );
+        if ( system($cmd) != 0 ) {
+            $logger->error(
+                    "Could not transfer to "
+                  . $node->ip
+                  . " - moving to next server"
+            );
+            return 1;
+        }
+
+        # Then send install script
+        $logger->info(
+            "No install file on " . $node->ip . " - sending to $target_dir"
+        );
+        $cmd = $node->scp_file_out( $install, "$target_dir" );
+        if ( system($cmd) != 0 ) {
+            $logger->error(
+                "Could not transfer install program to $target_dir - moving to next server"
+            );
+            return 1;
+        }
+        $logger->info( "Logon to " . $node->ip . " and switch to root then" );
+        $logger->info(
+            "Run 'cd $target_dir && ./" . basename($install) . "' to install"
+        );
+        $errors++;
+        return 1;
+    }
+
+    if ( $rc == 255 ) {
+
+        # 255: ssh error - which means that the slave is probably down or has a significant problem
+        $logger->error(
+            "Cannot SSH to " . $node->ip . " - moving to next server"
+        );
+        return 1;
+    }
+    elsif ( $rc == 126 ) {
+
+        # 255: Does exist, but does not support -h flag - this used to be in this condition
+        # 126: No permissions to execute - pre 2.7, nagios user could not execute
+        create_uncompressed_tarball();
+        $cmd = $node->scp_file_out( $tarball, "opsview.tar" );
+        if ( system($cmd) != 0 ) {
+            $logger->error(
+                    "Could not transfer uncompressed tarball to "
+                  . $node->ip
+                  . " - moving to next server"
+            );
+            return 1;
+        }
+        $sudo = "sudo $install $install_opts '~/opsview.tar'";
+    }
+    elsif ( $rc == 0 ) {
+
+        # Does exist and supports -h
+        # If version is 1, then install_slave expects in $base/tmp
+        my $target;
+        chomp $version;
+        if ( $version eq "2" ) {
+            $target = "$base/tmp/opsview.tar.gz";
+        }
+        else {
+
+            # Earlier versions of install_slave didn't return a version number
+            $target = "opsview.tar.gz";
+        }
+        if (
+            system( $node->ssh_command("test -d $base/tmp || mkdir $base/tmp")
+            ) != 0
+          )
+        {
+            $logger->error(
+                'Unable to check tmp directory exists on ',
+                $node->ip, ' - moving to next server'
+            );
+            return 1;
+        }
+        $cmd = $node->scp_file_out( $compressed_tarball, $target );
+        if ( system($cmd) != 0 ) {
+            $logger->error(
+                    "Could not transfer compressed tarball to "
+                  . $node->ip
+                  . " - moving to next server"
+            );
+            return 1;
+        }
+        $sudo = "sudo $install $install_opts";
+    }
+    else {
+        $logger->error( "Strange error here: not expecting return code $?" );
+        return 1;
+    }
+
+    # Use sudo to install
+    @_ = $node->ssh_command($sudo);
+    if ( system(@_) != 0 ) {
+        $logger->error(
+            "Error installing on $node_name - moving to next server"
+        );
+        return 1;
+    }
+
+    if (
+        system( $node->ssh_command(
+                "$base/bin/nagios -h | grep 'Nagios' > /dev/null")
+        ) != 0
+      )
+    {
+        $logger->error(
+            "Error running nagios on $node_name - possible issues with libraries"
+        );
+        return 1;
+    }
+
+    $logger->info( "Successfully installed on $node_name" );
+    return 0;
+}

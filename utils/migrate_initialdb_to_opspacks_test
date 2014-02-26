@@ -1,0 +1,20 @@
+#/bin/bash
+
+MAIN="/usr/local/nagios"
+rm -rf $MAIN/import/opspacks_test
+rm -rf $MAIN/import/opspacks_clean
+mkdir $MAIN/import/opspacks_test
+
+utils/migrate_initialdb_to_opspacks --create_only --opspacks_dir $MAIN/import/opspacks_test --username=admin --password=initial
+
+cp -pr $MAIN/import/opspacks $MAIN/import/opspacks_clean
+
+find $MAIN/import/opspacks_clean -type f -name config.json | xargs -I{} perl -pi -e 's/^\s*"ref".*$//g' {}
+find $MAIN/import/opspacks_test -type f -name config.json | xargs -I{} perl -pi -e 's/^\s*"ref".*$//g' {}
+
+find $MAIN/import/opspacks_clean -type f -name config.json | xargs -I{} perl -pi -e 's/^\s*"calculate_rate".*$//g' {}
+find $MAIN/import/opspacks_test -type f -name config.json | xargs -I{} perl -pi -e 's/^\s*"calculate_rate".*$//g' {}
+
+diff -ur --exclude="*.tar.gz" $MAIN/import/opspacks_clean $MAIN/import/opspacks_test && echo "Success!" && rm -rf $MAIN/import/opspacks_clean $MAIN/import/opspacks_test
+
+

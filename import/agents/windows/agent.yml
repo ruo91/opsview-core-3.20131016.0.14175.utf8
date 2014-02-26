@@ -1,0 +1,11 @@
+name: Win32
+command: check_npre -H $HOSTADDRESS$ -c $PLUGINNAME$ -a '$ARGS$'
+plugins:
+ - win32_cpuload
+ - win32_memload
+ - win32_diskspace
+ - win32_service
+ - win32_eventlog
+ - win32_wmi
+ - win32_systeminfo
+ - win32_tcpconnections

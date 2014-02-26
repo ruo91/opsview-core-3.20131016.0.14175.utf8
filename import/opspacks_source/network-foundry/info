@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.network_foundry
+VERSION=1.0
+ALIAS=Network - Foundry
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

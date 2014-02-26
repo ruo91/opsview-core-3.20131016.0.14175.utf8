@@ -1,0 +1,17 @@
+{
+      "namespace" : "com.opsview.notificationmethods.aql",
+      "master" : "1",
+      "name" : "AQL",
+      "active" : "1",
+      "notificationprofiles" : [
+         {
+            "ref" : "/rest/config/notificationprofile/12",
+            "name" : "Non work hours sms"
+         }
+      ],
+      "id" : "1",
+      "uncommitted" : "1",
+      "command" : "submit_sms_aql -u 'bob' -p '' -P ''",
+      "contact_variables" : "PAGER"
+   }
+

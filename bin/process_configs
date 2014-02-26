@@ -1,0 +1,130 @@
+#!/bin/bash
+# This should be bash because running as ksh in debian loses stderr when invoking $()
+# 
+#
+# SYNTAX:
+#	process_configs [-r] [-v]
+#
+# DESCRIPTION:
+# 	This extracts ~nagios/configs.tar.gz into /usr/local/nagios/etc
+#	-r will call rc.opsview reload
+#	-v will only verify the configs and not install
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+# Must print to stdout for create_and_send_configs to capture output
+die() { echo "$1"; exit 1; }
+
+BASE=/usr/local/nagios
+
+ACTION=promote
+RELOAD=
+RESTART=
+MASTER=
+while getopts ":rvmR" c ; do
+	case $c in
+		v) ACTION=verify;;
+		r) RELOAD=yes;;
+        R) RESTART=yes;;
+		m) MASTER=yes;;
+		\*) die "Error: unexpected option $c";;
+	esac
+done
+shift $((OPTIND - 1))
+
+extract_dir=/usr/local/nagios/etc
+
+# Only look in tmp directory for new config for this server
+file=$BASE/tmp/$1
+[[ ! -e $file ]] && die "No configs.tar.gz file"
+
+if [[ $ACTION = "verify" ]]; then
+	extract_dir=$BASE/tmp/nagios.$$
+	mkdir $extract_dir || die "Cannot create temporary directory"
+	# Have to cd to different dir, as Solaris complains if you delete within same directory
+	trap "cd / && rm -fr $extract_dir" EXIT
+fi
+
+cd $extract_dir
+# Delete all of conf.d
+rm -fr $extract_dir/conf.d
+# TODO: --same-owner is a GNU option. This will need to be checked for other
+# platforms
+tar --same-owner --gzip -xpf $file || die "Cannot extract configs.tar.gz"
+
+
+rc=0
+if [[ $ACTION = "promote" ]]; then
+	mv nodes.csv master.csv $BASE/nmis/conf || die "Cannot move {nodes,master}.csv"
+	mv nmis.conf $BASE/nmis/conf || die "Cannot move nmis.conf"
+
+	# reset some of the permissions for the apache web server, only on slaves
+	if [[ "x$MASTER" == "x" ]]; then
+		type=slave
+		for F in htpasswd.users htpasswd.admin cgi.cfg nagios.cfg
+		do
+			chgrp nagcmd $BASE/etc/$F || die "Cannot chgrp $F"
+		done
+		[[ -e $BASE/var/rw/nagios.cmd ]] && chgrp nagcmd $BASE/var/rw/nagios.cmd
+		chgrp nagcmd $BASE/nmis/conf/nmis.conf $BASE/nmis/conf/master.csv $BASE/nmis/conf/nodes.csv || die "Cannot chgrp to nagcmd"
+
+        if [[ -e sync.dat ]]; then
+            mv sync.dat $BASE/var/sync.dat || die "Cannot move sync.dat into $BASE/var"
+        fi
+        # Remove any stray node files that may still exist
+        rm -f $BASE/var/sync.dat.node.*
+
+	else
+		type=master
+		mv slave.csv slaves.csv $BASE/nmis/conf || die "Cannot move slave{,s}.csv"
+	fi
+
+	#rm -f $file	# This is done by create_and_send_configs
+	if [[ $RELOAD = "yes" ]] ; then
+		/usr/local/nagios/bin/rc.opsview reload
+		rc=$?
+    elif [[ $RESTART = "yes" ]] ; then
+        /usr/local/nagios/bin/rc.opsview restart
+        rc=$?
+	fi
+
+	# Remove extraneous files no longer used
+	rm -f /usr/local/nagios/var/check_snmp_linkstatus.db
+
+	# Run any plugins here
+	for plugin in /usr/local/nagios/opsview-plugins/process_configs/* ; do
+		[[ -x "$plugin" ]] && "$plugin" $type
+	done
+
+	exit $rc
+else
+	# Only show output if error occurred
+	output=$(/usr/local/nagios/bin/nagios -vp nagios.cfg)
+	rc=$?
+	if [[ $rc -ne 0 ]]; then
+		echo "$output"
+        # Save the failed directory for diagnosis
+        cd ..
+        mv $extract_dir $extract_dir.failed
+	fi
+	exit $rc
+fi
+

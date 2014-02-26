@@ -1,0 +1,96 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#	check_opsview_cronjobs [hours]
+#
+# DESCRIPTION:
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#
+
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+use Nagios::Plugin;
+use File::Slurp qw(read_file);
+
+my $VERSION = "0.01";
+
+my $rootdir    = "/usr/local/nagios";
+my $statfile   = "$rootdir/var/opsview_cronjobs.stat";
+
+my $np = Nagios::Plugin->new(
+    usage =>
+      "Usage: %s [-h|--help] [-w, --warning=<hours>] [-c, --critical=<hours>]\n   Checks time since last successful run of opsview_cronjobs",
+    shortname => "CRONJOBS",
+    version   => $VERSION,
+);
+
+my $warn_default = 24;
+$np->add_arg(
+    spec => "warning|w=i",
+    help => qq{-w, --warn=INTEGER
+   Maximum number of hours to allow since a successful housekeeping cronjob run, outside of
+   which a warning will be generated (default: $warn_default)},
+    default => $warn_default,
+);
+
+my $critical_default = 48;
+$np->add_arg(
+    spec => "critical|c=i",
+    help => qq{-c, --critical=INTEGER
+   Maximum number of hours to allow since a successful housekeeping cronjob run, outside of
+   which a critical alert will be generated (default: $critical_default)},
+    default => $critical_default,
+);
+
+$np->getopts;
+
+my $mtime = (stat($statfile))[9];
+
+# Die unless we've retrieved a time
+unless (defined $mtime) {
+    $np->nagios_exit(
+        return_code => 2,
+        message     => 'Housekeeping cronjob stat file does not exist'
+    );
+}
+
+my $duration = read_file($statfile);
+chomp($duration);
+
+if ( defined $duration && length $duration ) {
+    $np->add_perfdata(
+        label => "time",
+        uom => "s",
+        value => $duration
+    );
+}
+
+# We've retrieved a time, work out how long ago
+my $time            = time();
+my $time_difference = $time - $mtime;
+my $hour_difference = $time_difference / ( 60 * 60 );
+
+# We know how long it's been, has it been too long?
+if ( $hour_difference <= $np->opts->warning ) {
+    $np->nagios_exit(
+        return_code => 0,
+        message =>
+          sprintf( 'Housekeeping cronjob last successfully ran %i hours ago',
+            $hour_difference ),
+    );
+}
+
+# Yes, too long - alert with warning or critical
+$np->nagios_exit(
+    return_code => $hour_difference < $np->opts->critical ? 1 : 2,
+    message =>
+      sprintf( 'Housekeeping cronjob has not successfully run for %i hours',
+        $hour_difference ),
+);

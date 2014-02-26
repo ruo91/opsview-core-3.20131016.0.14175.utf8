@@ -1,0 +1,26 @@
+{
+      "priority" : "1",
+      "plugin" : {
+         "ref" : "/rest/config/plugin/check_icmp",
+         "name" : "check_icmp"
+      },
+      "hosts" : [
+         {
+            "ref" : "/rest/config/host/14",
+            "name" : "doesnt_exist_1"
+         },
+         {
+            "ref" : "/rest/config/host/15",
+            "name" : "doesnt_exist_2"
+         },
+         {
+            "ref" : "/rest/config/host/16",
+            "name" : "singlehostgroup"
+         }
+      ],
+      "name" : "ping",
+      "args" : "-H $HOSTADDRESS$ -t 3 -w 500.0,80% -c 1000.0,100%",
+      "id" : "15",
+      "uncommitted" : "0"
+   }
+

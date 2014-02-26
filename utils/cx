@@ -1,0 +1,87 @@
+#!/usr/bin/perl
+#
+# script to easily connect into the given database
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use strict;
+
+use lib '/usr/local/nagios/lib';
+use lib '/opt/logview/logview-web/lib';
+
+my $db      = shift(@ARGV);
+my $command = 'mysql';
+
+if (@ARGV) {
+    $command .= ' -e "' . join( ' ', @ARGV ) . ';"';
+}
+$command .= ' -hlocalhost';
+
+SWITCH: {
+    foreach ($db) {
+        /^reports$/ && do {
+            require Opsview::Config;
+            import Opsview::Config;
+            $command .= ' -u' . Opsview::Config->reports_dbuser;
+            $command .= ' -p"' . Opsview::Config->reports_dbpasswd . '"';
+            $command .= ' ' . Opsview::Config->reports_db;
+            last SWITCH;
+        };
+        /^odw$/ && do {
+            require Opsview::Config;
+            import Opsview::Config;
+            $command .= ' -u' . Opsview::Config->odw_dbuser;
+            $command .= ' -p"' . Opsview::Config->odw_dbpasswd . '"';
+            $command .= ' ' . Opsview::Config->odw_db;
+            last SWITCH;
+        };
+        /^runtime$/ && do {
+            require Opsview::Config;
+            import Opsview::Config;
+            $command .= ' -u' . Opsview::Config->runtime_dbuser;
+            $command .= ' -p"' . Opsview::Config->runtime_dbpasswd . '"';
+            $command .= ' ' . Opsview::Config->runtime_db;
+            last SWITCH;
+        };
+        /^opsview$/ && do {
+            require Opsview::Config;
+            import Opsview::Config;
+            $command .= ' -u' . Opsview::Config->dbuser;
+            $command .= ' -p"' . Opsview::Config->dbpasswd . '"';
+            $command .= ' ' . Opsview::Config->db;
+            last SWITCH;
+        };
+        /^logview$/ && do {
+            require Logview::Config::YML;
+            import Logview::Config::YML;
+            my ($database) = Logview::Config::YML->dsn =~ m/database=(\w+)/;
+
+            $command .= ' -u' . Logview::Config::YML->db_user;
+            $command .= ' -p"' . Logview::Config::YML->db_pass;
+            $command .= ' ' . $database;
+            last SWITCH;
+        };
+        do {
+            die( "Unknown database: $_\n" );
+            last SWITCH;
+          }
+    }
+}
+
+#die "Command=$command\n";
+
+exec $command or die( $@, $/ );

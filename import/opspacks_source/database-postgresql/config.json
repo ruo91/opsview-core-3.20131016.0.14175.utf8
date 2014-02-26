@@ -1,0 +1,115 @@
+{
+   "attribute" : [],
+   "hosttemplate" : [
+      {
+         "description" : "PostgreSQL Database Checks",
+         "managementurls" : [],
+         "name" : "Database - PostgreSQL",
+         "servicechecks" : [
+            {
+               "exception" : null,
+               "name" : "PostgreSQL Database Query",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "PostgreSQL Listener",
+               "timed_exception" : null
+            }
+         ]
+      }
+   ],
+   "servicecheck" : [
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -u USERNAME -p PASSWORD -t postgresql -q SQL_QUERY -r 's/MATCH STRING//'",
+         "attribute" : null,
+         "calculate_rate" : null,
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Runs pre-defined query against PostgreSQL database",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "PostgreSQL Database Query",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r,u,f",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_sql_advanced"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Database - PostgreSQL"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -p 5432 -w 2 -c 5",
+         "attribute" : null,
+         "calculate_rate" : null,
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Checks TCP port 5432",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "PostgreSQL Listener",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_tcp"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Database - PostgreSQL"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      }
+   ],
+   "servicegroup" : [
+      {
+         "name" : "Database - PostgreSQL"
+      }
+   ]
+}

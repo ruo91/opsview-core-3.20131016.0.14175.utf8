@@ -1,0 +1,128 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+# 	rrd_converter [-y] [-t] {export | import} [tarball]
+#
+# DESCRIPTION:
+#	Run as nagios user
+# 	Creates a tarball of all RRDs for MRTG, NMIS and Opsview performance graphs
+#	Saves tarball to /tmp/rrd_converter.tar.gz
+#	Keeps existing directory structure - uses existing directory areas so ensure there is enough space in /usr/local/nagios/{var,nmis}
+#	-y will not prompt for questions
+#	-t will run in test mode and no do anything
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use lib "/usr/local/nagios/lib", "/usr/local/nagios/perl/lib";
+
+#use warnings;
+use strict;
+use RRDs;
+use Getopt::Std;
+use File::Find;
+
+my @dirs = (
+    "/usr/local/nagios/var/rrd", "/usr/local/nagios/var/mrtg",
+    "/usr/local/nagios/nmis/database"
+);
+
+my $opts = {};
+getopts( "ty", $opts );
+
+my $test    = $opts->{t};
+my $confirm = !$opts->{y};
+
+my $action = shift @ARGV || die "Must specify import or export";
+
+my $tarball = "/tmp/rrd_converter.tar.gz";
+if (@ARGV) {
+    $tarball = shift @ARGV;
+}
+
+if ( $action eq "export" ) {
+    run_export();
+}
+elsif ( $action eq "import" ) {
+    run_import();
+}
+else {
+    die "Invalid action: $action";
+}
+
+print "Finished!", $/;
+
+sub run_export {
+    my @all_rrddumps;
+    find( \&process_file, @dirs );
+
+    sub process_file {
+        my $file = $File::Find::name;
+        if ( $file =~ /^(.*)\.rrd$/ ) {
+            my $dump = "$file.xml";
+            print "Found file: $file",    $/;
+            print " Converting to $dump", $/;
+            return if $test;
+
+            # Some rrds versions (around 1.2.11) do not accept the output filename in RRDs::dump. Do a system call instead
+            system("rrdtool dump '$file' > '$dump'") == 0
+              or die "Got rrderror: $!";
+            push @all_rrddumps, $dump;
+        }
+    }
+    return if $test;
+
+    my $temp_file = "/tmp/rrd_converter.txt";
+    open T, "> $temp_file" or die "Cannot open temp file: $!";
+    print T join( "\n", @all_rrddumps );
+    close T;
+    print "Creating tar", $/;
+    system( "tar", "--gzip", "-cf", $tarball, "--files-from", $temp_file ) == 0
+      or die "tar failed: $!";
+
+    print "Created tarball at $tarball", $/;
+
+    foreach (@all_rrddumps) { unlink $_ }
+
+    unlink $temp_file;
+}
+
+sub run_import {
+    system( "tar", "--gzip", "-C", "/", "-xf", $tarball ) == 0
+      or die "tar failed: $!";
+
+    find( \&process_import, @dirs );
+
+    sub process_import {
+        my $dump = $File::Find::name;
+        if ( $dump =~ /^(.*)\.rrd\.xml$/ ) {
+            my $rrd = $dump;
+            $rrd =~ s/\.xml$//;
+            print "Found dump: $dump",   $/;
+            print " Converting to $rrd", $/;
+            return if $test;
+            RRDs::restore( $dump, $rrd, "-f" );
+            if (RRDs::error) {
+                die "Got error: " . RRDs::error;
+            }
+            unlink $dump;
+        }
+    }
+}

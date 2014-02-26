@@ -1,0 +1,11 @@
+name: Linux
+command: check_nrpe -H $HOSTADDRESS$ -c $PLUGINNAME$ -a '$ARGS$'
+plugins: 
+ - check_users
+ - check_memory
+ - check_load
+ - check_disk
+ - check_smart
+ - check_swap
+ - check_procs
+

@@ -1,0 +1,206 @@
+#!/usr/bin/perl
+# Check some base Opsview / Mysql parameters before an upgrade
+# Output to show what is checked and the status
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin", "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+use Opsview;
+use Runtime;
+
+my $errors = 0;
+
+sub print_help {
+    my ($error) = @_;
+    if ($error) {
+        print $error. $/;
+        print $/;
+    }
+    print <<EOF;
+opsview_preupgrade_check {component ...}
+
+Runs some checking on Opsview system. Valid components to check:
+  * mysql_variables      - checks mysql server variables against recommendations
+  * mysql_crashed_tables - checks for crashed myisam tables. This could take a long time
+
+EOF
+    exit;
+}
+
+unless (@ARGV) {
+    print_help;
+}
+
+my $check_mysql_variables = sub {
+    print "Checking Mysql variables\n";
+    my $opsviewdb = Opsview->db_Main;
+    my $sth       = $opsviewdb->prepare( "SHOW VARIABLES" );
+    $sth->execute;
+    while ( my $row = $sth->fetchrow_hashref ) {
+        if ( $row->{variable_name} eq "innodb_buffer_pool_size" ) {
+            my $min = 16000000;
+            if ( $row->{value} < $min ) {
+                print_error(
+                        "innodb_buffer_pool_size (currently "
+                      . $row->{value}
+                      . ") < $min - we recommend this value is increased"
+                );
+            }
+        }
+        elsif ( $row->{variable_name} eq "innodb_file_per_table" ) {
+            if ( $row->{value} ne "ON" ) {
+                print_error(
+                        "innodb_file_per_table (currently "
+                      . $row->{value}
+                      . ") - this should be set to 1 (ON) for management reasons"
+                );
+            }
+        }
+        elsif ( $row->{variable_name} eq "innodb_flush_log_at_trx_commit" ) {
+            if ( $row->{value} != 2 ) {
+                print_error(
+                        "innodb_flush_log_at_trx_commit (currently "
+                      . $row->{value}
+                      . ") != 2 - we recommend this is set to 2"
+                );
+            }
+        }
+        elsif ( $row->{variable_name} eq "table_cache" ) {
+            my $min = 768;
+            if ( $row->{value} < $min ) {
+                print_error(
+                        "table_cache (currently "
+                      . $row->{value}
+                      . ") < $min - we recommend this value is increased"
+                );
+            }
+        }
+        elsif ( $row->{variable_name} eq "query_cache_size" ) {
+            my $min = 16 * 1024 * 1024;
+            if ( $row->{value} < $min ) {
+                print_error(
+                        "query_cache_size (currently "
+                      . $row->{value}
+                      . ") < $min - we recommend this value is increased"
+                );
+            }
+        }
+        elsif ( $row->{variable_name} eq "key_buffer_size" ) {
+            my $min = 16 * 1024 * 1024;
+            if ( $row->{value} < $min ) {
+                print_error(
+                        "key_buffer_size (currently "
+                      . $row->{value}
+                      . ") < $min - we recommend this value is increased"
+                );
+            }
+        }
+        elsif ( $row->{variable_name} eq "max_allowed_packet" ) {
+            my $min = 16 * 1024 * 1024;
+            if ( $row->{value} < $min ) {
+                print_error(
+                        "max_allowed_packet (currently "
+                      . $row->{value}
+                      . ") < $min - we recommend this value is increased"
+                );
+            }
+        }
+    }
+    print "\n";
+};
+
+my $check_mysql_crashed_tables = sub {
+    print "Checking for crashed tables\n";
+    foreach my $dbname (qw(Opsview Runtime)) {
+        my $dbh = $dbname->db_Main;
+
+        my $tables = get_all_tables($dbh);
+        print " Checking for crashed tables in db: $dbname\n";
+        check_all_tables( $dbh, $tables );
+    }
+    print $/;
+};
+
+my $components = {
+    "mysql_variables"      => $check_mysql_variables,
+    "mysql_crashed_tables" => $check_mysql_crashed_tables,
+};
+
+my @components_to_check = @ARGV;
+
+foreach my $component (@components_to_check) {
+    if ( exists $components->{$component} ) {
+        my $func = $components->{$component};
+        $func->();
+    }
+    else {
+        print_help( "Invalid component: $component" );
+    }
+}
+
+if ( $errors == 0 ) {
+    print "No errors found\n";
+}
+else {
+    print "Errors: $errors\n";
+}
+exit( $errors > 0 );
+
+sub print_error {
+    my ($msg) = @_;
+    print "--> $msg\n";
+    $errors++;
+}
+
+sub get_all_tables {
+    my ($dbh) = @_;
+    my $sth = $dbh->prepare( "SHOW TABLE STATUS" );
+    $sth->execute;
+    my $tables;
+    while ( my $row = $sth->fetchrow_hashref() ) {
+        $tables->{ $row->{name} } = {
+            name   => $row->{name},
+            engine => $row->{engine}
+        };
+    }
+    return $tables;
+}
+
+sub check_all_tables {
+    my ( $dbh, $tables ) = @_;
+    foreach my $table ( keys %$tables ) {
+        my $tablename = $table;
+        next unless lc $tables->{$table}->{engine} eq "myisam";
+        my $row =
+          $dbh->selectrow_hashref( "CHECK TABLE $tablename FAST QUICK" );
+        if ( $row->{msg_type} ne "status" ) {
+            print_error(
+                    "Table $tablename: Status "
+                  . $row->{msg_type} . " - "
+                  . $row->{msg_text}
+            );
+            $errors++;
+        }
+    }
+}

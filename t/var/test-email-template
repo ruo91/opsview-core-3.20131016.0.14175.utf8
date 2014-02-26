@@ -1,0 +1,19 @@
+[%-
+hostgroup = nagios.hostgroupname;
+matpath = config.hostgroups.$hostgroup.matpath.replace(",", " > ");
+-%]
+Hierarchy:[% matpath %]
+Hostname:[% nagios.hostname %]
+Service:[% nagios.servicedesc %]
+Status:[% IF nagios.servicedesc; nagios.servicestate; ELSE; nagios.hoststate; END; %]
+Timestamp:[% IF nagios.servicedesc; nagios.lastservicestatechange; ELSE; nagios.lasthoststatechange; END; %]
+Retries:[% IF nagios.servicedesc; nagios.serviceattempt; ELSE; nagios.hostattempt; END; %]
+Additional Information:[%
+IF nagios.servicedesc;
+  nagios.serviceoutput; "\n";
+  nagios.longserviceoutput;
+ELSE;
+  nagios.hostoutput; "\n";
+  nagios.longhostoutput;
+END;
+-%]

@@ -1,0 +1,214 @@
+{
+   "attribute" : [],
+   "hosttemplate" : [
+      {
+         "description" : "Email services status",
+         "managementurls" : [],
+         "name" : "Network Services - Email",
+         "servicechecks" : [
+            {
+               "exception" : null,
+               "name" : "DNS blacklist check",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "IMAP4",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "POP3",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "SMTP",
+               "timed_exception" : null
+            }
+         ]
+      }
+   ],
+   "servicecheck" : [
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -B zen.spamhaus.org",
+         "attribute" : null,
+         "calculate_rate" : null,
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Checks whether server is listed in specified DNS Blacklist",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "DNS blacklist check",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_dnsbl"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Network - Services"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$",
+         "attribute" : null,
+         "calculate_rate" : null,
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Checks IMAP on TCP port 143",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "IMAP4",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_imap"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Application - Email"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$",
+         "attribute" : null,
+         "calculate_rate" : null,
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Checks POP3",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "POP3",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_pop"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Application - Email"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$",
+         "attribute" : null,
+         "calculate_rate" : null,
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Checks SMTP on TCP port 25",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "SMTP",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_smtp"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Application - Email"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      }
+   ],
+   "servicegroup" : [
+      {
+         "name" : "Application - Email"
+      },
+      {
+         "name" : "Network - Services"
+      }
+   ]
+}

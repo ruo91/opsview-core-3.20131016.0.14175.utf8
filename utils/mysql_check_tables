@@ -1,0 +1,100 @@
+#!/usr/bin/perl
+# SYNTAX:
+#	mysql_check_tables [-f] [-n] { Runtime | Opsview }
+#
+# DESCRIPTION:
+#	Checks all tables on specified databases. If no dbs, will check all (expect information_schema)
+#	-f means CHECK TABLE ... FAST
+#	-n means write to nagios.cmd for host=$ENV{NAGIOS_HOSTNAME}, service="MySQL $db table check"
+#	Writes to /tmp/mysql_check_tables_$db.log
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use warnings;
+use strict;
+use lib "/usr/local/nagios/perl/lib";
+use lib "/usr/local/nagios/lib";
+use lib "/usr/local/nagios/etc";
+
+use Getopt::Std;
+my $opts = {};
+
+my $option = "";
+
+getopts( "fn", $opts ) or die "Invalid options";
+
+$option = "FAST" if $opts->{f};
+
+my $db = shift;
+
+if ( !$db || $db !~ m/(?:Runtime|Opsview)/i ) {
+    die( "Database must be one of Opsview or Runtime\n" );
+}
+
+$db = ucfirst($db);
+
+eval "require $db";
+die $@ if $@;
+
+my $dbh = $db->db_Main;
+
+my $sql;
+my $sth;
+my @tables;
+
+$sth = $dbh->prepare( "show table status" );
+$sth->execute;
+
+my %tables;
+
+while ( my $row = $sth->fetchrow_arrayref ) {
+    $tables{ $row->[0] } = 1
+      if ( !defined $row->[1] || $row->[1] =~ /^(MyISAM|InnoDB)$/ );
+}
+
+my @output;
+my @errors;
+foreach my $table ( sort keys %tables ) {
+    my @row = $dbh->selectrow_array( "CHECK TABLE $table $option" );
+    push @output, join( "\t", @row ) . "\n";
+    push @errors, $row[0] if $row[2] =~ /error|warning/;
+}
+
+print @output;
+my $rc;
+my $message;
+if (@errors) {
+    $message = "ERRORS ON TABLES: " . join( ", ", @errors ) . "\n";
+    $rc = 2;
+}
+else {
+    $message = "ALL TABLES OK\n";
+    $rc      = 0;
+}
+if ( $opts->{n} ) {
+    my $nagios_cmd  = "/usr/local/nagios/var/rw/nagios.cmd";
+    my $hostname    = $ENV{NAGIOS_HOSTNAME} || "opsview";
+    my $servicename = "MySQL $db table check";
+    if ( -w $nagios_cmd ) {
+        open CMD, ">> $nagios_cmd" or die "Cannot write to $nagios_cmd";
+        print CMD "[" . time
+          . "] PROCESS_SERVICE_CHECK_RESULT;$hostname;$servicename;$rc;$message\n";
+        close CMD;
+    }
+}
+print $message;
+exit $rc;

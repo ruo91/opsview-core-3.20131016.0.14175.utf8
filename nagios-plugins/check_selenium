@@ -1,0 +1,194 @@
+#!/usr/bin/perl
+#
+# AUTHORS: Rohit Deshmukh
+#   Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+use Nagios::Plugin;
+use WWW::Selenium::Util qw/server_is_running/;
+use Test::Harness::Straps;
+use Data::Dump qw(dump);
+use Time::HiRes qw(gettimeofday tv_interval);
+
+my $np = Nagios::Plugin->new(
+    shortname => "SELENIUM",
+    usage =>
+      "%s --filename=name, [--warning], [--critical], [--time=time] [--number=number of failed tests output]
+  to test the Selenium perl test cases
+  check_selenium -f filename.pl [ --critical ] [--time=value]
+  check_selenium -f filename.pl   --warning  [--time=value]
+  logfile check_selenium_log.txt file in /tmp directory
+",
+);
+$np->add_arg(
+    spec => "filename|f=s",
+    help => "-f, --selenium perl test case file exported from the selenium IDE",
+    required => 1,
+);
+$np->add_arg(
+    spec => "critical",
+    help => "--critical \n will alert CRITICAL if one or more tests fails",
+);
+$np->add_arg(
+    spec => "warning",
+    help => "--warning\n will alert WARNING if one or more tests fails",
+);
+$np->add_arg(
+    spec => "time|time=s",
+    help =>
+      "--time=value in seconds\n will alert tests take more time than expected",
+);
+$np->add_arg(
+    spec => "number|n=s",
+    help => "--number=maximum number of failed test output, default is 5",
+);
+$np->getopts;
+my $alert_mode = "critical";
+my $est_time   = 0;
+if ( $np->opts->time ) { $est_time = $np->opts->time; }
+
+if ( $np->opts->warning ) {
+    $alert_mode = "warning";
+}
+my $filename = $np->opts->filename;
+
+if ( !server_is_running ) {
+    $np->nagios_exit( UNKNOWN, "Selenium server not running " . "$@" );
+}
+
+my $strap = Test::Harness::Straps->new;
+
+my $logfile = "check_selenium_log.txt";
+my $t0      = [gettimeofday];
+my $output;
+open STDERR, ">/tmp/$logfile"
+  or die $np->nagios_exit( UNKNOWN, "Can not write to the /tmp/$logfile" );
+$output = $strap->analyze_file($filename)
+  or
+  die $np->nagios_exit( UNKNOWN, "Unable to run tests from file $filename" );
+close STDERR;
+my $t1 = [gettimeofday];
+
+#print dump $output->details;
+my @array      = @{ $output->details };
+my $array_size = scalar @array;
+my $i;
+my $count = 0;
+my @fail_log;
+for ( $i = 0; $i <= $array_size - 1; $i++ ) {
+    if ( $array[$i]->{'actual_ok'} == 0 ) {
+        $count++;
+        my $item =
+          "failed_test-" . $count . ") \"" . "$array[$i]->{name}" . "\". ";
+        my $max_failed_output = 6;
+        if ( $np->opts->number ) {
+            $max_failed_output = $np->opts->number;
+            $max_failed_output = $max_failed_output + 1;
+        }
+        if ( $count < $max_failed_output ) {
+            push( @fail_log, $item );
+        }
+    }
+}
+my $max  = $strap->{totals}->{$filename}->max;
+my $exit = $strap->{totals}->{$filename}->exit;
+my $ok   = $strap->{totals}->{$filename}->ok;
+my $time = tv_interval( $t0, $t1 );
+if ( $exit == 255 && $max == 0 ) {
+    $np->nagios_exit( UNKNOWN,
+        "Input file $filename is not in a correct format"
+    );
+}
+
+#adding performance data
+$np->add_perfdata(
+    label => 'total_tests',
+    value => $max,
+);
+$np->add_perfdata(
+    label => 'failed_tests',
+    value => $exit,
+);
+$np->add_perfdata(
+    label => "actual_time",
+    value => $time,
+    uom   => " seconds",
+);
+$np->add_perfdata(
+    label => "expected_time",
+    value => $est_time,
+    uom   => " seconds",
+);
+
+#print $max, $exit,$ok;
+if ( $alert_mode eq "critical" ) {
+    if ( $np->opts->time && $time > $est_time ) {
+        if ( $exit > 0 ) {
+            $np->nagios_exit( CRITICAL,
+                    "Test case took more time than expected."
+                  . " total_tests=$max, failed_tests=$exit, ok_tests=$ok ,test failed at :  @fail_log"
+            );
+        }
+
+        $np->nagios_exit( CRITICAL,
+                "Test case took more time than expected."
+              . " total_tests=$max, failed_tests=$exit, ok_tests=$ok"
+        );
+    }
+
+    if ( $exit > 0 ) {
+        $np->nagios_exit( CRITICAL,
+            "total_tests=$max, failed_tests=$exit, ok_tests=$ok ,test failed at :  @fail_log"
+        );
+    }
+
+    if ( $exit == 0 ) {
+        $np->nagios_exit( OK,
+            "All tests passed. total_tests=$max, failed_tests=$exit, ok_tests=$ok"
+        );
+    }
+}
+if ( $alert_mode eq "warning" ) {
+    if ( $np->opts->time && $time > $est_time ) {
+        if ( $exit > 0 ) {
+            $np->nagios_exit( WARNING,
+                    "Test case took more time than expected. "
+                  . " total_tests=$max, failed_tests=$exit, ok_tests=$ok ,test failed at :  @fail_log"
+            );
+        }
+        $np->nagios_exit( WARNING,
+                "Test case took more time than expected. "
+              . " total_tests=$max, failed_tests=$exit, ok_tests=$ok"
+        );
+    }
+    if ( $exit > 0 ) {
+        $np->nagios_exit( WARNING,
+            "total_tests=$max, failed_tests=$exit, ok_tests=$ok, test failed at : @fail_log "
+        );
+    }
+
+    if ( $exit == 0 ) {
+        $np->nagios_exit( OK,
+            "All tests passed. total_tests=$max, failed_tests=$exit, ok_tests=$ok"
+        );
+    }
+}
+1

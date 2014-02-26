@@ -1,0 +1,43 @@
+.opsview_menu li div a {
+	*display:inline;
+}
+
+/* IE7 Specific Styling */
+
+.opsview_wrapper_menu_full .opsview_menu li:hover .opsview_dropdown_fullwidth {
+	*margin-left:-430px;
+}
+.opsview_wrapper_menu_full .opsview_menu li.opsview_right:hover .opsview_dropdown_fullwidth {
+	*margin-right:-511px;
+}
+
+/* IE6 Specific Styling */
+
+body {
+	_behavior: url("css/ie/csshover3.opsview_htc");
+}
+.opsview_menu_light_theme ul li.opsview_fullwidth:hover {
+	_background:#dedede;
+}
+.opsview_menu_light_theme ul li.opsview_right:hover,
+.opsview_menu_dark_theme ul li.opsview_right:hover {
+	_margin-right:0px;
+}
+.opsview_menu li.opsview_nodrop:hover {
+	_padding: 0;
+}
+.opsview_menu li:hover .opsview_align_right {
+	_right:-2px;
+}
+.opsview_menu li.opsview_right:hover .opsview_dropdown_fullwidth {
+	_right:21px;
+}
+.opsview_wrapper_menu_full .opsview_menu li:hover .opsview_dropdown_fullwidth {
+	_margin-left:-490px;
+}
+.opsview_wrapper_menu_full .opsview_menu li.opsview_right:hover .opsview_dropdown_fullwidth {
+	_margin-right:-490px;
+}
+#opsview_sidenav_search_autocomplete {
+    border: none;
+}

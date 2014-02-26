@@ -1,0 +1,12 @@
+/generate_report
+/insert.pl
+/nagios
+/nagiostats
+/nsca
+/send_nsca
+/ndo2db
+/ndo_mysql.sql
+/nrpe
+/autossh
+/file2sock
+/*.o

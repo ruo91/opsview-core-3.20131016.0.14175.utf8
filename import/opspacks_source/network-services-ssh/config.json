@@ -1,0 +1,125 @@
+{
+   "attribute" : [],
+   "hosttemplate" : [
+      {
+         "description" : "SSH",
+         "managementurls" : [],
+         "name" : "Network Services - SSH",
+         "servicechecks" : [
+            {
+               "exception" : null,
+               "name" : "SSH",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "SSH processes",
+               "timed_exception" : null
+            }
+         ]
+      }
+   ],
+   "servicecheck" : [
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -p 22 -w 2 -c 5",
+         "attribute" : null,
+         "calculate_rate" : null,
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Checks SSH on TCP port 22",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "SSH",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_tcp"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Network - Services"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -c check_procs -a '-C sshd -w 1:20 -c 1:40'",
+         "attribute" : null,
+         "calculate_rate" : null,
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [
+            {
+               "name" : "Opsview Agent"
+            }
+         ],
+         "description" : "Checks quantity of running SSH processes",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "SSH processes",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_nrpe"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "OS - Base Unix Agent"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      }
+   ],
+   "servicegroup" : [
+      {
+         "name" : "OS - Base Unix Agent"
+      },
+      {
+         "name" : "Application - Opsview"
+      },
+      {
+         "name" : "Network - Services"
+      }
+   ]
+}

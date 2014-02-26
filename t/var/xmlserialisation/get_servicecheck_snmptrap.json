@@ -1,0 +1,103 @@
+{
+      "flap_detection_enabled" : "1",
+      "check_freshness" : "1",
+      "invertresults" : "0",
+      "dependencies" : [],
+      "hosts" : [
+         {
+            "ref" : "/rest/config/host/7",
+            "name" : "cisco"
+         },
+         {
+            "ref" : "/rest/config/host/8",
+            "name" : "cisco1"
+         },
+         {
+            "ref" : "/rest/config/host/9",
+            "name" : "cisco2"
+         },
+         {
+            "ref" : "/rest/config/host/10",
+            "name" : "cisco3"
+         },
+         {
+            "ref" : "/rest/config/host/11",
+            "name" : "cisco4"
+         },
+      ],
+      "hosttemplates" : [],
+      "keywords" : [
+         {
+            "ref" : "/rest/config/keyword/2",
+            "name" : "cisco"
+         },
+         {
+            "ref" : "/rest/config/keyword/3",
+            "name" : "cisco_gp1"
+         },
+         {
+            "ref" : "/rest/config/keyword/4",
+            "name" : "cisco_gp2"
+         }
+      ],
+      "attribute" : null,
+      "check_period" : null,
+      "id" : "79",
+      "notification_period" : null,
+      "snmptraprules" : [
+         {
+            "alertlevel" : "1",
+            "ref" : "/rest/config/snmptraprule/1",
+            "name" : "Check coldstart",
+            "message" : "Device coldstarted",
+            "process" : "1",
+            "id" : "1",
+            "code" : "\"${TRAPNAME}\" =~ /SNMPv2-MIB::coldstart/i",
+            "uncommitted" : "1"
+         },
+         {
+            "alertlevel" : "0",
+            "ref" : "/rest/config/snmptraprule/2",
+            "name" : "Otherwise Ok",
+            "message" : "OK",
+            "process" : "1",
+            "id" : "2",
+            "code" : "1",
+            "uncommitted" : "1"
+         }
+      ],
+      "notification_options" : "w,c,r,u",
+      "name" : "Coldstart",
+      "stale_threshold_seconds" : "3700",
+      "description" : "",
+      "markdown_filter" : "0",
+      "critical_comparison" : null,
+      "warning_value" : null,
+      "label" : null,
+      "uncommitted" : "1",
+      "freshness_type" : "set_stale",
+      "retry_check_interval" : null,
+      "calculate_rate" : null,
+      "oid" : null,
+      "args" : "",
+      "event_handler" : "",
+      "stale_text" : "Set to critical!!",
+      "critical_value" : null,
+      "plugin" : null,
+      "volatile" : "0",
+      "stalking" : null,
+      "checktype" : {
+         "ref" : "/rest/config/checktype/4",
+         "name" : "SNMP trap"
+      },
+      "servicegroup" : {
+         "ref" : "/rest/config/servicegroup/1",
+         "name" : "Operations"
+      },
+      "stale_state" : "2",
+      "check_attempts" : null,
+      "check_interval" : null,
+      "warning_comparison" : null,
+      "notification_interval" : null
+   }
+

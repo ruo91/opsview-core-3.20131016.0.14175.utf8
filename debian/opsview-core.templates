@@ -1,0 +1,20 @@
+Template: opsview-core/db_rootpass
+Type: password
+Default: 
+Description: MySQL Root Password
+ Please specify the MySQL root password on localhost. This is used to create or upgrade
+ the ${db} database required for Opsview, as well as set all the necessary grants. 
+
+Template: opsview-core/db_opspass
+Type: password
+Default:
+Description: MySQL Opsview Password
+ Specify a password for Opsview to use when it connects to the MySQL database.
+
+Template: opsview-core/db_remotesetup
+Type: note
+Description: MySQL remote setup
+  Since the ${db} database is on the remote server localhost, you will need to run 
+  some commands on the remote server as the mysql root user. Please run:
+    /usr/local/nagios/bin/db_mysql -t
+  to list the commands required

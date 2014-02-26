@@ -1,0 +1,87 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+# 	generate_slave_sync_status
+#
+# DESCRIPTION:
+#	Writes out a set of sync.dat files, one per slave system
+#   Requires Opsview DB to match host to slave and Runtime DB for current status
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+
+use FindBin qw($Bin);
+use lib "$Bin/../perl/lib";
+use lib "$Bin/../lib", "$Bin/../etc";
+
+use Getopt::Std;
+use Opsview::Utils::NagiosSyncStatus;
+use Opsview::Schema;
+use Opsview::Config;
+
+my $opsview   = Opsview::Schema->my_connect;
+my $opsviewdb = Opsview::Config->db;
+
+my $opts;
+getopts( "t", $opts ) or die "Incorrect options";
+
+my $targetdir = shift @ARGV;
+die "Must specify a target directory" unless $targetdir;
+
+my $rs;
+
+# Get mapping of $hostname -> slave name
+my $host_to_slave = {};
+$rs =
+  $opsview->resultset("Hosts")
+  ->search( { monitored_by => { "!=" => 1 } }, { join => "monitored_by" } );
+while ( my $host = $rs->next ) {
+    my $slavename = $host->monitored_by->name;
+    $host_to_slave->{ $host->name } = $slavename;
+}
+
+# Ensure directory for all slaves. Possible race condition with nagconfgen, so ignore errors
+my %slavenames = reverse %$host_to_slave;
+foreach my $slavename ( keys %slavenames ) {
+    unless ( -d "$targetdir/$slavename" ) {
+        mkdir "$targetdir/$slavename";
+    }
+}
+
+my $sync = Opsview::Utils::NagiosSyncStatus->new;
+my $status_file = $ENV{TEST_NAGIOS_STATUS_DAT} || Opsview::Config->status_dat;
+
+# Ignore file if status.dat not available. This is the case when upgrading an existing distributed system
+unless ( -e $status_file ) {
+    exit;
+}
+
+$sync->generate(
+    {
+        status_file  => $status_file,
+        targetdir    => $targetdir,
+        slave_lookup => $host_to_slave,
+    }
+);
+
+exit;

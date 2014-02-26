@@ -1,0 +1,61 @@
+#!/usr/bin/perl
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# See also http://inaugust.com/post/60
+#
+use warnings;
+use strict;
+use lib "/usr/local/nagios/perl/lib";
+use lib "/usr/local/nagios/lib";
+use lib "/usr/local/nagios/etc";
+
+#use Data::Dump qw(dump);
+
+my $datafile_path = '/';
+
+my $db = shift;
+
+if ( !$db || $db !~ m/(?:Runtime|Opsview)/i ) {
+    die( "Database must be one of Opsview or Runtime\n" );
+}
+
+$db = ucfirst($db);
+
+eval "require $db";
+die $@ if $@;
+
+my $dbh = $db->db_Main;
+$dbh->{RaiseError} = 1;
+
+my $sql;
+my $sth;
+my @tables;
+
+$sth = $dbh->prepare( q{ SHOW TABLE STATUS } );
+$sth->execute();
+
+while ( my $row = $sth->fetchrow_hashref() ) {
+    next if ( $row->{engine} eq 'InnoDB' );
+    push( @tables, $row->{name} );
+}
+
+foreach ( sort @tables ) {
+    warn 'Checking ', $_, $/;
+
+    eval { $dbh->do( q{ SELECT COUNT(*) FROM } . $_ ); };
+
+    if ($@) {
+        warn '  - Repairing ', $_, $/;
+
+        $sth = $dbh->prepare( 'REPAIR TABLE ' . $_ );
+        $sth->execute;
+
+        while ( my $row = $sth->fetchrow_hashref() ) {
+
+            #        dump($row);
+            print '   ', ucfirst( $row->{msg_type} ), ' -> ', $row->{msg_text},
+              $/;
+        }
+    }
+}

@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.snmp_mib_ii
+VERSION=2.1
+ALIAS=SNMP - MIB-II
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

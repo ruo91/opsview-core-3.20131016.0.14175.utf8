@@ -1,0 +1,27 @@
+OPSVIEW
+
+Opsview is enterprise system monitoring software designed for scalability, flexibility and ease of use. 
+Benefits include improved service levels, more effective IT staff and better capacity planning.
+
+Opsview is built on GPL software, including Nagios, an Open Source monitoring
+engine used in thousands of organisations worldwide. All 3rd party software is
+protected by their relevant copyrights, licenses and trademarks.
+
+Opsview is split into four components:
+  - opsview-base (3rd party GPL software)
+  - opsview-core (Core Opsview libraries and executables)
+  - opsview-web  (The web UI code)
+  - opsview-perl (A separate package containing perl modules from CPAN)
+
+Opsview Limited's copyrighted software in opsview-core and opsview-web has been released
+under the GNU General Public License v2. As these are in an intepreted language, the
+full source code is already available upon installation.
+
+Third party software, in opsview-base, is installed in a compiled format. Please contact
+Opsview Limited if you require the sources, where we will send you (either electronically or on
+CD) the sources for your relevant version of Opsview. Alternatively you can access
+source code though our Subversion repository: http://www.opsview.com/community/developer-zone
+
+Please see the COPYING file for the full GNU GPL v2 license.
+
+For information on technical support, please visit http://www.opsview.com/services/technical-support

@@ -1,0 +1,294 @@
+#!/usr/bin/perl
+
+#  Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#  W: http://www.opsview.com/
+#
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software
+#  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+################################################################
+# Nagios SMTP - check_smtprouting v1.5                         #
+# Author James Peel - james.peel@opsview.com                   #
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved #
+################################################################
+
+use Time::HiRes qw(gettimeofday);
+use Getopt::Std;
+
+$configfilepath = "/usr/local/nagios/etc";
+
+$smtphost  = "mail.opsview.com";
+$timestamp = gettimeofday;
+
+$threshold_dead      = 30; # in minutes
+$threshold_warning   = 15; # in minutes
+$threshold_reporting = 24; # in hours
+
+$receivedmessages   = 0;   # used to store number of correctly received messages
+$deadmessages       = 0;   # used to store number of dead messages
+$latemessages       = 0;   # used to store number of late messages
+$queuedmessages     = 0;   # used to store number of queued messages
+$sentmessages       = 0;   # used to store number of sent messages
+$receivedmessages   = 0;   # used to store number of received messages
+$failedmessages     = 0;   # used to store number of failed messages
+$critical           = 0;   # whether to raise a critical alert
+$warning            = 0;   # whether to raise a warning alert
+$averagetransittime = 0;   # average transit time
+
+$status = 0;
+
+# Do we have enough information?
+if ( @ARGV < 1 ) {
+    print "Too few arguments\n";
+    usage();
+}
+
+getopts( "hH:" );
+if ($opt_h) {
+    usage();
+    exit(0);
+}
+if ($opt_H) {
+    $smtphost = $opt_H;
+
+    # print "Hostname $opt_H\n";
+}
+else {
+    print "No hostname specified\n";
+    usage();
+}
+
+update_messagequeue();
+report_status();
+
+exit($status);
+
+################################################################
+# Returns status to Nagios                                     #
+################################################################
+
+sub report_status {
+    my $returnstring = "";
+
+    if ( $critical == 1 ) {
+        $returnstring = "CRITICAL";
+        $status       = 2;
+    }
+    elsif ( $warning == 1 ) {
+        $returnstring = "WARNING";
+        $status       = 1;
+    }
+    else {
+        $returnstring = "OK";
+        $status       = 0;
+    }
+
+    $averagetransittime = sprintf "%.1f", $averagetransittime;
+    $sentmessages =
+        $sentmessages
+      + $receivedmessages
+      + $deadmessages
+      ; # sent messages include those received back and those marked dead
+
+    $returnstring =
+      "Last $threshold_reporting Hours: Queued:$queuedmessages, Sent:$sentmessages, Received:$receivedmessages, Late:$latemessages, Dead:$deadmessages, Failed:$failedmessages, Average time:$averagetransittime s";
+    print "$returnstring\n";
+}
+
+################################################################
+# Updates SMTP message queue                                     #
+################################################################
+
+sub update_messagequeue {
+    my @temparray = ();
+    my $row       = 0;
+
+    # Opens queue and locks file
+
+    if ( open FILE, "<$configfilepath/smtpmessagequeue.db" ) {
+        if ( flock( FILE, 2 ) ) {
+
+            # print "opened file and established lock\n";
+        }
+    }
+    else {
+        print "Can't open file $configfilepath/smtpmessagequeue.db";
+    }
+
+    # Reads queue
+
+    @temparray = <FILE>;
+    foreach $line (@temparray) {
+        ( $queue[$row][0], $queue[$row][1], $queue[$row][2], $queue[$row][3] )
+          = split( /:/, $line );
+        $row++;
+    }
+
+    $queuelength = $row;
+
+    #
+    # Checks for messages that should be marked dead
+    #
+
+    my $row         = 0;
+    my $currenttime = gettimeofday;
+    while ( $row <= $queuelength ) {
+        if ( $queue[$row][1] eq "sent" ) {
+            my $messagetimestamp = $queue[$row][2];
+            my $elapsed          = $currenttime - $messagetimestamp;
+            if ( $elapsed >= ( $threshold_dead * 60 ) ) {
+                $critical = 1;
+                $queue[$row][1] = "dead";
+
+                # print "DEAD MESSAGE, elapsed: $elapsed\n";
+            }
+        }
+        $row++;
+    }
+
+    #
+    # Checks for excessive transit times
+    #
+
+    my $row         = 0;
+    my $currenttime = gettimeofday;
+    while ( $row <= $queuelength ) {
+        if ( $queue[$row][0] eq $smtphost ) {
+            if ( $queue[$row][1] eq "sent" ) {
+                my $messagetimestamp = $queue[$row][2];
+                my $elapsed          = $currenttime - $messagetimestamp;
+                if ( $elapsed >= ( $threshold_warning * 60 ) ) {
+
+                    #	$warning = 1;
+                    $latemessages++;
+                }
+            }
+        }
+        $row++;
+    }
+
+    #
+    # Generates Stats based on queue
+    #
+
+    my $totaltransittime = 0;
+    my $row              = 0;
+    my $currenttime      = gettimeofday;
+    while ( $row <= $queuelength ) {
+        if ( $queue[$row][0] eq $smtphost ) {
+            if ( $queue[$row][1] eq "queued" ) {
+                $queuedmessages++;
+            }
+            if ( $queue[$row][1] eq "sent" ) {
+                $sentmessages++;
+            }
+            if ( $queue[$row][1] eq "received" ) {
+                $receivedmessages++;
+                $totaltransittime = $totaltransittime + $queue[$row][3];
+            }
+            if ( $queue[$row][1] eq "dead" ) {
+                $deadmessages++;
+            }
+            if ( $queue[$row][1] eq "failed" ) {
+                $failedmessages++;
+                $critical = 1;
+                $queue[$row][1] = "dead";
+
+                # print "FAILED MESSAGE DETECTED!\n";
+            }
+        }
+        $row++;
+    }
+
+    if ( $receivedmessages > 0 ) {
+        $averagetransittime = $totaltransittime / $receivedmessages;
+    }
+
+    #
+    # Expires received messages older than X hours
+    #
+
+    my $row         = 0;
+    my $currenttime = gettimeofday;
+    while ( $row <= $queuelength ) {
+        if ( $queue[$row][1] eq "queued" ) {
+        }
+        elsif ( $queue[$row][1] eq "" ) {
+        }
+        else {
+            my $messagetimestamp = $queue[$row][2];
+            my $elapsed          = $currenttime - $messagetimestamp;
+            if ( $elapsed >= 86400 ) {
+
+                # print "deleting message older than $elapsed";
+                $queue[$row][0] = "";
+                $queue[$row][1] = "";
+                $queue[$row][2] = "";
+                $queue[$row][3] = "";
+            }
+        }
+        $row++;
+    }
+
+    #
+    # Updates array with new message info
+    #
+
+    $queuelength++;
+    $row    = $queuelength;
+    $#queue = $queuelength;
+
+    $queue[$row][0] = $smtphost;
+    $queue[$row][1] = "queued";
+    $queue[$row][2] = "";
+    $queue[$row][3] = "";
+
+    $queuelength++;
+    $queuedmessages++;
+
+    #
+    # Writes updates to queue
+    #
+
+    open FILE, ">$configfilepath/smtpmessagequeue.db"
+      or die "Can't open file $configfilepath/smtpmessagequeue.db $1";
+    my $row = 0;
+    while ( $row <= $queuelength ) {
+        if ( $queue[$row][1] eq "" ) {
+        }
+        else {
+            print FILE
+              "$queue[$row][0]:$queue[$row][1]:$queue[$row][2]:$queue[$row][3]:\n";
+        }
+        $row++;
+    }
+
+    # Close queue and release lock
+
+    close FILE;
+
+}
+
+sub usage {
+    print << "USAGE";
+
+check_smtprouting v1.0
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+Usage: $script -H <hostname> [...]
+Options: -H 		Hostname or IP address
+
+USAGE
+    exit 1;
+}

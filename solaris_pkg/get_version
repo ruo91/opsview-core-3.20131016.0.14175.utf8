@@ -1,0 +1,13 @@
+#!/usr/bin/sh
+#
+# $Id$
+#
+
+PATH=/usr/local/bin/perl:$PATH
+
+SCRIPT=${0}
+SCRIPTDIR=`dirname $SCRIPT`
+SCRIPTDIR=`cd ${SCRIPTDIR} 1>/dev/null ; pwd`
+SCRIPTNM=`basename $SCRIPT`
+
+cat $SCRIPTDIR/../version

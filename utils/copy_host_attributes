@@ -1,0 +1,227 @@
+#!/usr/bin/perl
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use strict;
+use warnings;
+
+use lib '/usr/local/nagios/perl/lib';
+use lib '/usr/local/nagios/lib';
+
+use FindBin qw($Bin $Script);
+use Getopt::Long qw(:config no_ignore_case bundling no_auto_abbrev);
+use Pod::Usage;
+use Readonly;
+
+use Opsview::Schema;
+
+my $VERSION = '0.01';
+
+my %options = (
+    'help|h|?'  => 0,
+    'man'       => 0,
+    'version|V' => 0,
+    'debug:+'   => 0,
+);
+
+GetOptions( \%options, keys(%options) ) || pod2usage( -verbose => 1 );
+
+die("Version: $VERSION\n") if ( $options{version} );
+pod2usage( -verbose => 1 ) if ( $options{'?'}  || $options{help} );
+pod2usage( -verbose => 2 ) if ( $options{HELP} || $options{man} );
+
+$options{debug} ||= 0;
+$options{debug} = 8 if ( $options{debug} > 8 );
+$options{set}   = 1 if ( !defined( $options{set} ) );
+
+sub logmsg($@) {
+    my ( $level, @text ) = @_;
+    print @text, $/ if ( $level <= $options{debug} );
+}
+
+Readonly my $TAB => "\t";
+my $opsview_schema = Opsview::Schema->my_connect;
+
+logmsg( 1, "Script $Script is running out of $Bin" );
+
+my $source_hostname = shift;
+my @dest_hostnames  = @ARGV;
+
+if ( !$source_hostname ) {
+    print 'No source hostname given.  Available choices are: ', $/;
+
+    my $opsview_hosts = $opsview_schema->resultset( "Hosts" );
+
+    while ( my $host_object = $opsview_hosts->next ) {
+        print $TAB, $host_object->name, $/;
+    }
+    exit 1;
+
+}
+
+my $src_host_obj =
+  $opsview_schema->resultset("Hosts")->find( { name => $source_hostname } );
+
+if ( !$src_host_obj ) {
+    die 'Invalid hostname given: ', $source_hostname, $/;
+}
+
+if ( !@dest_hostnames ) {
+    die 'No destination hostnames given', $/;
+}
+
+#check we can find all the destinations
+foreach my $dest (@dest_hostnames) {
+    my $dest_host_obj =
+      $opsview_schema->resultset("Hosts")->find( { name => $dest } );
+
+    if ( !$dest_host_obj ) {
+        die 'Could not find destination host: ', $dest, $/;
+    }
+}
+
+# for each destination host, copy all the attributes from the source
+foreach my $dest (@dest_hostnames) {
+    logmsg( 1, 'Copying attributes to ', $dest );
+    my $dest_host_obj =
+      $opsview_schema->resultset("Hosts")->find( { name => $dest } );
+
+    foreach my $attribute ( $src_host_obj->hostattributes ) {
+        logmsg(
+            2, $TAB,
+            'Checking for ',
+            $attribute->attribute->name,
+            ' -> ', $attribute->value
+        );
+
+        # search to see if an attribute exists already.
+        my $new_attribute = $dest_host_obj->hostattributes->find_or_new(
+            {
+                attribute => $attribute->attribute,
+                value     => $attribute->value,
+            }
+        );
+
+        # doesn't already exist, so ensure the extra info is there
+        if ( !$new_attribute->in_storage ) {
+            logmsg( 3, $TAB, $TAB, 'Inserting new attribute (with args)' );
+
+            $new_attribute->arg1( $attribute->arg1 );
+            $new_attribute->arg2( $attribute->arg2 );
+            $new_attribute->arg3( $attribute->arg3 );
+            $new_attribute->arg4( $attribute->arg4 );
+            $new_attribute->arg5( $attribute->arg5 );
+            $new_attribute->arg6( $attribute->arg6 );
+            $new_attribute->arg7( $attribute->arg7 );
+            $new_attribute->arg8( $attribute->arg8 );
+            $new_attribute->arg9( $attribute->arg9 );
+
+            $new_attribute->insert();
+        }
+        else {
+            logmsg( 3, $TAB, $TAB, 'Already exists, leaving unchanged' );
+        }
+    }
+}
+
+__END__
+
+=head1 NAME
+
+copy_host_attributes
+
+=head1 SYNOPSIS
+
+S<< copy_host_attributes [-?hV] <source host name> <dest host name> [...] >>
+
+=head1 DESCRIPTION
+
+Copy all host attributes from the source to the destination(s).  Attributes
+are only added - any pre-existing ones are not amended (for their 'args')
+
+=head1 OPTIONS
+
+=over
+
+=item --help, -?, -h
+
+Display basic help 
+
+=item --man
+
+Display man page
+
+=item --debug [0-9], --debug [--debug [...]]
+
+Enable debugging mode (using more than once increases verbosity, or specify
+a level explicitly to a maximum of level 8) 
+
+=item --version, -V
+
+Show version information
+
+=back
+
+=head1 ARGUMENTS
+
+=over
+
+=item source host name
+
+Host to copy the attributes from
+
+=item destiniation host name
+
+Host to add the attributes to
+
+=back
+
+=head1 NOTES
+
+N/A
+
+=head1 FILES
+
+N/A
+
+=head1 AUTHOR AND COPYRIGHT
+
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This software is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Opsview; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+=head1 KNOWN BUGS
+
+None known at this time.
+
+=head1 SEE ALSO
+
+L<perl>
+
+=cut

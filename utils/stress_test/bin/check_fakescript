@@ -1,0 +1,459 @@
+#!/usr/bin/perl
+#
+# $Id$
+#
+
+# NOTES:
+#
+# "perldoc perlpod" for more info on using POD
+# "perldoc Getopt::Long" for more info on using command line options
+#   and imposing limits on what can be used with which switches
+# Any $<text>$ is a CVS/SVN keyword - do not alter!
+# When script is complete, use "perltidy -b -i=2 <script>" to format correctly
+
+use strict;
+use warnings;
+
+use Cwd;
+my ( $script, $scriptname, $scriptdir );
+( $scriptname = $0 ) =~ s!^.*/!!;
+( $scriptdir = Cwd::abs_path($0) ) =~ s!/[^/]+$!!;
+$script = "$scriptdir/$scriptname";
+
+use Pod::Usage;
+use Getopt::Long qw(:config no_ignore_case bundling no_auto_abbrev);
+use Time::HiRes qw(gettimeofday usleep);
+use Storable qw(nstore_fd retrieve_fd);
+use Fcntl qw(:DEFAULT :flock);
+use Sys::Hostname;
+use Data::Dump qw(dump);
+
+my $start_time  = gettimeofday();
+my @script_args = @ARGV;
+
+my $_VERS = sprintf( "%d.%d", q$Revision: 0.01 $ =~ m!(\d+)\.(\d+)! );
+my $_DATE = sprintf( "%s %s",
+    q$Date: 2000/01/01 00:00:00 $ =~ m!(\d.../\d./\d.) (\d.:\d.:\d.)! );
+
+my $VERSION = "$_VERS $_DATE";
+
+=head1 NAME
+
+<script name>
+
+=head1 SYNOPSIS
+
+S<< <check_fakescript> [-?hV] >>
+
+=head1 DESCRIPTION
+
+Script to provide realistic dummy results to nagios
+
+=head1 OPTIONS
+
+=over
+
+=cut
+
+#### Set up default options available for all scripts,
+# i.e. "<script> --version" or "<script> --help"
+# All command line options are store within a hash for easy access
+# This initialises hash and defines some entries in one go
+# See "perldoc perldata" for more info
+my %options = (
+    'help|h|?'  => 0,
+    'man'       => 0,
+    'version|V' => 0,
+    'debug:+'   => 0,
+);
+
+#### Document default options
+
+=item --help, -?, -h
+
+Display basic help 
+
+=item --man
+
+Display man page
+
+=item --debug [0-9], --debug [--debug [...]]
+
+Enable debugging mode (using more than once increases verbosity, or specify
+a level explicitly to a maximum of level 8) 
+
+=item --version, -V
+
+Show version information
+
+=cut
+
+#### Addition options, documented as necessary
+$options{'host|H=s'} = "";
+
+=item --host, -H
+
+Some checks require a hostname to be provided
+
+=cut
+
+$options{'critical|c=s'} = "";
+
+=item --critical <n>, -c <n>
+
+Fake critical limits
+
+=cut
+
+$options{'warning|w=s'} = "";
+
+=item --warning <n>, -w <n>
+
+Fake warning limits
+
+=cut
+
+$options{'port|p=i'} = "";
+
+=item --port <n>, -p <n>
+
+Fake port number
+
+=cut
+
+$options{'C'} = "";
+
+=item -C
+
+Fake option
+
+=cut
+
+$options{'I'} = "";
+
+=item -I
+
+Fake option
+
+=cut
+
+$options{'i'} = "";
+
+=item -i
+
+Fake option
+
+=cut
+
+$options{'o'} = "";
+
+=item -o
+
+Fake option
+
+=cut
+
+#### End of options
+
+=back
+
+=head1 ARGUMENTS
+
+=over
+
+=item N/A
+
+=back
+
+=cut
+
+#### Function prototypes, where requried ####
+sub my_die($@);
+sub logmsg($@);
+
+#### start of perl code ####
+
+# Getopt::Long can limit/expand on how switches are used.  This step
+# normalises the options hash to remove optional specifiers used by
+# Getopts::Long.  Show usage (from the inline POD) if any options unrecognised
+GetOptions( \%options, keys(%options) ) || pod2usage(
+    -msg     => "Script: $0",
+    -verbose => 1,
+    -exitval => 3,
+);
+
+# output version and exit
+# i.e. "<script> --version" or "<script> -v"
+die("Version: $VERSION\n") if ( $options{version} );
+
+# output basic help text when -?, --help or -h used
+pod2usage(
+    -verbose => 1,
+    -exitval => 3,
+) if ( $options{'?'} || $options{help} );
+
+#output complete help text when -m|--man|-H|--HELP used
+pod2usage(
+    -verbose => 2,
+    -exitval => 3,
+) if ( $options{HELP} || $options{man} );
+
+#### global variables ####
+# Initialise debug variable correctly if not already set by --debug
+$options{debug} ||= 0;
+
+# Set an arbitrary max level of 8 for debug
+$options{debug} = 8 if ( $options{debug} > 8 );
+
+# Call the real script if its being targetted at the master
+my $run_real = 0;
+SWITCH: {
+    foreach ( $options{host} ) {
+        m/^opsview$/ && do {
+            $run_real = 1;
+            last SWITCH;
+        };
+        m/^127.0.0.1$/ && do {
+            $run_real = 1;
+            last SWITCH;
+        };
+        $_ eq hostname() && do {
+            $run_real = 1;
+            last SWITCH;
+        };
+    }
+}
+
+if ($run_real) {
+    exec( "$scriptdir/x.$scriptname", @script_args );
+}
+
+my $store_dir = "/usr/local/nagios/var/rw/stress";
+
+if ( !-d $store_dir ) {
+    mkdir($store_dir) || my_die( 3, "Unable to create $store_dir: $!\n" );
+}
+
+# {last_result} = last result given from the script
+# {last_result_count} = total number of rsult of last type
+# quick hack to make life easier with Storeable
+my $store;
+
+if ( $options{host} ) {
+    $options{host} = "." . $options{host};
+}
+else {
+    $options{host} = "";
+}
+
+my $storefile = "$store_dir/$scriptname$options{host}.pd";
+if ( -r $storefile ) {
+    open( STORE, "<", $storefile ) or die( "Couldn't open $storefile: $!\n" );
+    flock( STORE, LOCK_SH );
+    $store = retrieve_fd(*STORE);
+    close(STORE);
+}
+
+# stored in an external file
+# {scriptname}{response}{low|high} = {slowest|fastest response time for script}
+# {scriptname}{result}{OK|WARNING|CRITICAL} = %results (remaining used for UNKNWON)
+# {scriptname}{
+my %config;
+my $config_file = "$scriptdir/../etc/stress_config.pd";
+if ( -r $config_file ) {
+
+    #%config = %{do $config_file};
+    unless ( %config = %{ do $config_file } ) {
+        warn "couldn’t parse $config_file: $@" if $@;
+        warn "couldn’t do/run $config_file" unless %config;
+    }
+}
+
+my $run_time;
+
+#### all sub-routines ####
+
+# description:
+#   given a level and a message, if level <= debug level, output message
+#   Allows for progressivly more output the higher the debug level, as
+#   given by the use of --debug. Saves on "expensive" 3rd party module
+# parameters:
+#   $1 = level --> level (to match debug level)
+#   $2 .. $n   --> list to pass to print
+# returns:
+#   nothing
+sub logmsg($@) {
+    print @_, $/ if ( shift() <= $options{debug} );
+}
+
+sub my_die($@) {
+    my $exit = shift;
+    if ( defined( $store->{last_result} ) && $store->{last_result} == $exit ) {
+        $store->{last_result_count}++;
+    }
+    else {
+        $store->{last_result}       = $exit;
+        $store->{last_result_count} = 0;
+    }
+
+    my $sleep = $start_time + $run_time - scalar( gettimeofday() );
+    sleep($sleep) if ( $sleep > 0.00001 );
+    print(@_);
+
+    sysopen( STORE, "$storefile", O_RDWR | O_CREAT, 0666 )
+      or die( "Unable to write $storefile: $!\n" );
+    flock( STORE, LOCK_EX );
+    my %store = %$store;
+    nstore_fd( \%store, *STORE ) or die( "Couldn't store $store: $!\n" );
+    truncate( STORE, tell(STORE) );
+    close(STORE);
+    exit $exit;
+}
+
+#### main ####
+
+# generate some numbers unless we are already configured for some
+unless ( $config{$scriptname} ) {
+    $config{$scriptname}{response}{low}    = 0;
+    $config{$scriptname}{response}{high}   = 5;
+    $config{$scriptname}{result}{OK}       = 72;
+    $config{$scriptname}{result}{WARNING}  = 10;
+    $config{$scriptname}{result}{CRITICAL} = 10;
+
+    $config{$scriptname}{response}{force}{WARNING}  = 0;
+    $config{$scriptname}{response}{force}{CRITICAL} = 0;
+}
+$config{$scriptname}{result}{UNKNOWN} =
+    100
+  - $config{$scriptname}{result}{OK}
+  - $config{$scriptname}{result}{WARNING}
+  - $config{$scriptname}{result}{CRITICAL};
+
+if ( $config{$scriptname}{result}{UNKNOWN} lt 0 ) {
+    my_die( 3, "Result percentages for $scriptname add to over 100\n" );
+}
+
+$store->{ok}       = $config{$scriptname}{result}{OK};
+$store->{warn}     = $store->{ok} + $config{$scriptname}{result}{WARNING};
+$store->{critical} = $store->{warn} + $config{$scriptname}{result}{CRITICAL};
+$store->{unknown}  = $store->{critical} + $config{$scriptname}{result}{UNKNOWN};
+
+{
+    my $low  = $config{$scriptname}{response}{low};
+    my $high = $config{$scriptname}{response}{high};
+
+    $run_time = rand( $high - $low ) + $low;
+
+}
+
+# if no last result or last result was ok, pick anything
+my $exit = int( rand(100) );
+
+#if(!$store->{last_result}) {
+#$exit=rand(100);
+#} else {
+## higher chance of the last result continuing
+#}
+
+# some plugins have specific run times if/when they fail (i.e. check_ping)
+if ( $exit eq 1 && $config{$scriptname}{response}{force}{WARNING} ) {
+    $run_time = $config{$scriptname}{response}{force}{WARNING};
+}
+elsif ( $exit eq 2 && $config{$scriptname}{response}{force}{CRITICAL} ) {
+    $run_time = $config{$scriptname}{response}{force}{CRITICAL};
+}
+
+my $run_time_rounded = sprintf( "%.2f", $run_time );
+
+my $exit_string = "t: $run_time_rounded, r=$exit, lr=";
+
+if ( defined( $store->{last_result} ) ) {
+    $exit_string .= $store->{last_result};
+}
+else {
+    $exit_string .= "unknown";
+}
+$exit_string .= ", lrc=";
+if ( defined( $store->{last_result_count} ) ) {
+    $exit_string .= $store->{last_result_count};
+}
+else {
+    $exit_string .= "unknown";
+}
+
+# NOTE: should also return perfdata wherever possible
+if ( $config{$scriptname}{perfdata} ) {
+    $exit_string .= "|";
+
+    my @output;
+
+    foreach my $item ( @{ $config{$scriptname}{perfdata}{output} } ) {
+        if ( $item < 0 ) {
+            push( @output, ( 0 - $item ) );
+        }
+        elsif ( $item == 0 ) {
+            push( @output, "0" );
+        }
+        else {
+            push( @output, rand($item) );
+        }
+    }
+    $exit_string .= sprintf( $config{$scriptname}{perfdata}{format}, @output );
+}
+
+$exit_string .= "\n";
+
+if ( $exit le $store->{ok} ) {
+    my_die( 0, $exit_string );
+}
+elsif ( $exit le $store->{warn} ) {
+    my_die( 1, $exit_string );
+}
+elsif ( $exit le $store->{critical} ) {
+    my_die( 2, $exit_string );
+}
+else {
+    my_die( 3, $exit_string );
+}
+
+__END__
+# Remaining POD for man page/help text
+
+=head1 NOTES
+
+Any further notes on running this code, its use, where it came from or who's
+bad idea it was.
+
+=head1 FILES
+
+Any (optional?) files referenced or used by the script
+
+=head1 AUTHOR AND COPYRIGHT
+
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This software is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Opsview; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+=back
+
+=head1 KNOWN BUGS
+
+Any known issues
+
+=head1 SEE ALSO
+
+L<perl>
+
+=cut

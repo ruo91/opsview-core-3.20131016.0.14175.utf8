@@ -1,0 +1,160 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+# 	migrate_initialdb_to_opspacks
+#
+# DESCRIPTION:
+#   Migrates all initial host templates to OpsPacks
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin", "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+
+use Getopt::Long;
+use Opsview::API;
+use Opsview::Schema;
+use File::Slurp;
+use Data::Dump qw(dump);
+use JSON;
+
+my $opspacks_dir = "/usr/local/nagios/import/opspacks";
+my $url_prefix = $ENV{OPSVIEW_URL_PREFIX} || "http://localhost";
+my $username;
+my $password;
+my $force;
+my $create_only;
+
+GetOptions(
+    "opspacks_dir=s" => \$opspacks_dir,
+    "create_only"    => \$create_only,
+    "force|f"        => \$force,
+    "username|u=s"   => \$username,
+    "password|p=s"   => \$password,
+) or die( "Incorrect options\n" );
+
+my $j         = JSON->new;
+my $schema    = Opsview::Schema->my_connect;
+my @templates = $schema->resultset("Hosttemplates")->search->all;
+
+my $ua = Opsview::API->new(
+    username        => $username,
+    password        => $password,
+    url_prefix      => $url_prefix,
+    api_min_version => "2",
+    data_format     => "json",
+);
+
+$ua->login;
+
+system( "mkdir -p $opspacks_dir" );
+chdir($opspacks_dir);
+
+my $host_file = "/usr/local/nagios/import/opsview_master.def";
+
+my %templates;
+
+for my $ht (@templates) {
+    print $ht->name, "\n";
+
+    my $norm_ht_name = lc $ht->name;
+    $norm_ht_name =~ s/\W+/_/g;
+    my $pack_gz = lc $ht->name;
+    $pack_gz =~ s/ /-/g;
+    $pack_gz =~ s/\-+/-/g;
+
+    if ( !-e $pack_gz || $force ) {
+        system(
+            join( " ",
+                "create_opspack",       "--username=$username",
+                "--password=$password", "'" . $ht->name . "'",
+            )
+        );
+        system( "cd $norm_ht_name/ && make mpack" );
+    }
+
+    system( "mv -v $norm_ht_name/$pack_gz.tar.gz ./" );
+    system( "rm -rf $norm_ht_name/" );
+    system( "tar zvxf $pack_gz.tar.gz" );
+
+    my $config_json = read_file( "$pack_gz/config.json" );
+
+    $templates{$norm_ht_name} = {
+        id     => $ht->id,
+        name   => $ht->name,
+        gz     => "$pack_gz.tar.gz",
+        config => $j->decode($config_json),
+    };
+}
+
+exit if $create_only;
+
+my %delete;
+
+$ua->get( "config/host/1?cols=hosttemplates,keywords,hostattributes,name" );
+my $master_def = $j->decode( $ua->content );
+open( HOST, ">", $host_file );
+print HOST $j->pretty->encode( $master_def->{object} );
+close(HOST);
+
+for my $norm_ht_name ( keys %templates ) {
+    my $pack_gz = $templates{$norm_ht_name}->{gz};
+    my $config  = $templates{$norm_ht_name}->{config};
+    for my $obj_name ( keys %$config ) {
+        for my $it ( @{ $config->{$obj_name} } ) {
+            my $url = $it->{ref} || "config/$obj_name?s.name=$it->{name}";
+            $url =~ s{^/rest/}{};
+            $ua->get($url);
+            my $obj = $j->decode( $ua->content );
+
+            if ( $it->{ref} ) {
+                $obj = $obj->{object};
+            }
+            else {
+                die "Multiple objects found\n"
+                  if $obj->{summary}->{rows} > 1;
+
+                $obj = $obj->{list}->[0];
+            }
+            die "No object\n" unless $obj->{id};
+
+            $delete{$obj_name}->{ $obj->{id} }++;
+        }
+    }
+}
+
+for
+  my $obj_name (qw( servicecheck servicegroup hosttemplate attribute keyword ))
+{
+    for my $obj_id ( keys %{ $delete{$obj_name} } ) {
+        my $url = "config/$obj_name/$obj_id";
+        eval { $ua->delete($url); };
+        if ( $@ || $ua->mech->status != 200 ) {
+            warn "$url failed:", ( $@ ? "$@" : '' ), "\n";
+        }
+        else {
+            print "Deleted $url\n";
+        }
+    }
+}

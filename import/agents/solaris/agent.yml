@@ -1,0 +1,12 @@
+name: Solaris
+command: check_nrpe -H $HOSTADDRESS$ -c $PLUGINNAME$ -a '$ARGS$'
+plugins:
+ - check_users
+ - check_cpu_solaris
+ - check_memory_solaris
+ - check_load
+ - check_disk
+ - check_disksuite
+ - check_swap
+ - check_procs
+ - check_tcpconnections_solaris

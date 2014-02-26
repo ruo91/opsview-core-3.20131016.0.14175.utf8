@@ -1,0 +1,173 @@
+Summary: Opsview Core
+License: GPL
+Group: Administration
+Name: opsview-core
+Prefix: /usr/local/nagios
+Provides: opsview-core
+Release: 1%{?distribution:.%{distribution}}
+Version: %VERSION%
+Source: opsview-core-%{version}.tar.gz
+URL: http://www.opsview.com
+Buildroot: /tmp/opsview-core
+#opsview-core is arch specific due to PAR files
+#BuildArch: noarch
+Autoreq: 0
+Autoreqprov: 0
+Requires: opsview-base = %OPSVIEW_BASE_VERSION%, opsview-compatibility-check = %VERSION%
+Requires: opsview-perl >= %OPSVIEW_PERL_VERSION%
+Requires: net-snmp, mrtg, openssl, rsync, bash, tar, mysql >= 4.1.10
+# Add authtkt here as restarts of Apache may occur as postinstalls for opsview-core
+Requires: mod_auth_tkt_opsview
+Conflicts: nagios
+
+%if 0%{?rhel_version} > 0
+BuildRequires: net-snmp-perl
+Requires: net-snmp-perl
+%endif
+
+%if 0%{?fedora_version} || 0%{?centos_version}
+BuildRequires: gd-progs, netpbm-progs, net-snmp-perl
+Requires: net-snmp-perl, net-snmp-utils, redhat-lsb, openssh-clients, mysql-server >= 4.1.10,
+%endif
+
+%if 0%{?sles_version} > 0  
+#BuildRequires:  
+Requires: perl-Net-SNMP, ssh,
+%endif  
+
+%package -n opsview
+Group: System Environment
+Summary: Opsview Metapackage
+# We need to uncomment this, otherwise opsview-core package is built with noarch
+# but it needs to be arch specific. This has side effect of 
+# arch specific opsview and opsview-slave
+#BuildArch: noarch
+Provides: opsview
+Requires: opsview-core >= %VERSION%, opsview-web >= %VERSION%
+Autoreqprov: 0
+
+%package -n opsview-slave
+Group: System Environment
+Summary: Opsview Slave
+#BuildArch: noarch
+Provides: opsview-slave
+Requires: gd > 1.8, zlib, libpng, libjpeg, bash, grep, libmcrypt, rrdtool >= 1.0.33, perl, openssl, net-snmp, gd, expat, /bin/ksh, mrtg, sudo, mailx, bind-utils
+Requires: opsview-perl >= %OPSVIEW_PERL_VERSION%
+Conflicts: nagios, nagios-nrpe, opsview-agent, opsview-core
+Autoreqprov: 0
+
+%if 0%{?rhel_version} > 0
+Requires: net-snmp-utils
+%endif
+
+%if 0%{?fedora_version} || 0%{?centos_version}
+Requires: net-snmp-perl, redhat-lsb, net-snmp-utils, openssh-clients, which, libtool-libs, httpd
+%endif
+
+%if 0%{?sles_version} > 0  
+Requires: perl-Net-SNMP, lsb, ssh, libtool, apache2
+%endif  
+
+%define debug_package %{nil}
+
+%description
+This is the core of Opsview
+
+%description -n opsview
+Installs all the required components for a fully working Opsview installation.
+
+%description -n opsview-slave
+Opsview slave dependancies, to be installed on systems that will become
+slaves.
+
+%prep
+%setup -q
+
+%pre
+if [ "$1" -ge 2 ] ; then
+    # make sure opsview-compatibility-check is installed
+    if ! rpm -q opsview-compatibility-check-%VERSION% >/dev/null ; then
+        echo
+        echo
+        echo "======================== Compatibility problems found ======================="
+        echo
+        echo " Please install opsview-compatibility-check-%VERSION% first"
+        echo
+        echo " For more information please visit:"
+        echo " http://docs.opsview.com/doku.php?id=opsview-core:upgrading"
+        echo
+        echo "============================================================================="
+        echo
+        echo
+        exit 1
+    fi
+fi
+touch /usr/local/nagios/var/upgrade.lock
+# Stop on upgrades
+if [ "$1" -ge 2 ] ; then
+	/etc/init.d/opsview stop
+fi
+
+%post
+die () { echo "$@" ; exit 1; }
+su - nagios -c "%{prefix}/installer/set_profile" || die "Cannot set nagios user's profile"
+# Cannot install db as cannot prompt for mysql root password
+# Perform upgrades. Do nothing on an install
+if [ "$1" -ge 2 ]; then
+  su - nagios -c "%{prefix}/installer/upgradedb.pl" || die "Upgrading database failed, you will have to perform this step manually (run '%{prefix}/installer/upgradedb.pl' as nagios)"
+  su - nagios -c "%{prefix}/bin/populate_db.pl" || die "Updating plugin help failed, you will have to perform this step manually (run '%{prefix}/bin/populate_db.pl' as nagios)"
+  if [ -f /tmp/opsview4_upgrade_config_generation.lock ] ; then
+    echo "Upgrading to Opsview 4 - you must activate Opsview now before reloading"
+  else
+    su - nagios -c "OPSVIEW_NOSTART=true %{prefix}/bin/rc.opsview gen_config" || die "Generating configs failed slaves failed, you will have to perform this step manually (run '%{prefix}/bin/rc.opsview gen_config' as nagios)"
+  fi
+fi
+# Run other common postinstall tasks
+%{prefix}/installer/postinstall_root || die "postinstall_root failed, you will have to perform this step manually"
+su - nagios -c "%{prefix}/installer/postinstall" || die "postinstall failed, you will have to perform this step manually"
+/sbin/chkconfig --add opsview
+# This cron file now longer required - saved via nagios user's cron
+# Do this after upgradedb.pl
+rm -f /etc/cron.d/opsview
+# Restart on upgrades. Cannot start on an install as no database here
+if [ "$1" -ge 2 ] ; then
+	/etc/init.d/opsview start
+fi
+rm -f /usr/local/nagios/var/upgrade.lock
+
+%preun
+if [ "$1" = 0 ] ; then
+	test -e /etc/init.d/opsview-web && /etc/init.d/opsview-web stop > /dev/null 2>&1
+        %{prefix}/bin/rc.opsview stop > /dev/null 2>&1
+	su - nagios -c "%{prefix}/installer/preremove"
+        /sbin/chkconfig --del opsview
+fi
+
+%build
+
+%install
+[ "$RPM_BUILD_ROOT" != "/" ] && rm -fr "$RPM_BUILD_ROOT"
+make install ROOT_DIR=$RPM_BUILD_ROOT
+mkdir -p $RPM_BUILD_ROOT/etc/init.d
+cp $RPM_BUILD_ROOT/usr/local/nagios/bin/rc.opsview $RPM_BUILD_ROOT/etc/init.d/opsview
+
+%clean
+rm -fr $RPM_BUILD_ROOT
+
+%files
+%defattr(-,-,-)
+%dir /var/run/opsview
+%dir /var/log/opsview
+/usr/local/nagios
+/opt/opsview/work
+%attr(0555,root,root) /etc/init.d/opsview
+%config(noreplace) /usr/local/nagios/share/stylesheets/custom.css
+%attr(0755,nagios,nagcmd) /usr/local/nagios/etc
+
+%files -n opsview
+%defattr(-,nagios,nagios)
+
+%files -n opsview-slave
+%defattr(-,nagios,nagios)
+%dir /usr/local/nagios
+%dir /usr/local/nagios/tmp

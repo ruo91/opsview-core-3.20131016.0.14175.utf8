@@ -1,0 +1,283 @@
+#!/usr/bin/perl
+#
+# AUTHORS: Rohit Deshmukh
+#   Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin/../perl/lib", "$Bin/../lib";
+use Nagios::Plugin qw(OK UNKNOWN %ERRORS);
+use Runtime::Searches;
+use Data::Dump qw(dump);
+use Opsview::Hostgroup;
+
+my $np = Nagios::Plugin->new(
+    usage =>
+      "Usage: %s [--keyword=NAME] ,[--hostgroup=NAME], [-w],[-c] [--restrict_critical]",
+    extra => "
+Example: 
+    To monitor all unhandled critical,warning and unknown services tagged with the keyword 'opsview':
+
+    check_opsview_services --keyword=opsview-web [-w] [-c]
+
+    To monitor all unhandled critical,warning and unknown services under hostgroup 'Monitoring Servers'
+
+    check_opsview_services --hostgroup='Monitoring Servers' [-w] [-c]
+
+    To monitor all unhandled critical services include option --restrict_critical
+
+    check_opsview_services --keyword=opsview-web --restrict_critical 
+
+    Plugins will alert WARNING, CRITICAL and OK by checking total number of unhandled services against warning(-w) and critical(-c) thresholds
+    If no threshold values specified then plugin will always alert OK.
+
+    If neither keyword nor hostgroup defined then plugin will return total number of unhandled critical services across whole system
+    check_opsview_services [-w] [-c]
+    ",
+);
+
+# Just don't state that keyword is repeatable at the moment
+$np->add_arg(
+    spec     => 'keyword=s',
+    help     => '-k, --keyword=NAME',
+    required => 0,
+);
+$np->add_arg(
+    spec     => 'hostgroup=s',
+    help     => '-g, --hostgroup=NAME',
+    required => 0,
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help =>
+      "-w, --warning=INTEGER:INTEGER. Warning if total unhandled services are outside INTEGER:INTEGER",
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help =>
+      "-c, --critical=INTEGER:INTEGER. Critical if total unhandled services are outside INTEGER:INTEGER",
+);
+$np->add_arg(
+    spec => "restrict_critical",
+    help =>
+      "-r,--restrict_critical=restrict_critical to monitoring unhandled critical level services only",
+    required => 0,
+);
+
+$np->getopts;
+
+my $unhandled_services = 0;
+my $unhandled_critical = 0;
+my $unhandled_warning  = 0;
+my $unhandled_unknown  = 0;
+if ( !$np->opts->hostgroup && $np->opts->keyword ) {
+    my $keywords = $np->opts->keyword || [];
+    my $services;
+    if ( $np->opts->restrict_critical ) {
+
+        #lists all unhandled critical services critical
+        $services = Runtime::Searches->list_services(
+            "",
+            {
+                keyword => $keywords,
+                filter  => "unhandled",
+                state   => [2],
+                order   => "state_desc"
+            }
+        );
+        $unhandled_services += $services->{summary}->{unhandled};
+        $unhandled_critical = $services->{summary}->{unhandled};
+    }
+    else {
+
+        #for unhandled warning services
+        $services = Runtime::Searches->list_services(
+            "",
+            {
+                keyword => $keywords,
+                state   => [1],
+                order   => "state_desc"
+            }
+        );
+        $unhandled_services += $services->{summary}->{unhandled};
+        $unhandled_warning = $services->{summary}->{unhandled};
+
+        #for unhandled critical services
+        $services = Runtime::Searches->list_services(
+            "",
+            {
+                keyword => $keywords,
+                state   => [2],
+                order   => "state_desc"
+            }
+        );
+        $unhandled_services += $services->{summary}->{unhandled};
+        $unhandled_critical = $services->{summary}->{unhandled};
+
+        #for unhandled unknown services
+        $services = Runtime::Searches->list_services(
+            "",
+            {
+                keyword => $keywords,
+                state   => [3],
+                order   => "state_desc"
+            }
+        );
+        $unhandled_services += $services->{summary}->{unhandled};
+        $unhandled_unknown = $services->{summary}->{unhandled};
+
+    }
+}
+
+#if hostgroup defined then list all unhandled critical services under that host group
+if ( $np->opts->hostgroup && !$np->opts->keyword ) {
+    my $hostgroup_name = $np->opts->hostgroup;
+    my $hostgroup = Opsview::Hostgroup->search( { name => $hostgroup_name, } );
+    my $hostgroup_id;
+
+    #print dump $hostgroup;
+    if ( $hostgroup->{_data}->[0]->{id} ) {
+        $hostgroup_id = $hostgroup->{_data}->[0]->{id};
+    }
+    else {
+        $np->nagios_exit( UNKNOWN,
+            "Hostgroup name $hostgroup_name is not found"
+        );
+    }
+
+    my $services_by_hostgroup =
+      Runtime::Searches->list_summarized_hosts_services(
+        "",
+        {
+            summarizeon => "hostgroup",
+            filter      => "unhandled",
+            hostgroupid => $hostgroup_id
+        }
+      );
+    my @array = @{ $services_by_hostgroup->{list} };
+    my $size  = @array;
+    my $i     = 0;
+    for (@array) {
+        if ( $array[$i]->{services}->{critical}->{unhandled} ) {
+            $unhandled_critical
+              += $array[$i]->{services}->{critical}->{unhandled};
+            $unhandled_services
+              += $array[$i]->{services}->{critical}->{unhandled};
+        }
+        if ( $array[$i]->{services}->{warning}->{unhandled}
+            && !$np->opts->restrict_critical )
+        {
+            $unhandled_warning
+              += $array[$i]->{services}->{warning}->{unhandled};
+            $unhandled_services
+              += $array[$i]->{services}->{warning}->{unhandled};
+        }
+        if ( $array[$i]->{services}->{unknown}->{unhandled}
+            && !$np->opts->restrict_critical )
+        {
+            $unhandled_unknown
+              += $array[$i]->{services}->{unknown}->{unhandled};
+            $unhandled_services
+              += $array[$i]->{services}->{unknown}->{unhandled};
+        }
+
+        $i++;
+    }
+}
+
+#if no hostgroup and keyword specified then plugin lists all unhandled critical services in whoole system
+if ( !$np->opts->hostgroup && !$np->opts->keyword ) {
+    my $hostgroup_id = 1;
+    my $services_by_hostgroup =
+      Runtime::Searches->list_summarized_hosts_services(
+        "",
+        {
+            summarizeon => "hostgroup",
+            filter      => "unhandled",
+            hostgroupid => $hostgroup_id
+        }
+      );
+    my @array = @{ $services_by_hostgroup->{list} };
+    my $i     = 0;
+    for (@array) {
+        if ( $array[$i]->{services}->{critical}->{unhandled} ) {
+            $unhandled_critical
+              += $array[$i]->{services}->{critical}->{unhandled};
+            $unhandled_services
+              += $array[$i]->{services}->{critical}->{unhandled};
+        }
+        if ( $array[$i]->{services}->{warning}->{unhandled}
+            && !$np->opts->restrict_critical )
+        {
+            $unhandled_warning
+              += $array[$i]->{services}->{warning}->{unhandled};
+            $unhandled_services
+              += $array[$i]->{services}->{warning}->{unhandled};
+        }
+        if ( $array[$i]->{services}->{unknown}->{unhandled}
+            && !$np->opts->restrict_critical )
+        {
+            $unhandled_unknown
+              += $array[$i]->{services}->{unknown}->{unhandled};
+            $unhandled_services
+              += $array[$i]->{services}->{unknown}->{unhandled};
+        }
+
+        $i++;
+    }
+
+}
+
+#throws exception if hostgroup and keyword supplied simultaneously
+if ( $np->opts->keyword && $np->opts->hostgroup ) {
+    $np->nagios_exit( UNKNOWN,
+        "Arguments keyword and hostgroup can not be processed simultaneously"
+    );
+}
+
+#defining the threshold values
+my $threshold = $np->set_thresholds(
+    warning  => $np->opts->warning,
+    critical => $np->opts->critical
+);
+
+#adding performance data
+$np->add_perfdata(
+    label     => "unhandled_services",
+    value     => $unhandled_services,
+    threshold => $threshold,
+);
+
+if ( $np->opts->restrict_critical ) {
+    $np->nagios_exit(
+        return_code => $np->check_threshold($unhandled_services),
+        message =>
+          "Total unhandled services $unhandled_services (critical=>$unhandled_critical) ",
+    );
+}
+$np->nagios_exit(
+    return_code => $np->check_threshold($unhandled_services),
+    message =>
+      "Total unhandled services $unhandled_services (critical=>$unhandled_critical, warning=> $unhandled_warning, unknown=> $unhandled_unknown ) ",
+);
+1

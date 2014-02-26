@@ -1,0 +1,112 @@
+#!/usr/bin/perl
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+# This script reads all .pm files and makes changes to them if
+# required. Currently does:
+#  * Ensures there is a "1;" at the end of the file
+#  * adds __PACKAGE__->meta->make_immutable if Moose is used
+#
+# Returns non zero if any files are changed - means this can be used for testing
+
+use warnings;
+use strict;
+use File::Next;
+
+my $error_handler = sub {
+    warn( "Error handler with @_" );
+};
+
+my $ignore_dirs = {
+    deprecated => 1,
+    perl       => 1,
+    blib       => 1,
+};
+
+my $dir = shift @ARGV || ".";
+
+my $descend_filter =
+  sub { !$ignore_dirs->{$_} && ( !-l "$File::Next::dir/$_" ) };
+my $files = File::Next::files( { descend_filter => $descend_filter }, $dir );
+
+my $total_file_changes = 0;
+
+while ( defined( my $file = $files->() ) ) {
+    next unless $file =~ /\.pm$/;
+
+    my $changes = 0;
+    print $file. ": ";
+    open( FH, "+<", $file ) or die "Error opening $file: $!";
+    my @array = <FH> or die "Error reading $file: $!";
+    close FH;
+
+    # Ensure last uncommented line is "1;"
+    my $last_line_number = $#array;
+    foreach my $i ( 0 .. $#array ) {
+        if ( $array[$i] =~ /^__END__/ ) {
+            $last_line_number = $i - 1;
+            last;
+        }
+    }
+    my $index = $last_line_number;
+    my $last_line;
+    my $line_number_with_one;
+    until ( defined $last_line ) {
+        if ( $array[$index] !~ /^#|^\s*$/ ) {
+            $last_line = $array[$index];
+        }
+        else {
+            $index--;
+        }
+    }
+    if ( $last_line !~ /^1;/ ) {
+        $changes++;
+        print "Unexpected last line=" . $last_line;
+    }
+    else {
+        $line_number_with_one = $index;
+    }
+
+    if ($line_number_with_one) {
+        if ( grep m/^use Moose/, @array ) {
+
+            my $i = $line_number_with_one - 1;
+            while ( $array[$i] =~ /^\s*$/ ) {
+                $i--;
+            }
+            unless ( $array[$i] =~ m/__PACKAGE__->meta->make_immutable/ ) {
+                print "Missing immutable\n";
+                splice @array, $line_number_with_one, 0,
+                  "__PACKAGE__->meta->make_immutable;\n";
+                $changes++;
+            }
+        }
+    }
+
+    if ($changes) {
+        $total_file_changes++;
+        open( FH, "+<", $file ) or die "Error opening $file: $!";
+        seek FH, 0, 0 or die "Seeking: $!";
+        print FH @array or die "Printing: $!";
+        truncate( FH, tell(FH) ) or die "Truncating: $!";
+        close(FH);
+    }
+    print $/;
+}
+
+print "total_file_changes = $total_file_changes\n";
+exit( $total_file_changes != 0 );

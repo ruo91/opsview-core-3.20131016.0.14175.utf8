@@ -1,0 +1,355 @@
+{
+   "attribute" : [],
+   "hosttemplate" : [
+      {
+         "description" : "",
+         "managementurls" : [],
+         "name" : "Application - WebLogic",
+         "servicechecks" : [
+            {
+               "exception" : null,
+               "name" : "WebLogic - App sessions",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "WebLogic - Cluster servers",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "WebLogic - JDBC capacity",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "WebLogic - JDBC connections",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "WebLogic - JMS queue length",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "WebLogic - Server memory utilisation",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "WebLogic - Server status",
+               "timed_exception" : null
+            }
+         ]
+      }
+   ],
+   "servicecheck" : [
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -U $SNMPV3_USERNAME$ -P $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -e $SNMPV3_PRIVPROTOCOL$ -x $SNMPV3_PRIVPASSWORD$",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Checks the weblogic application session count",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "WebLogic - App sessions",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r,u,f",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_weblogic_appsessions"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Application - WebLogic"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -U $SNMPV3_USERNAME$ -P $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -e $SNMPV3_PRIVPROTOCOL$ -x $SNMPV3_PRIVPASSWORD$",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Checks the number of cluster servers - either active or total",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "WebLogic - Cluster servers",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r,u,f",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_weblogic_clusterservers"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Application - WebLogic"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -U $SNMPV3_USERNAME$ --auth-password $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -e $SNMPV3_PRIVPROTOCOL$ -x $SNMPV3_PRIVPASSWORD$",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Checks the current or maximum capacity of a JDBC connection pool",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "WebLogic - JDBC capacity",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r,u,f",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_weblogic_jdbccapacity"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Application - WebLogic"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -U $SNMPV3_USERNAME$ --auth-password $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -e $SNMPV3_PRIVPROTOCOL$ -x $SNMPV3_PRIVPASSWORD$",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Checks the number of active connections in a JDBC connection pool, or the number of waiters",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "WebLogic - JDBC connections",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r,u,f",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_weblogic_jdbcconns"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Application - WebLogic"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -U $SNMPV3_USERNAME$ -P $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -e $SNMPV3_PRIVPROTOCOL$ -x $SNMPV3_PRIVPASSWORD$",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Checks the length (current messages) of a particular JMS queue by name",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "WebLogic - JMS queue length",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r,u,f",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_weblogic_jmsqueuelength"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Application - WebLogic"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -U $SNMPV3_USERNAME$ -P $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -e $SNMPV3_PRIVPROTOCOL$ -x $SNMPV3_PRIVPASSWORD$",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Checks the JVM heap free memory",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "WebLogic - Server memory utilisation",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r,u,f",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_weblogic_servermemory"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Application - WebLogic"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -U $SNMPV3_USERNAME$ -P $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -e $SNMPV3_PRIVPROTOCOL$ -x $SNMPV3_PRIVPASSWORD$",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Checks to ensure server status is RUNNING",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "WebLogic - Server status",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r,u,f",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_weblogic_serverstatus"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Application - WebLogic"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      }
+   ],
+   "servicegroup" : [
+      {
+         "name" : "Application - WebLogic"
+      }
+   ]
+}

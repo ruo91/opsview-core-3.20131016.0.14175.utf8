@@ -1,0 +1,3 @@
+Returns Microsoft Windows version, patch level and serial number
+
+No arguments are required

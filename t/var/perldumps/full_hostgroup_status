@@ -1,0 +1,48 @@
+{
+  list => [
+    {
+      computed_state => "critical",
+      downtime => 2,
+      hostgroup_id => 3,
+      hosts => {
+        down => { handled => 1, unhandled => 1 },
+        handled => 9,
+        total => 10,
+        unhandled => 1,
+        up => { handled => 8 },
+      },
+      name => "UK",
+      services => {
+        computed_state => "critical",
+        critical => { unhandled => 2 },
+        handled => 6,
+        ok => { handled => 3 },
+        total => 23,
+        unhandled => 17,
+        unknown => { handled => 3, unhandled => 15 },
+      },
+    },
+    {
+      computed_state => "critical",
+      downtime => 1,
+      hostgroup_id => 6,
+      hosts => { handled => 1, total => 1, unhandled => 0, up => { handled => 1 } },
+      name => "UK2",
+      services => {
+        computed_state => "critical",
+        critical       => { unhandled => 1 },
+        handled        => 0,
+        total          => 3,
+        unhandled      => 3,
+        unknown        => { unhandled => 2 },
+      },
+    },
+  ],
+  summary => {
+    handled   => 16,
+    host      => { down => 2, handled => 10, total => 11, unhandled => 1, up => 9 },
+    service   => { critical => 3, handled => 6, ok => 3, total => 26, unhandled => 20, unknown => 20 },
+    total     => 37,
+    unhandled => 21,
+  },
+}

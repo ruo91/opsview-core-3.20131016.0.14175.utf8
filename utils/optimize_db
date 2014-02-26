@@ -1,0 +1,121 @@
+#!/usr/bin/perl
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use warnings;
+use strict;
+use lib "/usr/local/nagios/perl/lib";
+use lib "/usr/local/nagios/lib";
+use lib "/usr/local/nagios/etc";
+
+use IO::File;
+use Opsview::Config;
+
+my $db = shift;
+
+if ( !$db || $db !~ m/(?:Runtime|Opsview)/i ) {
+    die( "Database must be one of Opsview or Runtime\n" );
+}
+
+$db = ucfirst($db);
+
+eval "require $db";
+die $@ if $@;
+
+my $upgrade_lock_file = Opsview::Config->upgrade_lock_file;
+
+my $dbh = $db->db_Main;
+
+# get mysql data dir area
+my $mysql_data_dir =
+  ( $dbh->selectrow_array(q{ SHOW VARIABLES LIKE 'datadir' }) )[1];
+
+# check to ensure some basic tuning has been done
+my $mysql_innodb_file_per_table =
+  ( $dbh->selectrow_array(q{ SHOW VARIABLES LIKE 'innodb_file_per_table' }) )
+  [1];
+
+warn( 'MySQL data files are stored within the "',
+    $mysql_data_dir, '" area', $/ );
+
+my $sql;
+my $sth;
+my @tables;
+
+$sth = $dbh->prepare( "SHOW TABLE STATUS" );
+$sth->execute;
+
+my %tables;
+
+while ( my $row = $sth->fetchrow_hashref() ) {
+    my $table = $row->{name};
+
+    if ( $row->{comment} =~ m/crashed/i ) {
+        warn $table, ' is marked as crashed - igoring', $/;
+        next;
+    }
+
+    #printf "%40s - ",$table;
+
+    #    use Data::Dump qw( dump );
+    #    dump ($row);
+
+    $tables{$table}{rows} = $row->{rows};
+    $tables{$table}{free} = $row->{data_free};
+    $tables{$table}{used} = $row->{data_length} + $row->{index_length};
+}
+
+#print $_, ' -> ', $tables{$_}{free},' (used: ',$tables{$_}{used},')',$/ foreach(sort { $tables{$a}{used} <=> $tables{$b}{used} } keys(%tables));
+
+foreach ( sort { $tables{$a}{used} <=> $tables{$b}{used} } keys(%tables) ) {
+    next unless ( $tables{$_}{free} > 0 );
+
+    my $disk_free = get_space();
+    print 'Optimizing ', $_, $/;
+    print ' - Table Used: ', $tables{$_}{used}, ' bytes (',
+      mb( $tables{$_}{used} ), 'M)', $/;
+    print ' - Table Free: ', $tables{$_}{free}, ' bytes (',
+      mb( $tables{$_}{free} ), 'M)', $/;
+    print ' - Disk  Free: ', $disk_free, ' bytes (', mb($disk_free), 'M)', $/;
+
+    # include some headroom
+    if ( $disk_free < $tables{$_}{used} + 2048 ) {
+        die( 'Not enough free disk space to optimize ', $_, $/ );
+    }
+
+    print ' - started  at: ', scalar(localtime), $/;
+
+    $dbh->do( 'OPTIMIZE TABLE ' . $_ );
+    $dbh->do( 'ANALYZE TABLE ' . $_ );
+
+    print ' - finished at: ', scalar(localtime), $/;
+}
+
+sub get_space {
+    my @df_output = `df -Pk $mysql_data_dir`;
+    if ( !@df_output ) {
+        die( 'Unable to read output from "df -Pk .' . $mysql_data_dir . '/"',
+            $/ );
+    }
+    my @line = split( / +/, $df_output[1] );
+    return $line[3] * 1024;
+}
+
+sub mb {
+    my ($bytes) = @_;
+    return sprintf( '%.2f', $bytes / 1024 / 1024 );
+}

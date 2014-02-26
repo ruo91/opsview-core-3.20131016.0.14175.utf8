@@ -1,0 +1,252 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#	Written by Neil Ferguson
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use Getopt::Std;
+use Storable qw(lock_store lock_retrieve);
+
+# About us
+my $script         = "check_netio_solaris";
+my $script_version = "0.1";
+my $script_description =
+  "Checks read/write kb/sec and packets/sec on a specified network interface using kstat";
+
+my $i; # Loop iterator
+my @warnings;
+my @criticals;
+my $retval        = 0;  # Innocent until proven guilty
+my $retmsg        = ""; # Text to return from plugin
+my $bytes_in      = 0;
+my $bytes_out     = 0;
+my $packets_in    = 0;
+my $packets_out   = 0;
+my $cur_rbytes    = 0;
+my $prev_rbytes   = 0;
+my $cur_obytes    = 0;
+my $prev_obytes   = 0;
+my $cur_ipackets  = 0;
+my $prev_ipackets = 0;
+my $cur_opackets  = 0;
+my $prev_opackets = 0;
+my $interface;
+
+# Our data store
+my $store;
+my $store_dir = "/usr/local/nagios/var";
+my $store_fn  = "$store_dir/$script.dat";
+my $storename;
+
+# Command line arguments
+our ( $opt_h, $opt_i, $opt_w, $opt_c );
+getopts( "hi:w:c:" );
+if ($opt_h) {
+    usage();
+    exit 0;
+}
+if ($opt_i) {
+    $interface = $opt_i;
+}
+else {
+    print "Must specify interface to check I/O for\n";
+    usage();
+    exit 3;
+}
+if ($opt_w) {
+    unless ( $opt_w =~ /^[\d,]+$/ ) {
+        print "Warning values must be integers\n";
+        exit 3;
+    }
+
+    @warnings = split( /,/, $opt_w );
+
+    if ( @warnings != 4 ) {
+        print
+          "Must specify four warning values, for bytes in, bytes out, packets in, packets out\n";
+        usage();
+        exit 3;
+    }
+
+    # Convert data rate values to bytes/sec rather than KB/sec
+    @warnings[0] = @warnings[0] * 1024;
+    @warnings[1] = @warnings[1] * 1024;
+}
+if ($opt_c) {
+    unless ( $opt_c =~ /^[\d,]+$/ ) {
+        print "Critical must be integers\n";
+        exit 3;
+    }
+
+    @criticals = split( /,/, $opt_c );
+    if ( @criticals != 4 ) {
+        print
+          "Must specify four critical values, for bytes in, bytes out, packets in, packets out\n";
+        usage();
+        exit 3;
+    }
+
+    # Convert data rate values to bytes/sec rather than KB/sec
+    @criticals[0] = @criticals[0] * 1024;
+    @criticals[1] = @criticals[1] * 1024;
+}
+
+# We do this after option parsing so that we can display help output
+# even if this Solaris-specific module is not available
+eval "use Sun::Solaris::Kstat";
+if ($@) {
+    print $@;
+    exit 3;
+}
+
+sub two_dp {
+    my $val = shift(@_);
+    return int( $val * 100 ) / 100;
+}
+
+sub usage {
+    print <<EOF
+--------------------------------------------------------------------
+$script $script_version
+
+$script_description
+
+Usage: $script -i interface [...]
+
+Options: -i     Interface to check
+         -w     Warning thresholds - four comma separated values
+                indicating thresholds for KB/sec in, KB/sec out,
+                packets/sec in, packets/sec out. A value of 0
+                will cause the threshold to be ignored.
+         -c     Critical thresholds - see warnings
+
+
+--------------------------------------------------------------------     
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved  
+         
+This program is free software; you can redistribute it or modify
+it under the terms of the GNU General Public License
+------------------------------------------------------------------
+EOF
+
+}
+
+my $kstat   = Sun::Solaris::Kstat->new();
+my $if_type = $interface;
+$if_type =~ s/(.*)[0-9]+$/$1/;
+
+my $if_num = $interface;
+$if_num =~ s/^$if_type(.*)$/$1/;
+
+if ( !exists( $kstat->{$if_type} ) || !exists( $kstat->{$if_type}{$if_num} ) ) {
+    print "UNKNOWN - Interface $interface could not be found\n";
+    exit 3;
+}
+
+$cur_rbytes   = $kstat->{$if_type}{$if_num}{$interface}{rbytes64};
+$cur_obytes   = $kstat->{$if_type}{$if_num}{$interface}{obytes64};
+$cur_ipackets = $kstat->{$if_type}{$if_num}{$interface}{ipackets64};
+$cur_opackets = $kstat->{$if_type}{$if_num}{$interface}{opackets64};
+
+# Retrieve previous info if it exists
+$storename = "interface_${interface}";
+if ( -s $store_fn ) {
+    $store = lock_retrieve($store_fn);
+}
+
+if ($store) {
+    my $elapsed = ( time() - $store->{$storename}[0] );
+    $prev_rbytes   = $store->{$storename}[1];
+    $prev_obytes   = $store->{$storename}[2];
+    $prev_ipackets = $store->{$storename}[3];
+    $prev_opackets = $store->{$storename}[4];
+
+    $bytes_in    = two_dp( ( $cur_rbytes - $prev_rbytes ) / $elapsed );
+    $bytes_out   = two_dp( ( $cur_obytes - $prev_obytes ) / $elapsed );
+    $packets_in  = two_dp( ( $cur_ipackets - $prev_ipackets ) / $elapsed );
+    $packets_out = two_dp( ( $cur_opackets - $prev_opackets ) / $elapsed );
+
+    # Display 0 for counter rollover, not a very large negative number
+    if ( $bytes_in < 0 ) {
+        $bytes_in = 0;
+    }
+
+    if ( $bytes_out < 0 ) {
+        $bytes_out = 0;
+    }
+
+    if ( $packets_in < 0 ) {
+        $packets_in = 0;
+    }
+
+    if ( $packets_out < 0 ) {
+        $packets_out = 0;
+    }
+}
+else {
+    $bytes_in    = 0;
+    $bytes_out   = 0;
+    $packets_in  = 0;
+    $packets_out = 0;
+}
+
+$store->{$storename} =
+  [ time(), $cur_rbytes, $cur_obytes, $cur_ipackets, $cur_opackets ];
+lock_store( $store, $store_fn );
+
+$retmsg = "- "
+  . two_dp( $bytes_in / 1024 ) . "/"
+  . two_dp( $bytes_out / 1024 )
+  . "KB/sec (in/out), "
+  . $packets_in . "/"
+  . $packets_out
+  . " pkts/sec (in/out)"
+  . "| bytes_in=$bytes_in bytes_out=$bytes_out pkts_in=$packets_in pkts_out=$packets_out\n";
+
+# Thresholds
+if (   @criticals[0] > 0 && $bytes_in > @criticals[0]
+    || @criticals[1] > 0 && $bytes_out > @criticals[1]
+    || @criticals[2] > 0 && $packets_in > @criticals[2]
+    || @criticals[3] > 0 && $packets_out > @criticals[3] )
+{
+    $retval = 2;
+}
+elsif (@warnings[0] > 0 && $bytes_in > @warnings[0]
+    || @warnings[1] > 0 && $bytes_out > @warnings[1]
+    || @warnings[2] > 0 && $packets_in > @warnings[2]
+    || @warnings[3] > 0 && $packets_out > @warnings[3] )
+{
+
+    $retval = 1;
+}
+
+# Show appropriate message
+if ( $retval == 0 ) {
+    print "OK $retmsg";
+}
+elsif ( $retval == 1 ) {
+    print "WARNING $retmsg";
+}
+else {
+    print "CRITICAL $retmsg";
+}
+
+exit $retval;

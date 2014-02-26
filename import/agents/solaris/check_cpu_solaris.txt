@@ -1,0 +1,9 @@
+check_cpu_solaris v 1.0
+
+Returns utilisation of all enabled CPUs
+
+Usage: check_cpu_solaris -w <warning threshold> -c <critical threshold>
+Options: -w             Warning threshold (integer)
+         -c             Critical threshold (integer)
+         
+

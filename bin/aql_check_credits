@@ -1,0 +1,83 @@
+#!/usr/bin/perl -w
+#
+#
+# SYNTAX:
+my $usage = qq{
+aql_check_credits
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+Usage: aql_check_credits -u aql_username -p aql_password -P proxy
+Options: 
+  -u,-p    AQL's username and password
+  -P       Proxy to reach AQL's servers. Can be empty
+
+};
+
+#
+# DESCRIPTION:
+#	Returns number of credits remaining in account
+#
+# LICENCE:
+#    Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+sub usage {
+    if ( $_ = shift ) { print "Error: $_\n" }
+    print $usage;
+    exit 1;
+}
+
+use strict;
+
+use lib "/usr/local/nagios/perl/lib";
+use Getopt::Std;
+use SMS::AQL;
+
+my $opts = {};
+getopts( "hu:p:P:", $opts );
+
+if ( $opts->{h} ) {
+    usage();
+    exit(0);
+}
+
+my $username = $opts->{u} || usage "Must specify AQL username";
+my $password = $opts->{p} || usage "Must specify AQL password";
+
+my $aql_options = { sender => "Opsview" };
+if ( $opts->{P} ) {
+    $aql_options->{proxy} = $opts->{P};
+}
+
+my $sms = SMS::AQL->new(
+    {
+        username => $username,
+        password => $password,
+        options  => $aql_options
+    }
+);
+
+my $credit = $sms->credit;
+if ( defined $credit && $credit =~ /^\d+$/ ) {
+    print "Number of credits: $credit", $/;
+}
+else {
+    print "Error: " . $sms->last_error, $/;
+}
+exit 0;

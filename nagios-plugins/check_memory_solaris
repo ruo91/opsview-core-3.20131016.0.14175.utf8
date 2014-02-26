@@ -1,0 +1,186 @@
+#!/usr/bin/perl
+#  Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#  W: http://www.opsview.com/
+#
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software
+#  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+use strict;
+use warnings;
+
+use Getopt::Std;
+use IO::Socket;
+
+my $script         = "check_memory";
+my $script_version = " Solaris 1.4";
+
+my $swap_warning      = 9999;
+my $swap_critical     = 9999;
+my $memory_warning    = 9999;
+my $memory_critical   = 9999;
+my $scanrate_critical = 9999;
+my $warnonzero        = 0;
+my $direction         = "in";
+my $swapfiles         = 0;
+my $swap_blocks       = 0;
+my $swap_free         = 0;
+my $scanrate          = 0;
+my %options;
+my $memfree;
+my $memtotal_mb;
+my $memfree_mb;
+
+# Do we have enough information?
+if ( @ARGV < 2 ) {
+    print "Too few arguments\n";
+    usage();
+}
+
+getopts( "h:w:c:s:W:C:", \%options );
+if ( $options{h} ) {
+    usage();
+}
+
+$memory_warning    = $options{w} if ( defined $options{w} );
+$memory_critical   = $options{c} if ( defined $options{c} );
+$swap_warning      = $options{W} if ( defined $options{W} );
+$swap_critical     = $options{C} if ( defined $options{C} );
+$scanrate_critical = $options{s} if ( defined $options{s} );
+
+# note - run three times to a) avoid summary line, b) get more stable level
+my @vmstat = `/usr/bin/vmstat 1 3`;
+
+#my @vmstat = `vmstat`;
+
+#kthr      memory            page            disk          faults      cpu
+#r b w   swap  free  re  mf pi po fr de sr m1 m1 m1 m2   in   sy   cs us sy id
+#0 0 0 3587768 1621176 6 16  0  0  0  0  0  0  0  0  0  227  329  187  0  0 99
+
+{
+
+    #use last line only
+    my @line = split( / +/, $vmstat[-1] );
+    $memfree    = $line[5];
+    $scanrate   = $line[12];
+    $memfree_mb = int( $memfree / 1024 );
+}
+
+my @prtconf = `/usr/sbin/prtconf 2>/dev/null`;
+
+foreach my $line (@prtconf) {
+    if ( $line =~ /Memory size/ ) {
+        $line =~ s/Memory size://g;
+        $line =~ s/Megabytes//g;
+        $line =~ s/^\s+//;
+        $line =~ s/\s+$//;
+        $memtotal_mb = $line;
+    }
+}
+
+# print "total memory: $memtotal_mb\n";
+
+my $memutil_mb = ( $memtotal_mb - $memfree_mb );
+my $memutil_pc = ( ( 100 / $memtotal_mb ) * $memutil_mb );
+
+my @swap = `/usr/sbin/swap -l 2>/dev/null`;
+
+foreach my $line (@swap) {
+    if ( $line =~ /blocks/ ) {
+    }
+    else {
+        $line =~ s/^\s+//;
+        my @line = split( /\s+/, $line );
+        $swap_blocks = $swap_blocks + $line[3];
+        $swap_free   = $swap_free + $line[4];
+        $swapfiles++;
+    }
+}
+
+# swapfile             dev  swaplo blocks   free
+# /dev/swap            0,0       8 16787912 16594088
+# Block = 512 bytes
+
+my ( $swaptotal_mb, $swapfree_mb, $swaputil_mb, $swaputil_pc ) = ( 0, 0, 0, 0 );
+
+if ($swap_blocks) {
+    $swaptotal_mb = ( ( $swap_blocks * 512 ) / 1048576 );
+    $swapfree_mb  = ( ( $swap_free * 512 ) / 1048576 );
+    $swaputil_mb = $swaptotal_mb - $swapfree_mb;
+    $swaputil_pc = ( 100 - ( ( 100 / $swap_blocks ) * $swap_free ) );
+}
+
+if ( $scanrate >= $scanrate_critical ) {
+    printf
+      "CRITICAL! Memory: (%.0f MB, total: %.0f MB (%.0f%%)), Swap:(%.0f MB, total: %.0f MB (%.0f%%), files $swapfiles), Scanrate: %.0f|memory=%.0f%%;; swap=%.0f%%;; scanrate=%.0f;;\n",
+      $memutil_mb,  $memtotal_mb, $memutil_pc, $swaputil_mb, $swaptotal_mb,
+      $swaputil_pc, $scanrate,    $memutil_pc, $swaputil_pc, $scanrate;
+    exit 2;
+}
+elsif ( $memory_critical <= $memutil_pc ) {
+    printf
+      "CRITICAL! Memory: (%.0f MB, total: %.0f MB (%.0f%%)), Swap:(%.0f MB, total: %.0f MB (%.0f%%), files $swapfiles), Scanrate: %.0f|memory=%.0f%%;; swap=%.0f%%;; scanrate=%.0f;;\n",
+      $memutil_mb,  $memtotal_mb, $memutil_pc, $swaputil_mb, $swaptotal_mb,
+      $swaputil_pc, $scanrate,    $memutil_pc, $swaputil_pc, $scanrate;
+    exit 2;
+}
+elsif ( $swap_critical <= $swaputil_pc ) {
+    printf
+      "CRITICAL! Memory: (%.0f MB, total: %.0f MB (%.0f %%)), Swap:(%.0f MB, total: %.0f MB (%.0f %%), files $swapfiles), Scanrate: %.0f|memory=%.0f%%;; swap=%.0f%%;; scanrate=%.0f;;\n",
+      $memutil_mb,  $memtotal_mb, $memutil_pc, $swaputil_mb, $swaptotal_mb,
+      $swaputil_pc, $scanrate,    $memutil_pc, $swaputil_pc, $scanrate;
+    exit 2;
+}
+elsif ( $memory_warning <= $memutil_pc ) {
+    printf
+      "WARNING! Memory: (%.0f MB, total: %.0f MB (%.0f%%)), Swap:(%.0f MB, total: %.0f MB (%.0f%%), files $swapfiles), Scanrate: %.0f|memory=%.0f%%;; swap=%.0f%%;; scanrate=%.0f;;\n",
+      $memutil_mb,  $memtotal_mb, $memutil_pc, $swaputil_mb, $swaptotal_mb,
+      $swaputil_pc, $scanrate,    $memutil_pc, $swaputil_pc, $scanrate;
+
+    exit 1;
+}
+elsif ( $swap_warning <= $swaputil_pc ) {
+    printf
+      "WARNING! Memory: (%.0f MB, total: %.0f MB (%.0f %%)), Swap:(%.0f MB, total: %.0f MB (%.0f %%), files $swapfiles), Scanrate: %.0f|memory=%.0f%%;; swap=%.0f%%;; scanrate=%.0f;;\n",
+      $memutil_mb,  $memtotal_mb, $memutil_pc, $swaputil_mb, $swaptotal_mb,
+      $swaputil_pc, $scanrate,    $memutil_pc, $swaputil_pc, $scanrate;
+    exit 1;
+}
+else {
+    printf
+      "Memory: (%.0f MB, total: %.0f MB (%.0f%%)), Swap:(%.0f MB, total: %.0f MB (%.0f%%), files $swapfiles), Scanrate: %.0f|memory=%.0f%%;; swap=%.0f%%;; scanrate=%.0f;;\n",
+      $memutil_mb,  $memtotal_mb, $memutil_pc, $swaputil_mb, $swaptotal_mb,
+      $swaputil_pc, $scanrate,    $memutil_pc, $swaputil_pc, $scanrate;
+    exit 0;
+}
+
+exit 0;
+
+sub usage {
+    print << "USAGE";
+
+$script v$script_version
+
+Returns free memory in MB and scan rate as integer
+
+Usage: $script -w <warning threshold> -c <critical threshold> -s <scan rate>
+Options:    
+        -w         Warning RAM % threshold (integer)
+        -c         Critical RAM % threshold (integer)
+        -W         Warning SWAP % threshold (integer)
+        -C         Critical SWAP % threshold (integer)
+        -s         Scan rate (integer)
+
+USAGE
+    exit 1;
+}

@@ -1,0 +1,38 @@
+{
+  list => [
+    {
+      actual_start_time => "2007-11-07 13:02:15",
+      author => "admin",
+      comment => "Service 'Coldstart': testing",
+      objects => {
+        services => [
+          { hostname => "cisco3", id => 158, servicename => "Coldstart" },
+        ],
+      },
+      scheduled_end_time => "2007-11-20 16:34:47",
+      start_time => "2007-11-20 14:34:47",
+      started => 1,
+    },
+    {
+      author => "admin",
+      comment => "Hostgroup 'Leaf2': in the future <script>alert(\"badness\")</script>",
+      objects => {
+        services => [
+          { hostname => "monitored_by_slave", id => 196, servicename => "SSH" },
+        ],
+      },
+      scheduled_end_time => "2017-11-20 16:34:47",
+      start_time => "2017-11-20 14:34:47",
+      started => 0,
+    },
+  ],
+  summary => {
+    allrows => 13,
+    num_hosts => 0,
+    num_services => 2,
+    page => 1,
+    rows => 2,
+    totalpages => 1,
+    totalrows => 2,
+  },
+}

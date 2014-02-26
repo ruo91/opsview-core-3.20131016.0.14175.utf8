@@ -1,0 +1,252 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#	runtimedb_housekeeping
+#
+# DESCRIPTION:
+#	Run on opsview master
+#	To replace standard housekeeping script to prevent table locking
+#	in innodb on large tables.
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib $Bin, "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+use Carp;
+use Opsview;
+use Opsview::Auditlog;
+use Opsview::Systempreference;
+use Runtime;
+
+my $audit_log_retention = Opsview::Systempreference->audit_log_retention;
+
+Opsview::Auditlog->delete_old_auditlogs($audit_log_retention);
+
+my $opsview = Opsview->db_Main;
+
+# Delete api session keys after 1 day so that check_opsview_update can calculate
+$opsview->do(
+    "DELETE FROM api_sessions WHERE expires_at < UNIX_TIMESTAMP(NOW()-INTERVAL 1 DAY)"
+);
+
+# also tidy up normal sessions table
+$opsview->do(
+    "DELETE FROM sessions WHERE expires < UNIX_TIMESTAMP(NOW()-INTERVAL 7 DAY)"
+);
+
+my $runtime = Runtime->db_Main;
+
+# These are moved from ndo2db into here, to reduce daemon workload. Fixed cutoff period
+my $one_week_cutoff =
+  $runtime->selectrow_array( "SELECT (NOW() - INTERVAL 7 DAY) FROM DUAL" );
+
+# remove old nagios_servicechecks data
+#$runtime->do( "DELETE FROM nagios_servicechecks WHERE start_time <= ?", {}, $data_cutoff );
+innodb_runtime_delete(
+    database       => $runtime,
+    table          => 'nagios_servicechecks',
+    column         => 'start_time',
+    cut_off        => $one_week_cutoff,
+    primary_column => 'servicecheck_id',
+);
+
+# remove old nagios_hostchecks data
+#$runtime->do( DELETE FROM nagios_hostchecks WHERE start_time <= ?", {}, $data_cutoff );
+innodb_runtime_delete(
+    database       => $runtime,
+    table          => 'nagios_hostchecks',
+    column         => 'start_time',
+    cut_off        => $one_week_cutoff,
+    primary_column => 'hostcheck_id',
+);
+
+#$runtime->do (DELETE FROM nagios_conninfo WHERE connect_time  <= ?", {}, $data_cutoff );
+innodb_runtime_delete(
+    database       => $runtime,
+    table          => 'nagios_conninfo',
+    column         => 'connect_time',
+    cut_off        => $one_week_cutoff,
+    primary_column => 'conninfo_id',
+);
+
+# Entries to these tables are blocked from getting to DB. This will prune to ensure systems don't unnecessarily have data sitting
+my $thirty_day_cutoff =
+  $runtime->selectrow_array( "SELECT (NOW() - INTERVAL 30 DAY) FROM DUAL" );
+
+#$runtime->do( "DELETE FROM nagios_logentries WHERE logentry_time <= ?",    {}, $thirty_day_cutoff );
+innodb_runtime_delete(
+    database       => $runtime,
+    table          => 'nagios_logentries',
+    column         => 'logentry_time',
+    cut_off        => $thirty_day_cutoff,
+    primary_column => 'logentry_id',
+);
+
+#$runtime->do( "DELETE FROM nagios_timedevents WHERE scheduled_time <= ?",  {}, $thirty_day_cutoff );
+innodb_runtime_delete(
+    database       => $runtime,
+    table          => 'nagios_timedevents',
+    column         => 'scheduled_time',
+    cut_off        => $thirty_day_cutoff,
+    primary_column => 'timedevent_id',
+);
+
+#$runtime->do( "DELETE FROM nagios_systemcommands WHERE start_time <= ?",   {}, $thirty_day_cutoff );
+innodb_runtime_delete(
+    database       => $runtime,
+    table          => 'nagios_systemcommands',
+    column         => 'start_time',
+    cut_off        => $thirty_day_cutoff,
+    primary_column => 'systemcommand_id',
+);
+
+#$runtime->do( "DELETE FROM nagios_externalcommands WHERE entry_time <= ?", {}, $thirty_day_cutoff );
+innodb_runtime_delete(
+    database       => $runtime,
+    table          => 'nagios_externalcommands',
+    column         => 'entry_time',
+    cut_off        => $thirty_day_cutoff,
+    primary_column => 'externalcommand_id',
+);
+
+# Don't do any pruning when audit_log_retention is 0
+if ( $audit_log_retention > 0 ) {
+
+    # Need this stored in variable because otherwise it is a roaming target
+    my $audit_log_cutoff = $runtime->selectrow_array(
+        "SELECT (NOW() - INTERVAL $audit_log_retention DAY) FROM DUAL"
+    );
+
+    #$runtime->do( "DELETE FROM nagios_contactnotificationmethods WHERE start_time <= ?", {}, $audit_log_cutoff );
+    innodb_runtime_delete(
+        database       => $runtime,
+        table          => 'nagios_contactnotificationmethods',
+        column         => 'start_time',
+        cut_off        => $audit_log_cutoff,
+        primary_column => 'contactnotificationmethod_id',
+    );
+
+    # Must be after contactnotificationmethods due to foreign keys
+    #$runtime->do( "DELETE FROM nagios_contactnotifications WHERE start_time <= ?", {}, $audit_log_cutoff );
+    innodb_runtime_delete(
+        database       => $runtime,
+        table          => 'nagios_contactnotifications',
+        column         => 'start_time',
+        cut_off        => $audit_log_cutoff,
+        primary_column => 'contactnotification_id',
+    );
+
+    #$runtime->do( "DELETE FROM nagios_notifications WHERE start_time <= ?", {}, $audit_log_cutoff );
+    innodb_runtime_delete(
+        database       => $runtime,
+        table          => 'nagios_notifications',
+        column         => 'start_time',
+        cut_off        => $audit_log_cutoff,
+        primary_column => 'notification_id',
+    );
+
+    #$runtime->do( "DELETE FROM nagios_commenthistory WHERE entry_time <= ?",   {}, $audit_log_cutoff );
+    innodb_runtime_delete(
+        database       => $runtime,
+        table          => 'nagios_commenthistory',
+        column         => 'entry_time',
+        cut_off        => $audit_log_cutoff,
+        primary_column => 'commenthistory_id',
+    );
+
+    #$runtime->do( "DELETE FROM nagios_acknowledgements WHERE entry_time <= ?", {}, $audit_log_cutoff );
+    innodb_runtime_delete(
+        database       => $runtime,
+        table          => 'nagios_acknowledgements',
+        column         => 'entry_time',
+        cut_off        => $audit_log_cutoff,
+        primary_column => 'acknowledgement_id',
+    );
+
+    #$runtime->do( "DELETE FROM nagios_flappinghistory WHERE event_time <= ?",  {}, $audit_log_cutoff );
+    innodb_runtime_delete(
+        database       => $runtime,
+        table          => 'nagios_flappinghistory',
+        column         => 'event_time',
+        cut_off        => $audit_log_cutoff,
+        primary_column => 'flappinghistory_id',
+    );
+
+    # Need to the != because this field defaults to this value when downtime not completed
+    #$runtime->do( "DELETE FROM nagios_downtimehistory WHERE actual_end_time != '0000-00-00 00:00:00' and actual_end_time <= ?", {}, $audit_log_cutoff );
+    innodb_runtime_delete(
+        database       => $runtime,
+        table          => 'nagios_downtimehistory',
+        column         => 'actual_end_time',
+        cut_off        => $audit_log_cutoff,
+        primary_column => 'downtimehistory_id',
+    );
+
+    #$runtime->do( "DELETE FROM nagios_eventhandlers WHERE start_time <= ?",{}, $audit_log_cutoff );
+    innodb_runtime_delete(
+        database       => $runtime,
+        table          => 'nagios_eventhandlers',
+        column         => 'start_time',
+        cut_off        => $audit_log_cutoff,
+        primary_column => 'eventhandler_id',
+    );
+
+    # We leave nagios_processevents because this is very small
+
+}
+
+sub innodb_runtime_delete {
+    my (%arg_for) = @_;
+
+    $arg_for{limit}      ||= 5000;
+    $arg_for{comparison} ||= '<=';
+
+    for my $required (qw/ database table column cut_off /) {
+        croak "Argument '$required' missing" if ( !$arg_for{$required} );
+    }
+
+    # perform deletes in batches of 1000 to prevent table locking and
+    # preventing queuing up other (more important) queries
+    my $count = 1;
+
+    # if an primary key column has been provided use that instead
+    # as the search can be quicker when using the ID column instead
+    # of the datetime column
+    if ( defined( $arg_for{primary_column} ) ) {
+        my $primary_column_value = $arg_for{database}->selectcol_arrayref( "
+            SELECT MAX( $arg_for{ primary_column } )
+            FROM $arg_for{table}
+            WHERE $arg_for{column} $arg_for{comparison} '$arg_for{cut_off}'
+        " )->[0];
+        if ($primary_column_value) {
+            while ( $count != 0 ) {
+                $count = $arg_for{database}->do( "
+                DELETE FROM $arg_for{table}
+                WHERE $arg_for{primary_column} $arg_for{comparison} '$primary_column_value'
+                LIMIT $arg_for{limit}
+            " );
+            }
+        }
+    }
+}

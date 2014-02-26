@@ -1,0 +1,175 @@
+#!/usr/bin/perl
+#
+#    Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use lib qw ( /usr/local/nagios/perl/lib );
+use Net::LDAP;
+use Getopt::Std;
+
+# About us
+my $script             = "check_ldap_sync";
+my $script_version     = "0.1";
+my $script_description = "Ensures that specified LDAP servers are synchronised";
+
+# Array of hostnames
+my $master_hostname;
+my $slave_hostname;
+
+# Performance data
+my $perfdata = "";
+
+# Search to run
+my $base_dn = "";
+my $timeout = 30; # Query timeout
+my $elapsed = 0;
+
+# Responses from servers
+my $master_csn = "";
+my $slave_csn  = "";
+
+# Command line arguments
+our ( $opt_h, $opt_H, $opt_m, $opt_t, $opt_b );
+getopts( "hH:m:t:b:" );
+if ($opt_h) {
+    usage();
+    exit 0;
+}
+if ($opt_H) {
+    $slave_hostname = $opt_H;
+}
+else {
+    print "No master hostname specified\n";
+    usage();
+    exit 3;
+}
+if ($opt_m) {
+    $master_hostname = $opt_m;
+}
+else {
+    print "No slave hostname specified\n";
+    usage();
+    exit 3;
+}
+if ($opt_t) {
+
+    # Validity test - must be numeric
+    unless ( $opt_t =~ /^[0-9]+$/ ) {
+        print "Specify timeout in seconds - $opt_t is not a valid integer\n";
+        exit 3;
+    }
+    $timeout = $opt_t;
+}
+if ($opt_b) {
+    $base_dn = $opt_b;
+}
+else {
+    print "You must specify the base DN\n";
+    exit 3;
+}
+
+sub quit_err {
+    print "UNKNOWN: $@\n";
+    exit 3;
+}
+
+sub usage {
+    print <<EOF
+--------------------------------------------------------------------
+$script $script_version
+
+$script_description
+
+Usage: $script -H <master_hostname> -m <slave_hostname> -b <basedn> ...
+
+Options: -H     Hostname of slave LDAP server to check
+         -m     Master LDAP server address (for contextCSN comparison)
+         -b     Base DN of LDAP directory
+         -t     LDAP search query timeout
+
+--------------------------------------------------------------------     
+Copyright 2007 Altinity Limited  
+         
+This program is free software; you can redistribute it or modify
+it under the terms of the GNU General Public License
+------------------------------------------------------------------
+EOF
+
+}
+
+# getContextCSN(host, basedn)
+sub getContextCSN {
+    my $hostname = shift(@_);
+    my $base     = shift(@_);
+    my $contextCSN;
+    my $entry = "";
+
+    my $ldap = Net::LDAP->new( $hostname, timeout => $timeout ) or quit_err($@);
+    my $mesg = $ldap->bind();
+    $mesg = $ldap->search(
+        base   => "$base",
+        scope  => 'base',
+        filter => '(objectclass=*)',
+        attrs  => ['contextCSN']
+    );
+
+    if ( $mesg->{'resultCode'} ) {
+        print "UNKNOWN - base $base_dn not found on $hostname\n";
+        exit 3;
+    }
+
+    $mesg->code && die $mesg->error;
+    foreach $entry ( $mesg->entries ) {
+        if ( $entry->{'asn'}->{'objectName'} eq $base ) {
+            $contextCSN = $entry->{'asn'}->{'attributes'}[0]->{'vals'}[0];
+        }
+        else {
+            print "Unexpected object: "
+              . $entry->{'asn'}->{'objectName'} . "\n";
+        }
+    }
+    $mesg = $ldap->unbind; # take down session
+
+    return $contextCSN;
+}
+
+$master_csn = getContextCSN( $master_hostname, $base_dn );
+if ( $master_csn eq "" ) {
+
+    # With OpenLDAP this could be missing syncprov overlay
+    print
+      "UNKNOWN - Master did not return a contextCSN for $base_dn, cannot continue.\n";
+    exit 3;
+}
+
+$slave_csn = getContextCSN( $slave_hostname, $base_dn );
+if ( $slave_csn eq "" ) {
+    print
+      "UNKNOWN - Slave did not return a contextCSN for $base_dn, cannot continue.\n";
+    exit 3;
+}
+
+if ( $master_csn != $slave_csn ) {
+    print "CRITICAL - $master_hostname and $slave_hostname are not in sync!\n";
+    exit 2;
+}
+
+print "OK - $master_hostname and $slave_hostname are in sync\n";
+exit 0

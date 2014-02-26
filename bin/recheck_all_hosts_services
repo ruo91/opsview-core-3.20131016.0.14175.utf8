@@ -1,0 +1,77 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+# 	recheck_all_host_services [objects.cache]
+#
+# DESCRIPTION:
+#	Finds all hosts/services and requests a recheck on them all
+#	Uses objects.cache to get list of host_names and tells each host to recheck itself and all services
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+
+use FindBin qw($Bin);
+
+my $objects_cache = shift @ARGV || "$Bin/../var/objects.cache";
+
+die "Cannot read $objects_cache: $!" unless ( -r $objects_cache );
+
+my $nagios_cmd = "$Bin/../var/rw/nagios.cmd";
+
+die "Command pipe '$nagios_cmd' does not exist" unless ( -e $nagios_cmd );
+
+die "Cannot write to command pipe '$nagios_cmd'" unless ( -w $nagios_cmd );
+
+my $pipe;
+
+open $pipe, "> $nagios_cmd" or die "Cannot open $pipe: $!";
+
+my $now = time;
+
+# Use a 5 minute window to randomily spread check times for each host
+my $window = 600;
+
+# Get list of all hosts from objects.cache
+# Very crude way of getting list of host names, but works because of removing duplicates
+# and fact that we want list of all host names
+# Otherwise has a dependency on Nagios::Object to read
+my $hosts_list = {};
+open CACHE, "$objects_cache" or die "Cannot read $objects_cache: $!";
+while (<CACHE>) {
+    chomp;
+    my ( $name, $value ) = split;
+    if ( defined $name && $name eq "host_name" ) {
+        $hosts_list->{$value}++;
+    }
+}
+close CACHE;
+my $hosts_array = [ keys %$hosts_list ];
+
+foreach my $host (@$hosts_array) {
+    my $hostname    = $host;
+    my $random_time = $now + int( rand($window) );
+    print $pipe "[$now] SCHEDULE_HOST_CHECK;$hostname;$random_time\n";
+    print $pipe "[$now] SCHEDULE_HOST_SVC_CHECKS;$hostname;$random_time\n";
+}
+
+close $pipe;

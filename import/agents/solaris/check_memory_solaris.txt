@@ -1,0 +1,9 @@
+
+check_memory_solaris v 1.0
+
+Returns free memory in MB
+
+Usage: check_memory -p <tcp port> -w <warning threshold> -c <critical threshold> -d in -z 1
+Options: -w             Warning threshold (integer)
+         -c             Critical threshold (integer)
+

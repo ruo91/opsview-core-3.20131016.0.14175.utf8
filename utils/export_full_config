@@ -1,0 +1,124 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+# 	export_full_config
+#
+# DESCRIPTION:
+#   Uses Opsview's REST API to get a full dump of the Opsview database for later re-importing
+#   to another Opsview system. Includes:
+#     hostgroups
+#     attributes
+#     hostcheckcommand
+#     notificationmethod
+#     timeperiod
+#     servicegroup
+#     keyword
+#     role
+#     sharednotificationprofile
+#     contacts
+#     servicechecks
+#     hosttemplates
+#
+#  Hosts are NOT included
+#
+#  Use import_json to import the data
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin", "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+
+use Getopt::Long;
+use Opsview::API;
+use JSON::Any;
+use Data::Dump qw(dump);
+
+my $url_prefix = $ENV{OPSVIEW_URL_PREFIX} || "http://localhost";
+my $username;
+my $password;
+
+GetOptions(
+    "username|u=s" => \$username,
+    "password|p=s" => \$password,
+) or my_die( "Incorrect options" );
+
+my $j = JSON::Any->new;
+
+my $ua = Opsview::API->new(
+    username        => $username,
+    password        => $password,
+    url_prefix      => $url_prefix,
+    api_min_version => "3.010001",
+    data_format     => "json",
+);
+
+$ua->login;
+
+#<<< Ignore perltidy
+my $import_data = [ 
+    "config/hostgroup?cols=-hosts,-children,-matpath,-is_leaf,-uncommitted&order=dependency&rows=all", 
+    "config/attribute?cols=-servicechecks,-uncommmitted,-id&rows=all", 
+    "config/hostcheckcommand?cols=-hosts,-uncommitted,-id&rows=all", 
+    "config/notificationmethod?cols=-notificationprofiles,-uncommitted,-id&rows=all", 
+    'config/timeperiod?cols=-servicecheck_notification_periods,-servicecheck_check_periods,-host_check_periods,-host_notification_periods,-uncommitted,-id&json_filter={"id":{"!=":1}}&rows=all', 
+    "config/servicegroup?cols=-servicechecks,-uncommitted,-id&rows=all", 
+    # Keyword need to ignore -contacts because of Opsview 3.10
+    "config/keyword?cols=-hosts,-servicechecks,-roles,-contacts,-uncommitted,-id&rows=all", 
+    "config/role?cols=-contacts,-monitoringservers,-uncommitted,-id&rows=all", 
+    "config/sharednotificationprofile?cols=-uncommitted,-id&rows=all", 
+    "config/contact?cols=-uncommitted,-id&rows=all", 
+    "config/servicecheck?cols=-hosts,-hosttemplates,-uncommitted,-id&order=dependency&rows=all", 
+    "config/hosttemplate?cols=-hosts,-uncommitted,-id&rows=all", 
+];
+#>>>
+my $export_data = [];
+
+foreach my $get_url (@$import_data) {
+    $ua->get($get_url);
+    my $result = $j->decode( $ua->content );
+
+    my $put_url = $get_url;
+    $put_url =~ s/\?.*$//;
+    $put_url = "/rest/$put_url";
+    push @$export_data,
+      {
+        url    => $put_url,
+        method => "PUT",
+        data   => $result,
+      };
+}
+
+print $j->encode($export_data);
+
+sub my_die {
+    print <<"USAGE";
+
+export_full_config --username=username --password=password
+
+Will output a JSON format for the all information, except hosts.
+Will be in a format import_json can read to apply to an Opsview
+system.
+
+USAGE
+    die(@_);
+}

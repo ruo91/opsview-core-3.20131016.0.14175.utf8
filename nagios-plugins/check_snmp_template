@@ -1,0 +1,126 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX & DESCRIPTION:
+#    Run script with '-h' to get help output
+#
+# AUTHORS:
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+
+use FindBin qw($Bin);
+use lib "$Bin/../lib", "$Bin/../etc";
+
+use Nagios::Plugin;
+use Net::SNMP;
+
+# OID information - specific info for this script
+# NOTE: also modify the tests at the script end
+my $test_oid  = ".1.3.6.1.2.1.1.1.0";     # generic oid to test server
+my $check     = "status";                 # what we are checking
+my $check_oid = ".1.3.6.1.2.1.2.2.1.2.4"; # oid to check
+
+my $VERSION = "0.01";
+
+my $np = Nagios::Plugin->new(
+    usage =>
+      "Usage: %s [-v] [-h] -H <hostname> [ -P <protocol> ] [-C <community>]\n  Check for '$check'",
+    shortname => "STATUS",
+    license   => "Copyright (C) 2003-2013 Opsview Limited. All rights reserved",
+    version   => $VERSION,
+);
+
+$np->add_arg(
+    spec    => "port|p=i",
+    help    => "--port, -p <port>\n   SNMP port (default: 161)",
+    default => "161",
+);
+
+$np->add_arg(
+    spec => "community|C=s",
+    help => "--community, -C <string>\n   Community string (default: public)",
+    default => "public",
+);
+
+$np->add_arg(
+    spec     => "hostname|H=s",
+    help     => "--hostname, -H <hostname>\n   Host name or IP address",
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "protocol|P=s",
+    help =>
+      "--protocol, -P <protocol>\n   SNMP protocol, either 1 or 2c (default 1)",
+    default => "1",
+
+);
+
+$np->getopts;
+
+# set overall timeout
+alarm $np->opts->timeout;
+
+my $community = $np->opts->community;
+
+my ( $session, $error ) = Net::SNMP->session(
+    -community => $community,
+    -hostname  => $np->opts->hostname,
+    -version   => $np->opts->protocol,
+    -timeout   => $np->opts->timeout - 1 || 1,
+    -port      => $np->opts->port,
+);
+
+my $result =
+  $session->get_request( -varbindlist => [ $test_oid, $check_oid ], );
+
+if ( !defined($result) ) {
+    $np->nagios_exit( 3, "Agent not responding" );
+}
+
+if ( !defined( $result->{$check_oid} ) ) {
+    $np->nagios_exit( 3, "OID does not exist" );
+}
+
+SWITCH: foreach ( $result->{$check_oid} ) {
+    /^state0$/i && do {
+        $np->nagios_exit( 0, "Server is in state " . $result->{$check_oid} );
+        last SWITCH;
+    };
+
+    /^state1$/i && do {
+        $np->nagios_exit( 1, "Server is in state " . $result->{$check_oid} );
+        last SWITCH;
+    };
+
+    /^state2$/i && do {
+        $np->nagios_exit( 2, "Server is in state " . $result->{$check_oid} );
+        last SWITCH;
+    };
+
+    do {
+        $np->nagios_exit( 3,
+            "Response " . $result->{$check_oid} . " is not recognised"
+        );
+        last SWITCH;
+    };
+}

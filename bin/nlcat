@@ -1,0 +1,263 @@
+#!/usr/bin/perl
+#
+# script to search active and archive nagios log files for given text
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+
+use strict;
+use warnings;
+use FindBin qw($Bin);
+use lib "$Bin/../lib", "$Bin/../etc";
+
+package My::Logfile;
+use overload '""' => \&string;
+
+sub new {
+    my $class = shift;
+    my $self  = {};
+    $self->{logfile} = shift;
+    ( $self->{month}, $self->{day}, $self->{year}, $self->{lognum} ) =
+      $self->{logfile} =~ m/nagios-(\d\d)-(\d\d)-(\d\d\d\d)-(\d\d)\.log$/xsm;
+    if ( $self->{logfile} =~ m!nagios.log$! ) {
+        $self->{month} = $self->{day} = $self->{year} = $self->{lognum} = 9999;
+    }
+    return bless( $self, $class );
+}
+
+sub string {
+    my ($self) = @_;
+    return $self->{logfile};
+}
+
+1;
+
+package main;
+use version; our $VERSION = qv( '0.0.1' );
+use Getopt::Long qw(:config no_ignore_case bundling no_auto_abbrev);
+use Pod::Usage;
+
+my $root_dir;
+eval {
+    require Opsview::Config;
+    import Opsview::Config;
+    $root_dir = Opsview::Config->root_dir;
+};
+
+if ($@) {
+    $root_dir = '/usr/local/nagios';
+}
+
+my $var_dir     = $root_dir . '/var';
+my $archive_dir = $var_dir . '/archives';
+
+my %options = (
+    'help|h|?'      => 0,
+    'man'           => 0,
+    'version|V'     => 0,
+    'debug:+'       => 0,
+    'number|n|s=i'  => 0,
+    'no-filename|F' => 0,
+    'line-number|l' => 0,
+    'reverse|r'     => 0,
+    'problems|p'    => 0,
+    'end|e|m=i'     => 0,
+);
+
+GetOptions( \%options, keys(%options) ) || pod2usage( -verbose => 1 );
+die("Version: $VERSION\n") if ( $options{version} );
+pod2usage( -verbose => 1 ) if ( $options{'?'}  || $options{help} );
+pod2usage( -verbose => 2 ) if ( $options{HELP} || $options{man} );
+
+$options{debug} ||= 0;
+$options{debug} = 8 if ( $options{debug} > 8 );
+
+my $search_string = shift;
+
+sub logmsg($@) {
+    print @_, $/ if ( shift() <= $options{debug} );
+}
+
+sub parse_epoc {
+    my ($line) = @_;
+    $line =~ s/^\[(\d+)\]/scalar localtime($1).':'/e;
+    return $line;
+}
+
+if ( $options{problems} ) {
+    logmsg( 1, 'Searching for problems; removing OK log entries' );
+    $options{reverse} = 1;
+    $search_string =
+      '(?:CURRENT|LOG|ALERT|NOTIFICATION|SCHEDULE|COMMAND|completed successfully)';
+}
+
+if ($search_string) {
+    logmsg( 1, "Searching log files for the term '$search_string'" );
+}
+
+my @log_files;
+
+if ( -f $var_dir . '/nagios.log' ) {
+    push( @log_files, $var_dir . '/nagios.log' );
+}
+
+push( @log_files, glob( $archive_dir . '/nagios-*.log' ) );
+
+@log_files = sort {
+         $a->{year} <=> $b->{year}
+      || $a->{month} <=> $b->{month}
+      || $a->{day} <=> $b->{day}
+      || $a->{lognum} <=> $b->{lognum}
+} map { My::Logfile->new($_) } @log_files;
+
+logmsg( 1, 'Found ', scalar(@log_files), ' log files' );
+
+$options{number} ||= 1;
+$options{end}    ||= 0;
+
+logmsg( 1, 'Limiting to last ', $options{number}, ' logs' );
+splice( @log_files, 0, -$options{number} );
+
+if ( $options{end} ) {
+    logmsg( 1, 'Stopping at previous ', $options{end}, ' logs' );
+    splice( @log_files, -$options{end} );
+}
+
+logmsg( 3, 'Logfiles: ', $/, join( $/, @log_files ) );
+
+foreach my $log_file (@log_files) {
+    if ( !$options{'no-filename'} ) {
+        print $log_file, $/;
+    }
+
+    open( my $log_file_fh, '<', $log_file )
+      || die "Unable to read $log_file: $!", $/;
+    my @file_contents = <$log_file_fh>;
+    close( $log_file_fh, ) || die "Unable to close $log_file: $!", $/;
+
+    foreach my $line_number ( 0 .. $#file_contents ) {
+        my $line = $file_contents[$line_number];
+        if ($search_string) {
+            if ( $options{reverse} ) {
+                if ( $line !~ m/$search_string/ ) {
+                    if ( $options{'line-number'} ) {
+                        print 'Line ', $line_number + 1, ': ';
+                    }
+                    print parse_epoc($line);
+                }
+            }
+            else {
+                if ( $line =~ m/$search_string/ ) {
+                    if ( $options{'line-number'} ) {
+                        print 'Line ', $line_number + 1, ': ';
+                    }
+                    print parse_epoc($line);
+                }
+            }
+        }
+        else {
+            print parse_epoc($line);
+        }
+    }
+}
+
+__END__
+
+=pod
+
+=head1 NAME
+
+nlcat - nagios log file parser
+
+=head1 SYNOPSIS
+
+  nlcat
+  nlcat -n <3> <search term>
+  nlcat -n 3 DAILY
+  nlcat -l '(?i)daily'
+
+=head1 DESCRIPTION
+
+Parses through nagios log file in the correct order (oldest to newest),
+parsing the time code into a normal date string, optionally searching for
+a given search term.
+
+=head1 OPTIONS
+
+=over
+
+=item --help, -?, -h
+
+Display basic help 
+
+=item --man
+
+Display man page
+
+=item --debug [0-9], --debug [--debug [...]]
+
+Enable debugging mode (using more than once increases verbosity, or specify
+a level explicitly to a maximum of level 8) 
+
+=item --version, -V
+
+Show version information
+
+=item --number, -n <integer>
+
+Limit the log file search to the last <integer> logs (default: 1)
+
+=item --end, -e <integer>
+
+Ignore the more recent <integer> log files when searching with --number.
+This allows for searching 3 log files 10 days ago (.e.g. -n 10 -e 7)
+
+=item --no-filename, -F
+
+Suppress printing of the filename
+
+=item --line-number, -l
+
+Print the line number the match was found on
+
+=back
+
+=head1 SEARCH TERM
+
+The search terms can use perl regexps
+
+=over 
+
+=item nlcat '(?i)daily'
+
+Search for the term 'daily' ignoring case
+
+=item  nlcat 'dev\d\d'
+
+Search for the term 'dev' followed by two digits
+
+=item nlcat 'DAILY(?i)dev(?-i)'
+
+Search for the term 'DAILY[dD][eE][vV]'
+
+=back
+
+=head1 AUTHOR AND COPYRIGHT
+
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This software is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Opsview; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+=cut

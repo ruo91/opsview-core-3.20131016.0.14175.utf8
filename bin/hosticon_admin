@@ -1,0 +1,261 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+#   hosticon_admin <add|remove|import> <args>
+#     add 'name' <filename of png>
+#     remove 'name'
+#     import /path/to/hosticon.db
+#
+# DESCRIPTION:
+#   Maniplutes the icon table within the opsview database as per
+#   arguments given
+#
+# AUTHORS:
+#   Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+
+use FindBin qw($Bin);
+use lib "/usr/local/nagios/perl/lib";
+use lib "$Bin/../lib", "$Bin/../etc";
+
+use English;
+use IO::File;
+use Pod::Usage;
+use Getopt::Long qw(:config no_ignore_case bundling no_auto_abbrev);
+
+use Opsview::Icon;
+
+my $_VERS = sprintf( "%d", q$Revision: 1 $ =~ m!(\d+)! );
+my $_DATE = sprintf( "%s %s",
+    q$Date: 2000-01-01 00:00:00 $ =~ m!(\d...-\d.-\d.) (\d.:\d.:\d.)! );
+
+my $VERSION = "$_VERS $_DATE";
+
+my $image_dir = '/usr/local/nagios/share/images/logos';
+
+=head1 NAME
+
+hosticon_admin
+
+=head1 SYNOPSIS
+
+S<< hosticon_admin [-?] [--help] [--man] [--version] >>
+S<< hosticon_admin import /path/to/hosticons.db >>
+S<< hosticon_admin add 'LOGO - icon name' icon.png >>
+S<< hosticon_admin remove 'LOGO - icon name' >>
+S<< hosticon_admin list >>
+
+=head1 DESCRIPTION
+
+Manipulate the host icons database table to add or remove icon registration
+
+Icons should be in PNG format, named F<icon.png> and should be 40x40, else 
+named F<icon_small.png> and should be 20x20.
+
+=head1 OPTIONS
+
+=over
+
+=item --help, -?, -h
+
+Display basic help
+
+=item --man
+
+Display man page
+
+=item --debug [0-9], --debug [--debug [...]]
+
+Enable debugging mode (using more than once increases verbosity, or specify
+a level explicitly to a maximum of level 8)
+
+=item --version
+
+Show version information
+
+=head1 ARGUMENTS
+
+=over
+
+=item import /path/to/file
+
+Import the details from the given file into the database.  Format of the
+file is
+
+  LOGO - icon name:icon
+
+Note: the file F<icon.png> should already be in the 
+F<nagios/share/images/logos> directory and the provided filename should 
+not have the filetype suffix added (i.e.  F<icon> not F<icon.png>).
+
+=item add  'LOGO - icon name' icon.png
+
+This will add in an icon (which should be a png in 40x40 size).  If the 
+icon is already installed in the correct directory then it doesnt need 
+to exist relative to the current directory.
+
+=item remove 'LOGO - icon name'
+
+Remove a single icon.  If any devices are using the icon then they will be 
+switched to a default image before the entry is removed from the database 
+table.  The image will not be removed from the filesystem.
+
+=back
+
+=head1 AUTHOR AND COPYRIGHT
+
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This software is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Opsview; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+=cut
+
+my %options = (
+    'help|?|h' => 0,
+    'man'      => 0,
+    'version'  => 0,
+    'debug:+'  => 0,
+);
+
+GetOptions( \%options, keys(%options) ) || pod2usage( -verbose => 1 );
+die("Version: $VERSION\n") if ( $options{version} );
+pod2usage( -verbose => 1 ) if ( $options{'?'} || $options{help} );
+pod2usage( -verbose => 2 ) if ( $options{man} );
+
+$options{debug} ||= 0;
+$options{debug} = 8 if ( $options{debug} > 8 );
+
+sub logmsg($@) {
+    print @_, $/ if ( shift() <= $options{debug} );
+}
+
+my $command = shift || '';
+
+if ( $command !~ m/^(?:import|add|remove|list)$/ ) {
+    die( 'Unknown command "', $command, '"', $/ );
+}
+
+import_hosticons_file() if ( $command eq 'import' );
+add_hosticon()          if ( $command eq 'add' );
+remove_hosticon()       if ( $command eq 'remove' );
+list_hosticon()         if ( $command eq 'list' );
+
+exit 0;
+
+sub check_filename {
+    my ($filename) = @_;
+
+    if ( $filename !~ m/\.png$/ ) {
+        die 'Filename should be a .png', $/;
+    }
+}
+
+sub import_hosticons_file {
+    my $hosticon_filename = shift @ARGV;
+
+    logmsg( 1, 'Importing ', $hosticon_filename );
+
+    if ( !$hosticon_filename || !-f $hosticon_filename ) {
+        die( 'Unable to find "', $hosticon_filename, '": ', $OS_ERROR, $/ );
+    }
+
+    my $hosticon_fh = IO::File->new( $hosticon_filename, '<' )
+      or die(
+        'Cannot open "',
+        $hosticon_filename, '" for reading: ',
+        $OS_ERROR, $/
+      );
+
+    while (<$hosticon_fh>) {
+        chomp();
+        my ( $name, $filename ) = split( ":", $_ );
+        if ( !$name || !$filename ) {
+            die( 'Malformed entry in "',
+                $hosticon_filename, '" line ', $hosticon_fh->input_line_number,
+                $/ );
+        }
+        logmsg( 2, 'Adding "', $name, '","', $filename, '"' );
+        my $icon = Opsview::Icon->find_or_create( { name => $name },
+            { filename => $filename } )
+          || die( 'Failed to add icon entry for "', $name, '"', $/ );
+        $icon->update
+          || die( 'Failed to update icon entry for "', $name, '"', $/ );
+    }
+
+    $hosticon_fh->close
+      or die( 'Failed to close "', $hosticon_filename, '": ', $OS_ERROR, $/ );
+}
+
+sub list_hosticon {
+    foreach ( Opsview::Icon->retrieve_all ) {
+        print $_->name, ' (', $_->filename, ')', $/;
+    }
+}
+
+sub add_hosticon {
+    my $name     = shift @ARGV || '';
+    my $filename = shift @ARGV || '';
+
+    # Only bring this in when needed, so requirements for adding hosticons are not usually needed
+    require Utils::Hosticon;
+    my $icon = Utils::Hosticon->new( { source => $filename } );
+
+    $icon->setup_all;
+
+    my $icondb = Opsview::Icon->find_or_create( { name => $name },
+        { filename => $icon->get_image_basename } )
+      || die( 'Failed to add icon entry for "', $name, '"', $/ );
+    $icondb->update
+      || die( 'Failed to update icon entry for "', $name, '"', $/ );
+}
+
+sub remove_hosticon {
+    my $name = shift @ARGV || '';
+
+    my $icon = Opsview::Icon->search( { name => $name } )->first
+      || die( 'Failed to find icon entry for "', $name, '"', $/ );
+
+    my $default_icon = Opsview::Icon->search( { filename => 'server' } )->first;
+
+    foreach my $host ( $icon->hosts ) {
+        logmsg( 0, 'Reverting host "',
+            $host->name, '" icon to ', $default_icon->name );
+        $host->icon( $default_icon->id );
+        $host->update;
+    }
+
+    $icon->delete;
+
+    logmsg( 0, $name, ' removed from the database.' );
+}

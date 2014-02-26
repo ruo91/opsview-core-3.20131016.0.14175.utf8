@@ -1,0 +1,1436 @@
+#!/bin/bash
+#
+#
+# SYNTAX:
+#	db_opsview [-t] {db_install} [...]
+#
+# DESCRIPTION:
+# 	This is the overall opsview install script
+# 	Expects $1 to be some parameter to say what action is
+#	Will just do - no prompting anymore!
+#	-t for testing - called from Opsview test suites
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+# Exports to stdout
+# This mysqldump strips out all tables that are generated at db_install time
+function db_export {
+	echo "SET FOREIGN_KEY_CHECKS=0;"
+	eval mysqldump --no-create-info --extended-insert=false --complete-insert $user_parms $db | egrep -v '^INSERT INTO `(plugins|icons|hostcheckcommands|checktypes|roles)`|^INSERT INTO `hostgroups` .* VALUES \(1,|snmptrapexceptions'
+	echo "SET FOREIGN_KEY_CHECKS=1;"
+}
+
+function db_export_test {
+	db_export | egrep -v -- '^--|INSERT INTO `metadata`'
+}
+
+function db_export_initial {
+    # Clear out the uuid first and opsview_server_name
+    echo "UPDATE systempreferences SET uuid='', opsview_server_name=''; UPDATE contacts SET show_welcome_page=1" | eval mysql $user_parms $db
+	echo "SET FOREIGN_KEY_CHECKS=0;"
+	# Need to truncate because otherwise ids from a populatedb below will clash
+	echo "TRUNCATE servicegroups;"
+	tables="hosts
+hostgroups
+timeperiods
+hostcheckcommands
+monitoringservers
+notificationmethods
+notificationprofiles
+notificationprofile_hostgroups
+notificationprofile_servicegroups
+notificationprofile_keywords
+notificationprofile_notificationmethods
+servicegroups
+contacts
+contact_variables
+hosttemplates
+hosthosttemplates
+servicechecks
+servicecheckdependencies
+hostservicechecks
+hosttemplateservicechecks
+snmptraps
+servicecheckhostexceptions
+servicechecktimedoverridehostexceptions
+servicecheckhosttemplateexceptions
+servicechecktimedoverridehosttemplateexceptions
+snmptraprules
+keywords
+keywordhosts
+keywordservicechecks
+systempreferences
+hostserviceeventhandlers
+hosttemplatemanagementurls
+parents
+servicechecksnmppolling
+roles
+roles_access
+roles_monitoringservers
+roles_hostgroups
+role_access_hostgroups
+role_access_servicegroups
+role_access_keywords
+attributes
+host_attributes
+modules
+sharednotificationprofiles
+sharednotificationprofile_hostgroups
+sharednotificationprofile_servicegroups
+sharednotificationprofile_keywords
+sharednotificationprofile_notificationmethods
+contact_sharednotificationprofile"
+	eval mysqldump --no-create-info --extended-insert=false --complete-insert $user_parms $db $tables | egrep -v -- '^--'
+	echo "SET FOREIGN_KEY_CHECKS=1;"
+}
+
+function check_constraints {
+	if [ $TEST -eq 1 ] ; then
+        return
+    fi
+    eval check_constraints.sh $user_parms $db | grep "|" > /dev/null
+    if [ $? -eq 0 ] ; then
+        echo "Error with constraints - use check_constraints.sh to see where problems and check import file"
+        exit 1
+    fi
+}
+
+# Imports to db. Expects stdin
+function db_import {
+	egrep -v '^INSERT INTO `metadata`' | eval mysql $user_parms $db || die "Cannot import"
+    check_constraints
+}
+
+function db_install {
+
+	eval mysql $user_parms <<-EOF || die "Cannot install db"
+
+	# Create db
+	DROP DATABASE IF EXISTS $db;
+	CREATE DATABASE $db;
+	USE $db;
+
+	# --------------------------------------------------------
+	#
+	# Table structures
+	#
+
+	# Add host foreign key after hosts definition
+	# Master MUST be the first role in the ENUM
+	CREATE TABLE monitoringservers (
+		id int AUTO_INCREMENT,
+		name varchar(64) NOT NULL,
+		host int,
+		role ENUM ("Master", "Slave") DEFAULT "Slave",
+		activated int DEFAULT 1 NOT NULL,
+		passive int DEFAULT 0 NOT NULL,
+		uncommitted int DEFAULT 0 NOT NULL,
+		PRIMARY KEY (id),
+		UNIQUE (name)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE timeperiods (
+		id        INT AUTO_INCREMENT,
+		name      VARCHAR(128) NOT NULL,
+       alias     VARCHAR(128) NOT NULL,
+       sunday    VARCHAR(255) NOT NULL,
+       monday    VARCHAR(255) NOT NULL,
+       tuesday   VARCHAR(255) NOT NULL,
+       wednesday VARCHAR(255) NOT NULL,
+       thursday  VARCHAR(255) NOT NULL,
+       friday    VARCHAR(255) NOT NULL,
+       saturday  VARCHAR(255) NOT NULL,
+		uncommitted INT DEFAULT 0 NOT NULL,
+		PRIMARY   KEY (id),
+		UNIQUE    (name)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE checktypes (
+		id int AUTO_INCREMENT,
+		name varchar(128) NOT NULL,
+		priority int DEFAULT 1,
+		PRIMARY KEY (id),
+		UNIQUE (name)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE access (
+		id int AUTO_INCREMENT,
+		name varchar(128) NOT NULL,
+		PRIMARY KEY (id),
+		UNIQUE (name)
+	) ENGINE=InnoDB;
+
+	# Do not cascade delete with monitoring server, as contacts will get deleted
+	CREATE TABLE roles (
+		id int AUTO_INCREMENT,
+		name varchar(128) NOT NULL,
+		description VARCHAR(255),
+		priority INT DEFAULT 1000,
+        all_hostgroups BOOLEAN DEFAULT 0 NOT NULL,
+        all_servicegroups BOOLEAN DEFAULT 0 NOT NULL,
+        all_keywords BOOLEAN DEFAULT 0 NOT NULL,
+		uncommitted INT DEFAULT 0 NOT NULL,
+		PRIMARY KEY (id),
+		UNIQUE (name)
+	) ENGINE=InnoDB;
+
+	# There is deliberately no ON DELETE CASCADE on the monitoring server
+	# Because if the monitoringserver was removed and this restriction removed, then the contact could suddenly
+	# have access to all monitoringservers
+	CREATE TABLE roles_monitoringservers (
+		roleid INT,
+		monitoringserverid INT,
+		PRIMARY KEY (roleid, monitoringserverid),
+		INDEX (roleid),
+		CONSTRAINT roles_monitoringservers_role_fk FOREIGN KEY (roleid) REFERENCES roles(id) ON DELETE CASCADE,
+		INDEX (monitoringserverid),
+		CONSTRAINT roles_monitoringservers_monitoringserver_fk FOREIGN KEY (monitoringserverid) REFERENCES monitoringservers(id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE roles_access (
+		roleid INT,
+		accessid INT,
+		PRIMARY KEY (roleid, accessid),
+		INDEX (roleid),
+		INDEX (accessid),
+		CONSTRAINT roles_access_roles_fk FOREIGN KEY (roleid) REFERENCES roles(id) ON DELETE CASCADE,
+		CONSTRAINT roles_access_access_fk FOREIGN KEY (accessid) REFERENCES access(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+	CREATE TABLE contacts (
+		id int AUTO_INCREMENT,
+		fullname varchar(128) NOT NULL,
+		name varchar(128) NOT NULL,
+		realm varchar(255) DEFAULT "local",
+		encrypted_password varchar(128),
+		language VARCHAR(10) NOT NULL DEFAULT '',
+		description varchar(255) NOT NULL,
+		role int NOT NULL DEFAULT 1,
+		show_welcome_page tinyint NOT NULL DEFAULT 1,
+		uncommitted int DEFAULT 0 NOT NULL,
+		PRIMARY KEY (id),
+		UNIQUE (name),
+		CONSTRAINT contacts_role_fk FOREIGN KEY (role) REFERENCES roles(id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE notificationprofiles (
+		id int AUTO_INCREMENT,
+		name varchar(128) NOT NULL,
+		contactid int NOT NULL,
+		host_notification_options varchar(16),
+		service_notification_options varchar(16),
+		notification_period int NOT NULL DEFAULT 1,
+		all_hostgroups int DEFAULT 1 NOT NULL,
+		all_servicegroups int DEFAULT 1 NOT NULL,
+        all_keywords BOOLEAN DEFAULT 1 NOT NULL,
+		notification_level int NOT NULL DEFAULT 1,
+		priority INT DEFAULT 1000,
+		uncommitted int DEFAULT 0 NOT NULL,
+        notification_level_stop SMALLINT NOT NULL DEFAULT 0,
+		PRIMARY KEY (id),
+        UNIQUE notificationprofiles_name_contactid (name, contactid),
+		INDEX (notification_period),
+		CONSTRAINT notificationprofiles_notification_period_fk FOREIGN KEY (notification_period) REFERENCES timeperiods(id),
+        INDEX (contactid),
+        CONSTRAINT notificationprofiles_contactid_fk FOREIGN KEY (contactid) REFERENCES contacts(id) ON DELETE CASCADE
+	) ENGINE=InnoDB COMMENT='Notification profiles';
+
+	CREATE TABLE contact_variables (
+		contactid int NOT NULL,
+        name varchar(128) NOT NULL,
+        value TEXT,
+		PRIMARY KEY (contactid, name),
+		INDEX (contactid),
+		CONSTRAINT contact_variables_contactid_fk FOREIGN KEY (contactid) REFERENCES contacts(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+	# Changes here need to be reflected in hostgroups_1_to_9 in Opsview::Host
+	# matpath is TEXT to allow long names
+	CREATE TABLE hostgroups (
+		id int AUTO_INCREMENT,
+		parentid int DEFAULT 1,
+		name varchar(128) NOT NULL,
+		lft int,
+		rgt int,
+		matpath TEXT NOT NULL,
+        matpathid TEXT NOT NULL DEFAULT '',
+		uncommitted int DEFAULT 0 NOT NULL,
+		PRIMARY KEY (id),
+		INDEX (parentid),
+		CONSTRAINT hostgroups_parentid_fk FOREIGN KEY (parentid) REFERENCES hostgroups(id)
+	) ENGINE=InnoDB;
+
+	# Must be after hostgroups
+	CREATE TABLE roles_hostgroups (
+		roleid INT,
+		hostgroupid INT,
+		PRIMARY KEY (roleid, hostgroupid),
+		INDEX (roleid),
+		CONSTRAINT roles_hostgroups_role_fk FOREIGN KEY (roleid) REFERENCES roles(id) ON DELETE CASCADE,
+		INDEX (hostgroupid),
+		CONSTRAINT roles_hostgroups_hostgroup_fk FOREIGN KEY (hostgroupid) REFERENCES hostgroups(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+	CREATE TABLE hostgroupinfo (
+		id INT NOT NULL PRIMARY KEY,
+		information TEXT,
+		CONSTRAINT hostgroupinfo_hostgroups_fk FOREIGN KEY (id) REFERENCES hostgroups(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+    # This table seems different to others as it 'crosses over' to runtime as the ids are based on runtime service objects, not configuration
+    # objects. Makes sense for serviceinfo to reside in the configuration database as other wiki info (hostinfo, hostgroupinfo)
+    # also resides here.
+    # No constraints are required - anything missing will just be overlooked
+    # There could be issues if runtime.nagios_objects is truncated in error, but that's a fairly drastic scenario
+	CREATE TABLE serviceinfo (
+		id INT NOT NULL PRIMARY KEY,        # This is the service_object_id in nagios_objects. Will need to map to opsview_host_objects to get servicecheckid
+		information TEXT
+	) ENGINE=InnoDB;
+
+	CREATE TABLE servicegroups (
+		id int AUTO_INCREMENT,
+		name varchar(128) NOT NULL,
+		uncommitted int DEFAULT 0 NOT NULL,
+       PRIMARY KEY (id),
+        UNIQUE (name)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE icons (
+		name varchar(128) NOT NULL,
+		filename varchar(128) NOT NULL,
+		PRIMARY KEY (name)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE plugins (
+		name varchar(128) NOT NULL,
+		onserver int DEFAULT 1,
+		help text,
+        envvars text NOT NULL DEFAULT '',           # Comma separated list of Nagios macros required by this plugin
+		PRIMARY KEY (name),
+		INDEX (onserver)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE agents (
+		id int AUTO_INCREMENT,
+		parent int DEFAULT NULL,
+		name varchar(128) NOT NULL,
+		priority int,
+		command varchar(255),
+		PRIMARY KEY (id),
+		UNIQUE (name),
+		CONSTRAINT agents_parent_fk FOREIGN KEY (parent) REFERENCES agents(id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE agentplugins (
+		agentid int NOT NULL,
+		pluginname varchar(128) NOT NULL,
+		PRIMARY KEY (agentid, pluginname),
+		INDEX (agentid),
+		CONSTRAINT agentplugins_agentid_fk FOREIGN KEY (agentid) REFERENCES agents(id),
+		INDEX (pluginname),
+		CONSTRAINT agentplugins_pluginname_fk FOREIGN KEY (pluginname) REFERENCES plugins(name)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE hostcheckcommands (
+		id int(11) NOT NULL auto_increment,
+		name varchar(128) NOT NULL,
+		plugin varchar(128) default NULL,
+       args TEXT default '' NOT NULL,
+		priority int(11) default '1',
+        uncommitted TINYINT DEFAULT 0 NOT NULL,
+       PRIMARY KEY (id),
+       UNIQUE KEY name (name),
+        INDEX (plugin),
+        CONSTRAINT hostcheckcommands_plugins_fk FOREIGN KEY (plugin) REFERENCES plugins(name)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE hosttemplates (
+		id int AUTO_INCREMENT,
+		name varchar(128) NOT NULL,
+		description varchar(255),
+		uncommitted int,
+		PRIMARY KEY (id),
+		UNIQUE (name)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE rancid_vendors (
+		id int AUTO_INCREMENT,
+		name varchar(128) NOT NULL,
+		rancid_name varchar(128) NOT NULL,
+		PRIMARY KEY (id),
+		UNIQUE (name)
+	) ENGINE=InnoDB COMMENT="Vendor devices supported by rancid";
+
+	# monitored_by has to be default null because the
+	# monitoringservers may not have any rows yet
+	CREATE TABLE hosts (
+		id int AUTO_INCREMENT,
+		name varchar(64) NOT NULL,
+		ip varchar(255) NOT NULL,
+		alias varchar(255) NOT NULL,
+		notification_interval int NOT NULL DEFAULT 60,  # Minutes
+		hostgroup int,
+		check_period INT DEFAULT NULL,          # Set reasonable defaults, most notably because API might not pass these values
+		check_interval varchar(16) DEFAULT "5", # Keep these as varchar since servicechecks use same - possibly change when using jira style values
+		retry_check_interval varchar(16) DEFAULT "1",
+		check_attempts varchar(16) DEFAULT "2",
+		icon varchar(128),
+		enable_snmp TINYINT DEFAULT 0 NOT NULL,
+		snmp_version ENUM ("2c", "3", "1") DEFAULT "2c",
+		snmp_port INT(11) DEFAULT 161,
+		snmp_community VARCHAR(255) NOT NULL DEFAULT "",
+		snmpv3_username varchar(128) NOT NULL DEFAULT "",
+		snmpv3_authprotocol ENUM ("md5", "sha"),
+		snmpv3_authpassword varchar(128) NOT NULL DEFAULT "",
+		snmpv3_privprotocol ENUM ("des", "aes", "aes128"),
+		snmpv3_privpassword varchar(128) NOT NULL DEFAULT "",
+		use_nmis int DEFAULT 0,
+		nmis_node_type ENUM ("router", "switch", "server") DEFAULT 'router',
+		notification_options varchar(16),
+		notification_period int DEFAULT 1 NOT NULL,
+		check_command int NULL,
+		http_admin_url varchar(128),
+		http_admin_port varchar(16),
+		monitored_by int DEFAULT 1 NOT NULL,
+		uncommitted int DEFAULT 0 NOT NULL,
+		other_addresses varchar(255) NOT NULL,
+		snmptrap_tracing int DEFAULT 0,
+		flap_detection_enabled int DEFAULT 1,
+		use_rancid int DEFAULT 0,
+		rancid_vendor int DEFAULT NULL,
+		rancid_username varchar(128),
+		rancid_password varchar(255),
+		rancid_connection_type ENUM ("ssh", "telnet") DEFAULT "ssh",
+		rancid_autoenable int DEFAULT 0,
+        use_mrtg TINYINT DEFAULT 0 NOT NULL,
+		tidy_ifdescr_level TINYINT DEFAULT 0 NOT NULL,
+		snmp_max_msg_size SMALLINT UNSIGNED DEFAULT 0 NOT NULL,
+		snmp_extended_throughput_data TINYINT DEFAULT 0 NOT NULL,
+		event_handler varchar(255) NOT NULL DEFAULT '',
+		PRIMARY KEY (id),
+		UNIQUE (name),
+        INDEX ip_name (ip,name),
+		INDEX (hostgroup),
+		CONSTRAINT hosts_hostgroup_fk FOREIGN KEY (hostgroup) REFERENCES hostgroups(id),
+		INDEX (check_period),
+		CONSTRAINT hosts_check_period_fk FOREIGN KEY (check_period) REFERENCES timeperiods(id),
+		INDEX (icon),
+		CONSTRAINT hosts_icon_fk FOREIGN KEY (icon) REFERENCES icons(name),
+		INDEX (notification_period),
+		CONSTRAINT hosts_notification_period_fk FOREIGN KEY (notification_period) REFERENCES timeperiods(id),
+		INDEX (check_command),
+		CONSTRAINT hosts_check_command_fk FOREIGN KEY (check_command) REFERENCES hostcheckcommands(id),
+		INDEX (monitored_by),
+		CONSTRAINT hosts_monitored_by_fk FOREIGN KEY (monitored_by) REFERENCES monitoringservers(id),
+		INDEX (rancid_vendor),
+		CONSTRAINT hosts_rancid_vendor_fk FOREIGN KEY (rancid_vendor) REFERENCES rancid_vendors(id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE hostinfo (
+		id INT NOT NULL PRIMARY KEY,
+		information TEXT,
+		CONSTRAINT hostinfo_hosts_fk FOREIGN KEY (id) REFERENCES hosts(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+	# Needs to be added afterwards
+	ALTER TABLE monitoringservers ADD CONSTRAINT monitoringservers_host_fk FOREIGN KEY (host) REFERENCES hosts(id);
+
+	CREATE TABLE hosthosttemplates (
+		hostid int NOT NULL,
+		hosttemplateid int NOT NULL,
+		priority int NOT NULL DEFAULT 1000,
+		PRIMARY KEY (hostid, hosttemplateid),
+		INDEX (hostid),
+		CONSTRAINT hosthosttemplates_hostid_fk FOREIGN KEY (hostid) REFERENCES hosts(id) ON DELETE CASCADE,
+		INDEX (hosttemplateid),
+		CONSTRAINT hosthosttemplates_hosttemplateid_fk FOREIGN KEY (hosttemplateid) REFERENCES hosttemplates(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+	CREATE TABLE monitoringclusternodes (
+		id int AUTO_INCREMENT,
+		monitoringcluster int NOT NULL,
+		host int NOT NULL,
+		activated int NOT NULL DEFAULT 1,
+		passive int NOT NULL DEFAULT 0,
+		uncommitted int NOT NULL DEFAULT 0,
+		PRIMARY KEY (id),
+		UNIQUE (monitoringcluster, host),
+		INDEX (monitoringcluster),
+		INDEX (host),
+		CONSTRAINT monitoringclusternodes_monitoringcluster_fk FOREIGN KEY (monitoringcluster) REFERENCES monitoringservers(id),
+		CONSTRAINT monitoringclusternodes_host_fk FOREIGN KEY (host) REFERENCES hosts(id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE parents (
+		hostid int,
+		parentid int,
+		PRIMARY KEY (hostid, parentid),
+		INDEX (hostid),
+		CONSTRAINT parents_hostid_fk FOREIGN KEY (hostid) REFERENCES hosts(id) ON DELETE CASCADE,
+		INDEX (parentid),
+		CONSTRAINT parents_parentid_fk FOREIGN KEY (parentid) REFERENCES hosts(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+    CREATE TABLE attributes (
+        id INT AUTO_INCREMENT,
+        name VARCHAR(64) NOT NULL,
+        internally_generated TINYINT DEFAULT 0 NOT NULL,
+        label1 VARCHAR(16) NOT NULL DEFAULT '',
+        label2 VARCHAR(16) NOT NULL DEFAULT '',
+        label3 VARCHAR(16) NOT NULL DEFAULT '',
+        label4 VARCHAR(16) NOT NULL DEFAULT '',
+        label5 VARCHAR(16) NOT NULL DEFAULT '',
+        label6 VARCHAR(16) NOT NULL DEFAULT '',
+        label7 VARCHAR(16) NOT NULL DEFAULT '',
+        label8 VARCHAR(16) NOT NULL DEFAULT '',
+        label9 VARCHAR(16) NOT NULL DEFAULT '',
+        uncommitted TINYINT DEFAULT 0 NOT NULL,
+        value varchar(64) NOT NULL,
+        arg1 TEXT NOT NULL DEFAULT '',
+        arg2 TEXT NOT NULL DEFAULT '',
+        arg3 TEXT NOT NULL DEFAULT '',
+        arg4 TEXT NOT NULL DEFAULT '',
+        arg5 TEXT NOT NULL DEFAULT '',
+        arg6 TEXT NOT NULL DEFAULT '',
+        arg7 TEXT NOT NULL DEFAULT '',
+        arg8 TEXT NOT NULL DEFAULT '',
+        arg9 TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (id),
+        UNIQUE (name)
+    ) ENGINE=InnoDB;
+
+	CREATE TABLE servicechecks (
+		id int AUTO_INCREMENT,
+		name varchar(64) NOT NULL,
+		checktype int NOT NULL DEFAULT 1,
+		plugin varchar(128) DEFAULT NULL,           # DBIx::Class will error if plugin not set and checktype=1
+		args TEXT NOT NULL,
+		category varchar(128),
+		servicegroup int NOT NULL DEFAULT 0,        # DBIx::Class will error if servicegroup not set
+		description varchar(255) NOT NULL,
+		invertresults int,
+		notification_options varchar(16),
+		notification_interval int,	# This can be NULL (to inherit from host)
+		notification_period int,	# This can be NULL (to inherit from host)
+		check_interval varchar(16),
+		retry_check_interval varchar(16),
+		check_attempts varchar(16),
+		check_freshness TINYINT NOT NULL DEFAULT 0,
+		stalking varchar(16),		# This is now deprecated, but we'll cleanup in future....
+		volatile INT DEFAULT 0,
+		flap_detection_enabled int DEFAULT 1,
+		agent int DEFAULT NULL,
+		check_period INT,
+		uncommitted int DEFAULT 0 NOT NULL,
+        freshness_type ENUM ("renotify", "set_stale") DEFAULT "renotify" NOT NULL,
+        stale_threshold_seconds INT NOT NULL DEFAULT 3600,
+        stale_state TINYINT NOT NULL DEFAULT 0,
+        stale_text TEXT NOT NULL,
+        markdown_filter TINYINT NOT NULL DEFAULT 0,
+        attribute INT DEFAULT NULL,
+        cascaded_from INT DEFAULT NULL,
+        alert_from_failure SMALLINT NOT NULL DEFAULT 1,
+        event_handler VARCHAR(255) NOT NULL DEFAULT '',
+        disable_name_change TINYINT NOT NULL DEFAULT 0,
+        dependency_level TINYINT NOT NULL DEFAULT 0,
+        sensitive_arguments TINYINT(1) NOT NULL DEFAULT 1,
+		PRIMARY KEY (id),
+		UNIQUE (name),
+		INDEX (servicegroup),
+		CONSTRAINT servicechecks_servicegroup_fk FOREIGN KEY (servicegroup) REFERENCES servicegroups(id),
+		INDEX (plugin),
+		CONSTRAINT servicechecks_plugin_fk FOREIGN KEY (plugin) REFERENCES plugins(name),
+		INDEX (notification_period),
+		CONSTRAINT servicechecks_notification_period_fk FOREIGN KEY (notification_period) REFERENCES timeperiods(id),
+		INDEX (checktype),
+		CONSTRAINT servicechecks_checktype_fk FOREIGN KEY (checktype) REFERENCES checktypes(id),
+		INDEX (agent),
+		CONSTRAINT servicechecks_agent_fk FOREIGN KEY (agent) REFERENCES agents(id),
+        INDEX (attribute),
+		CONSTRAINT servicechecks_attribute_fk FOREIGN KEY (attribute) REFERENCES attributes(id),
+		INDEX (check_period),
+		CONSTRAINT servicechecks_check_period_fk FOREIGN KEY (check_period) REFERENCES timeperiods(id),
+		INDEX (cascaded_from),
+		CONSTRAINT servicechecks_cascaded_from_fk FOREIGN KEY (cascaded_from) REFERENCES servicechecks(id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE servicechecksnmppolling (
+		id int,
+		oid varchar(255),
+		critical_comparison varchar(10),
+		critical_value varchar(255),
+		warning_comparison varchar(10),
+		warning_value varchar(255),
+		label varchar(255),
+		calculate_rate ENUM("no","per_second","per_minute","per_hour") DEFAULT "no" NOT NULL,
+                PRIMARY KEY (id),
+       CONSTRAINT servicechecksnmppolling_servicechecks_fk FOREIGN KEY (id) REFERENCES servicechecks(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+	CREATE TABLE snmpwalkcache (
+		hostid int,
+		last_updated int,
+		text MEDIUMTEXT,
+		PRIMARY KEY (hostid),
+		CONSTRAINT snmpwalkcache_hosts_fk FOREIGN KEY (hostid) REFERENCES hosts(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+	CREATE TABLE servicecheckdependencies (
+		servicecheckid int,
+		dependencyid int,
+		PRIMARY KEY (servicecheckid, dependencyid),
+		INDEX (servicecheckid),
+       CONSTRAINT servicecheckdependencies_servicecheckid_fk FOREIGN KEY (servicecheckid) REFERENCES servicechecks(id) ON DELETE CASCADE,
+		INDEX (dependencyid),
+		CONSTRAINT servicecheckdependencies_dependencyid_fk FOREIGN KEY (dependencyid) REFERENCES servicechecks(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+	CREATE TABLE performancemonitors (
+		id int AUTO_INCREMENT,
+		name varchar(128),
+		description varchar(255),
+		PRIMARY KEY (id),
+		UNIQUE (name)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE hostperformancemonitors (
+		hostid int NOT NULL,
+		performancemonitorid int NOT NULL,
+		PRIMARY KEY (hostid, performancemonitorid),
+		INDEX (hostid),
+		CONSTRAINT hostperformancemonitors_hostid_fk FOREIGN KEY (hostid) REFERENCES hosts(id) ON DELETE CASCADE,
+		INDEX (performancemonitorid),
+		CONSTRAINT hostperformancemonitors_performancemonitorid_fk FOREIGN KEY (performancemonitorid) REFERENCES performancemonitors(id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE hostservicechecks (
+		hostid int NOT NULL,
+		servicecheckid int NOT NULL,
+		remove_servicecheck tinyint DEFAULT 0 NOT NULL,
+		PRIMARY KEY (hostid, servicecheckid),
+		INDEX (hostid),
+		CONSTRAINT hostservicechecks_hostid_fk FOREIGN KEY (hostid) REFERENCES hosts(id) ON DELETE CASCADE,
+		INDEX (servicecheckid),
+		CONSTRAINT hostservicechecks_servicecheckid_fk FOREIGN KEY (servicecheckid) REFERENCES servicechecks(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+	CREATE TABLE hosttemplateservicechecks (
+		hosttemplateid int NOT NULL,
+		servicecheckid int NOT NULL,
+		PRIMARY KEY (hosttemplateid, servicecheckid),
+		INDEX (hosttemplateid),
+		CONSTRAINT hosttemplateservicechecks_hosttemplateid_fk FOREIGN KEY (hosttemplateid) REFERENCES hosttemplates(id) ON DELETE CASCADE,
+		INDEX (servicecheckid),
+		CONSTRAINT hosttemplateservicechecks_servicecheckid_fk FOREIGN KEY (servicecheckid) REFERENCES servicechecks(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+	CREATE TABLE hosttemplateperformancemonitors (
+		hosttemplateid int NOT NULL,
+		performancemonitorid int NOT NULL,
+		PRIMARY KEY (hosttemplateid, performancemonitorid),
+		INDEX (hosttemplateid),
+		CONSTRAINT hosttemplateperformancemonitors_hosttemplateid_fk FOREIGN KEY (hosttemplateid) REFERENCES hosttemplates(id),
+		INDEX (performancemonitorid),
+		CONSTRAINT hosttemplateperformancemonitors_performancemonitorid_fk FOREIGN KEY (performancemonitorid) REFERENCES performancemonitors(id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE snmptraps (
+		id int AUTO_INCREMENT,
+		name varchar(128) NOT NULL,
+		allow int DEFAULT 1 NOT NULL,
+		message varchar(255),
+		alertlevel int NOT NULL,
+		uncommitted int DEFAULT 0 NOT NULL,
+		PRIMARY KEY (id),
+		UNIQUE (name)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE servicechecksnmpactions (
+		trapid int NOT NULL,
+		servicecheckid int NOT NULL,
+		PRIMARY KEY (trapid, servicecheckid),
+		INDEX (trapid),
+		CONSTRAINT servicechecksnmpactions_trapid_fk FOREIGN KEY (trapid) REFERENCES snmptraps(id),
+		INDEX (servicecheckid),
+		CONSTRAINT servicechecksnmpactions_servicecheckid_fk FOREIGN KEY (servicecheckid) REFERENCES servicechecks(id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE servicechecksnmpignores (
+		trapid int NOT NULL,
+		servicecheckid int NOT NULL,
+		PRIMARY KEY (trapid, servicecheckid),
+		INDEX (trapid),
+		CONSTRAINT servicechecksnmpignores_trapid_fk FOREIGN KEY (trapid) REFERENCES snmptraps(id),
+		INDEX (servicecheckid),
+		CONSTRAINT servicechecksnmpignores_servicecheckid_fk FOREIGN KEY (servicecheckid) REFERENCES servicechecks(id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE servicecheckhostexceptions (
+		id int AUTO_INCREMENT,
+		servicecheck int NOT NULL,
+		host int NOT NULL,
+		args TEXT NOT NULL,
+		PRIMARY KEY (id),
+		UNIQUE (servicecheck, host),
+		INDEX (servicecheck),
+		CONSTRAINT servicecheckhostexceptions_servicecheck_fk FOREIGN KEY (servicecheck) REFERENCES servicechecks(id) ON DELETE CASCADE,
+		INDEX (host),
+		CONSTRAINT servicecheckhostexceptions_host_fk FOREIGN KEY (host) REFERENCES hosts(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+	CREATE TABLE servicechecktimedoverridehostexceptions (
+		id int AUTO_INCREMENT,
+		servicecheck int NOT NULL,
+		host int NOT NULL,
+		timeperiod INT NOT NULL,
+		args TEXT NOT NULL,
+		PRIMARY KEY (id),
+		UNIQUE (servicecheck, host),
+		INDEX (servicecheck),
+		CONSTRAINT servicechecktimedoverridehostexceptions_servicecheck_fk FOREIGN KEY (servicecheck) REFERENCES servicechecks(id) ON DELETE CASCADE,
+		INDEX (host),
+		CONSTRAINT servicechecktimedoverridehostexceptions_host_fk FOREIGN KEY (host) REFERENCES hosts(id) ON DELETE CASCADE,
+		INDEX (timeperiod),
+		CONSTRAINT servicechecktimedoverridehostexceptions_timeperiod_fk FOREIGN KEY (timeperiod) REFERENCES timeperiods(id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE servicecheckhosttemplateexceptions (
+		id int AUTO_INCREMENT,
+		servicecheck int NOT NULL,
+		hosttemplate int NOT NULL,
+		args TEXT NOT NULL,
+		PRIMARY KEY (id),
+		UNIQUE (servicecheck, hosttemplate),
+		INDEX (servicecheck),
+		CONSTRAINT servicecheckhosttemplateexceptions_servicecheck_fk FOREIGN KEY (servicecheck) REFERENCES servicechecks(id) ON DELETE CASCADE,
+		INDEX (hosttemplate),
+		CONSTRAINT servicecheckhosttemplateexceptions_hosttemplate_fk FOREIGN KEY (hosttemplate) REFERENCES hosttemplates(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+	CREATE TABLE servicechecktimedoverridehosttemplateexceptions (
+		id int AUTO_INCREMENT,
+		servicecheck int NOT NULL,
+		hosttemplate int NOT NULL,
+		timeperiod INT NOT NULL,
+		args TEXT NOT NULL,
+		PRIMARY KEY (id),
+		UNIQUE (servicecheck, hosttemplate),
+		INDEX (servicecheck),
+		CONSTRAINT servicechecktimedoverridehosttemplateexceptions_servicecheck_fk FOREIGN KEY (servicecheck) REFERENCES servicechecks(id) ON DELETE CASCADE,
+		INDEX (hosttemplate),
+		CONSTRAINT servicechecktimedoverridehosttemplateexceptions_hosttemplate_fk FOREIGN KEY (hosttemplate) REFERENCES hosttemplates(id) ON DELETE CASCADE,
+		INDEX(timeperiod),
+		CONSTRAINT servicechecktimedoverridehosttemplateexceptions_timeperiod_fk FOREIGN KEY (timeperiod) REFERENCES timeperiods(id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE hostsnmpinterfaces (
+		id int AUTO_INCREMENT,
+		hostid int NOT NULL,
+		interfacename varchar(255) NOT NULL,        # Need to use ->actual_interface_name_and_index to get actual ifdescr field
+		shortinterfacename varchar(52) NOT NULL,
+		active int DEFAULT 0,
+		throughput_warning varchar(255),
+		throughput_critical varchar(255),
+		errors_warning varchar(30),
+		errors_critical varchar(30),
+		discards_warning varchar(30),
+		discards_critical varchar(30),
+		indexid int DEFAULT 0,		# Save the indexid if snmp interfacename is duplicated. Otherwise 0
+		PRIMARY KEY (id),
+		UNIQUE (hostid, interfacename),
+		INDEX (hostid),
+		CONSTRAINT hostsnmpinterfaces_hostid_fk FOREIGN KEY (hostid) REFERENCES hosts(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+	CREATE TABLE snmptraprules (
+		id int AUTO_INCREMENT,
+		name varchar(128) NOT NULL,
+		servicecheck int NOT NULL,
+		code text,
+		alertlevel int NOT NULL,
+		message varchar(255),
+		priority int NOT NULL DEFAULT 1000,
+		process int NOT NULL DEFAULT 1,
+		disabled int DEFAULT 0 NOT NULL,
+		uncommitted int DEFAULT 0 NOT NULL,
+		PRIMARY KEY (id),
+        UNIQUE snmptraprules_name_servicecheck (name, servicecheck),
+		INDEX (servicecheck),
+		CONSTRAINT snmptraprules_servicechecks_fk FOREIGN KEY (servicecheck) REFERENCES servicechecks(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+	CREATE TABLE keywords (
+		id int AUTO_INCREMENT,
+		name varchar(128) NOT NULL,
+		description varchar(255),
+		enabled           BOOLEAN DEFAULT 0 NOT NULL,
+		style varchar(128) DEFAULT NULL,
+        all_hosts         BOOLEAN DEFAULT 0 NOT NULL,
+        all_servicechecks BOOLEAN DEFAULT 0 NOT NULL,
+		public            BOOLEAN DEFAULT 0 NOT NULL,
+		show_contextual_menus BOOLEAN DEFAULT 1 NOT NULL,
+		uncommitted       BOOLEAN DEFAULT 0 NOT NULL,
+		exclude_handled   BOOLEAN DEFAULT 0 NOT NULL,
+		PRIMARY KEY (id),
+		UNIQUE (name),
+        INDEX enabled (enabled, id, public) # For viewport summary pages
+	) ENGINE=InnoDB;
+
+	CREATE TABLE keywordhosts (
+		keywordid int NOT NULL,
+		hostid int NOT NULL,
+		PRIMARY KEY (keywordid, hostid),
+		INDEX (keywordid),
+		CONSTRAINT keywordhosts_keywordid_fk FOREIGN KEY (keywordid) REFERENCES keywords(id) ON DELETE CASCADE,
+		INDEX (hostid),
+		CONSTRAINT keywordhosts_hostid_fk FOREIGN KEY (hostid) REFERENCES hosts(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+	CREATE TABLE keywordhostgroups (
+		keywordid int NOT NULL,
+		hostgroupid int NOT NULL,
+		PRIMARY KEY (keywordid, hostgroupid),
+		INDEX (keywordid),
+		CONSTRAINT keywordhostgroups_keywordid_fk FOREIGN KEY (keywordid) REFERENCES keywords(id),
+		INDEX (hostgroupid),
+		CONSTRAINT keywordhostgroups_hostgroupsid_fk FOREIGN KEY (hostgroupid) REFERENCES hostgroups(id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE keywordhosttemplates (
+		keywordid int NOT NULL,
+		hosttemplateid int NOT NULL,
+		PRIMARY KEY (keywordid, hosttemplateid),
+		INDEX (keywordid),
+		CONSTRAINT keywordhosttemplates_keywordid_fk FOREIGN KEY (keywordid) REFERENCES keywords(id),
+		INDEX (hosttemplateid),
+		CONSTRAINT keywordhosttemplates_hosttemplateid_fk FOREIGN KEY (hosttemplateid) REFERENCES hosttemplates(id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE keywordservicechecks (
+		keywordid int NOT NULL,
+		servicecheckid int NOT NULL,
+		PRIMARY KEY (keywordid, servicecheckid),
+		INDEX (keywordid),
+		CONSTRAINT keywordservicechecks_keywordid_fk FOREIGN KEY (keywordid) REFERENCES keywords(id) ON DELETE CASCADE,
+		INDEX (servicecheckid),
+		CONSTRAINT keywordservicechecks_servicecheckid_fk FOREIGN KEY (servicecheckid) REFERENCES servicechecks(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+	CREATE TABLE role_access_keywords (
+		roleid int NOT NULL,
+		keywordid int NOT NULL,
+		PRIMARY KEY (roleid, keywordid),
+		INDEX (keywordid),
+		CONSTRAINT role_access_keywords_keywordid_fk FOREIGN KEY (keywordid) REFERENCES keywords(id) ON DELETE CASCADE,
+		INDEX (roleid),
+		CONSTRAINT role_access_keywords_roleid_fk FOREIGN KEY (roleid) REFERENCES roles(id) ON DELETE CASCADE
+	) ENGINE=InnoDB COMMENT='Role to keywords access list';
+
+	CREATE TABLE role_access_hostgroups (
+		roleid   INT NOT NULL,
+		hostgroupid INT NOT NULL,
+		PRIMARY KEY (roleid, hostgroupid),
+		INDEX (hostgroupid),
+		CONSTRAINT role_access_hostgroups_hostgroupid_fk FOREIGN KEY (hostgroupid) REFERENCES hostgroups(id) ON DELETE CASCADE,
+		INDEX (roleid),
+		CONSTRAINT role_access_hostgroups_roleid_fk FOREIGN KEY (roleid) REFERENCES roles(id) ON DELETE CASCADE
+	) ENGINE=InnoDB COMMENT='Role to host groups access list';
+
+	CREATE TABLE role_access_servicegroups (
+		roleid      int NOT NULL,
+		servicegroupid int NOT NULL,
+		PRIMARY KEY (roleid, servicegroupid),
+		INDEX (servicegroupid),
+		CONSTRAINT role_access_servicegroups_servicegroupid_fk FOREIGN KEY (servicegroupid) REFERENCES servicegroups(id) ON DELETE CASCADE,
+		INDEX (roleid),
+		CONSTRAINT role_access_servicegroups_roleid_fk FOREIGN KEY (roleid) REFERENCES roles(id) ON DELETE CASCADE
+	) ENGINE=InnoDB COMMENT='Service groups contact has access to';
+
+	CREATE TABLE keywordservicegroups (
+		keywordid int NOT NULL,
+		servicegroupid int NOT NULL,
+		PRIMARY KEY (keywordid, servicegroupid),
+		INDEX (keywordid),
+		CONSTRAINT keywordservicegroups_keywordid_fk FOREIGN KEY (keywordid) REFERENCES keywords(id),
+		INDEX (servicegroupid),
+		CONSTRAINT keywordservicegroups_servicegroupid_fk FOREIGN KEY (servicegroupid) REFERENCES servicegroups(id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE notificationprofile_hostgroups (
+		notificationprofileid int NOT NULL,
+		hostgroupid           int NOT NULL,
+		PRIMARY KEY (notificationprofileid, hostgroupid),
+		INDEX (notificationprofileid),
+		CONSTRAINT notificationprofile_hostgroups_notificationprofileid_fk FOREIGN KEY (notificationprofileid) REFERENCES notificationprofiles(id) ON DELETE CASCADE,
+		INDEX (hostgroupid),
+		CONSTRAINT notificationprofile_hostgroups_hostgroupid_fk FOREIGN KEY (hostgroupid) REFERENCES hostgroups(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+	CREATE TABLE notificationprofile_servicegroups (
+		notificationprofileid int NOT NULL,
+		servicegroupid        int NOT NULL,
+		PRIMARY KEY (notificationprofileid, servicegroupid),
+		INDEX (notificationprofileid),
+		CONSTRAINT notificationprofile_servicegroups_notificationprofileid_fk FOREIGN KEY (notificationprofileid) REFERENCES notificationprofiles(id) ON DELETE CASCADE,
+		INDEX (servicegroupid),
+		CONSTRAINT notificationprofile_servicegroups_servicegroupid_fk FOREIGN KEY (servicegroupid) REFERENCES servicegroups(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+	CREATE TABLE notificationprofile_keywords (
+		notificationprofileid int NOT NULL,
+		keywordid             int NOT NULL,
+		PRIMARY KEY (notificationprofileid, keywordid),
+		INDEX (notificationprofileid),
+		CONSTRAINT notificationprofile_keywords_notificationprofileid_fk FOREIGN KEY (notificationprofileid) REFERENCES notificationprofiles(id) ON DELETE CASCADE,
+		INDEX (keywordid),
+		CONSTRAINT notificationprofile_keywords_keywordid_fk FOREIGN KEY (keywordid) REFERENCES keywords(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+    CREATE TABLE host_attributes (
+        host INT NOT NULL,
+        attribute INT NOT NULL,
+        value varchar(64) NOT NULL,
+        arg1 TEXT DEFAULT '',
+        arg2 TEXT DEFAULT '',
+        arg3 TEXT DEFAULT '',
+        arg4 TEXT DEFAULT '',
+        arg5 TEXT DEFAULT '',
+        arg6 TEXT DEFAULT '',
+        arg7 TEXT DEFAULT '',
+        arg8 TEXT DEFAULT '',
+        arg9 TEXT DEFAULT '',
+        PRIMARY KEY (host, attribute, value),
+        INDEX (host),
+        CONSTRAINT host_attributes_host_fk FOREIGN KEY (host) REFERENCES hosts(id) ON DELETE CASCADE,
+        INDEX (attribute),
+        CONSTRAINT host_attributes_attribute_fk FOREIGN KEY (attribute) REFERENCES attributes(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB;
+
+	# Used for overall uncommitted flag
+	CREATE TABLE metadata (
+		name varchar(128),
+		value varchar(255),
+		PRIMARY KEY (name)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE schema_version (
+		major_release varchar(16),
+		version varchar(16),
+        reason varchar(255),
+        created_at DATETIME,
+        duration INT,
+        PRIMARY KEY (major_release)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE reloadtimes (
+		id int AUTO_INCREMENT,
+		start_config int,
+		end_config int,
+		duration int,
+		PRIMARY KEY(id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE reloadmessages (
+		id int AUTO_INCREMENT,
+		utime int NOT NULL,
+		monitoringcluster int,		# Could be null meaning a general error, not associated with monitoringcluster
+		severity ENUM ("warning", "critical") NOT NULL,
+		message TEXT,
+		PRIMARY KEY(id),
+		INDEX (monitoringcluster),
+		CONSTRAINT reloadmessages_monitoringcluster_fk FOREIGN KEY (monitoringcluster) REFERENCES monitoringservers(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+	CREATE TABLE notificationmethods (
+                id int AUTO_INCREMENT,
+                active tinyint(1) NOT NULL DEFAULT 1,
+                name varchar(64) NOT NULL,
+                namespace varchar(255) NOT NULL,
+                master tinyint(1) NOT NULL DEFAULT 1,
+                command text,
+                priority int NOT NULL DEFAULT 1,
+                uncommitted int DEFAULT 0 NOT NULL,
+                contact_variables TEXT,
+                PRIMARY KEY(id),
+                UNIQUE(name)
+        ) ENGINE=InnoDB;
+
+	CREATE TABLE notificationmethod_variables (
+		notificationmethodid int NOT NULL,
+        name varchar(128) NOT NULL,
+        value TEXT,
+		PRIMARY KEY (notificationmethodid, name),
+		INDEX (notificationmethodid),
+		CONSTRAINT notificationmethod_variables_notificationmethodid_fk FOREIGN KEY (notificationmethodid) REFERENCES notificationmethods(id) ON DELETE CASCADE
+	) ENGINE=InnoDB;
+
+    CREATE TABLE notificationprofile_notificationmethods (
+        notificationprofileid int NOT NULL,
+        notificationmethodid  int NOT NULL,
+        PRIMARY KEY (notificationprofileid, notificationmethodid),
+        INDEX (notificationprofileid),
+        CONSTRAINT notificationprofile_notificationmethods_notificationprofileid_fk FOREIGN KEY (notificationprofileid) REFERENCES notificationprofiles(id) ON DELETE CASCADE,
+        INDEX (notificationmethodid),
+        CONSTRAINT notificationprofile_notificationmethods_notificationmethodid_fk FOREIGN KEY (notificationmethodid) REFERENCES notificationmethods(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB COMMENT='Notification profile with multiple notification methods';
+
+	CREATE TABLE systempreferences (
+		id int AUTO_INCREMENT,
+		default_statusmap_layout INT,
+		default_statuswrl_layout INT,
+		refresh_rate INT,
+		log_notifications INT,
+		log_service_retries INT,
+		log_host_retries INT,
+		log_event_handlers INT,
+		log_initial_states INT,
+		log_external_commands INT,
+		log_passive_checks INT,
+		daemon_dumps_core INT,
+		audit_log_retention INT,
+		hostgroup_info_url varchar(255),
+		host_info_url varchar(255),
+		service_info_url varchar(255),
+		enable_odw_import INT DEFAULT 0,
+		enable_full_odw_import SMALLINT DEFAULT 0,
+		odw_large_retention_months INT DEFAULT 2,
+		odw_small_retention_months INT DEFAULT 12,
+		opsview_server_name varchar(255) DEFAULT "",
+		soft_state_dependencies INT NOT NULL DEFAULT 1,
+        show_timeline BOOLEAN NOT NULL DEFAULT 1,
+        smart_hosttemplate_removal BOOLEAN NOT NULL DEFAULT 1,
+		rancid_email_notification varchar(255),
+		viewport_summary_style varchar(255) DEFAULT "list",
+        send_anon_data tinyint(4) NOT NULL DEFAULT '1',
+        uuid char(36) NOT NULL DEFAULT '',
+		netdisco_url varchar(255) NOT NULL DEFAULT '',
+		updates_includemajor TINYINT NOT NULL DEFAULT '1',
+        date_format ENUM ("us", "euro", "iso8601", "strict-iso8601") DEFAULT "euro" NOT NULL,
+		set_downtime_on_host_delete TINYINT NOT NULL DEFAULT '1',
+		PRIMARY KEY (id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE auditlogs (
+		id int AUTO_INCREMENT,
+		datetime datetime NOT NULL,	# Now in UTC
+		username varchar(128) NOT NULL DEFAULT '',	# '' = system generated
+		reloadid int,		# If set, then this identifies the backup for this reloadid
+        notice TINYINT DEFAULT 0 NOT NUll,  # 0 = not notice, 1 = unread notice, 2 = read notice
+		text text NOT NULL,
+		PRIMARY KEY (id),
+        INDEX (datetime),
+        INDEX (notice)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE hostserviceeventhandlers (
+		hostid INT NOT NULL,
+		servicecheckid INT NOT NULL,
+		event_handler varchar(255) NOT NULL,
+		PRIMARY KEY (hostid, servicecheckid),
+		INDEX (servicecheckid),
+		CONSTRAINT hostserviceeventhandlers_servicecheckid_fk FOREIGN KEY (servicecheckid) REFERENCES servicechecks(id) ON DELETE CASCADE,
+		INDEX (hostid),
+		CONSTRAINT hostserviceeventhandlers_hostid_fk FOREIGN KEY (hostid) REFERENCES hosts(id) ON DELETE CASCADE
+	) ENGINE=InnoDB COMMENT='Nagios event handlers for services on a per-host basis';
+
+	CREATE TABLE temporary_hostmonitoredbynode (
+		hostid int NOT NULL,
+		primary_node int,
+		secondary_node int,
+		PRIMARY KEY (hostid)
+	) ENGINE=InnoDB COMMENT='Temporary table for host to which node in a cluster';
+
+	CREATE TABLE application_plugins (
+		name varchar(128),
+		menu varchar(128),
+		link varchar(128),
+		version varchar(16),
+		created int,
+		updated int,
+		PRIMARY KEY (name)
+	) ENGINE=InnoDB COMMENT='List of Opsview application plugins';
+
+	CREATE TABLE hosttemplatemanagementurls (
+		id int AUTO_INCREMENT,
+		hosttemplateid int NOT NULL,
+		name varchar(255) NOT NULL,
+		url TEXT,
+                priority int NOT NULL DEFAULT 1,
+		PRIMARY KEY (id),
+        UNIQUE hosttemplatemanagementurls_name_hosttemplateid (name, hosttemplateid),
+		INDEX (hosttemplateid),
+		CONSTRAINT hosttemplatemanagementurls_hosttemplateid_fk FOREIGN KEY (hosttemplateid) REFERENCES hosttemplates(id) ON DELETE CASCADE
+	) ENGINE=InnoDB COMMENT='Management URLs based on this hosttemplate';
+
+        # Force table to use latin1 because utf8 will give a db creation error
+        CREATE TABLE useragents (
+                id varchar(760) NOT NULL,
+                last_update datetime NOT NULL,
+                PRIMARY KEY  (id)) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+    CREATE TABLE modules (
+        id INT AUTO_INCREMENT,
+        name varchar(128) NOT NULL,
+        url varchar(255) NOT NULL,
+        description varchar(255) NOT NULL,
+        access varchar(128) NOT NULL,
+        enabled TINYINT DEFAULT 0,
+        priority INT NOT NULL DEFAULT 1,
+        version varchar(16) NOT NULL DEFAULT '',
+        namespace varchar(255) NOT NULL DEFAULT '',
+        installed tinyint(1) NOT NULL default '0',
+        PRIMARY KEY (id),
+        UNIQUE (namespace)
+    ) ENGINE=InnoDB COMMENT="Opsview modules";
+
+    CREATE TABLE sessions (
+        id char(72) PRIMARY KEY,
+        session_data TEXT,
+        expires int(10)
+    ) ENGINE=InnoDB COMMENT="Opsview-Web session information stored directly by Catalyst";
+
+    CREATE TABLE api_sessions (
+        token char(72) PRIMARY KEY,
+        expires_at int(10) NOT NULL,
+        accessed_at int(10) NOT NULL,
+        username varchar(128) NOT NULL,
+        ip varchar(128) NOT NULL,
+        one_time_token BOOLEAN DEFAULT 0 NOT NULL,
+        INDEX (expires_at)
+    ) ENGINE=InnoDB COMMENT="Opsview API2 session information";
+
+   CREATE TABLE api_auditlogs (
+       id int AUTO_INCREMENT,
+       datetime datetime NOT NULL, # Now in UTC
+       username varchar(128) NOT NULL, # '' = system generated
+       text text NOT NULL,
+       PRIMARY KEY (id),
+        INDEX (datetime)
+   ) ENGINE=InnoDB COMMENT="API2 audit logs";
+
+   CREATE TABLE monitor_packs (
+       id INT AUTO_INCREMENT PRIMARY KEY,
+       name varchar(128) NOT NULL,
+       alias varchar(255) NOT NULL,
+       version varchar(16) NOT NULL,
+       status ENUM("OK","NOTICE","FAILURE","INSTALLING") NOT NULL,
+       message TEXT NOT NULL,
+       dependencies TEXT NOT NULL,
+       created int NOT NULL,
+       updated int NOT NULL,
+       UNIQUE KEY(name)
+   ) ENGINE=InnoDB COMMENT="Opsview Monitor Packs";
+
+	CREATE TABLE sharednotificationprofiles (
+		id int(11) NOT NULL AUTO_INCREMENT,
+		name varchar(128) NOT NULL DEFAULT '',
+		host_notification_options varchar(16) DEFAULT NULL,
+		service_notification_options varchar(16) DEFAULT NULL,
+		notification_period int(11) NOT NULL DEFAULT '1',
+		all_hostgroups BOOLEAN NOT NULL DEFAULT '1',
+		all_servicegroups BOOLEAN NOT NULL DEFAULT '1',
+		all_keywords tinyint(1) NOT NULL DEFAULT '1',
+		notification_level int(11) NOT NULL DEFAULT '1',
+		role int(11) NOT NULL,
+		uncommitted int(11) NOT NULL DEFAULT '0',
+        notification_level_stop SMALLINT NOT NULL DEFAULT 0,
+		PRIMARY KEY (id),
+		UNIQUE (name),
+		CONSTRAINT snp_notification_period FOREIGN KEY (notification_period) REFERENCES timeperiods (id),
+		CONSTRAINT snp_role FOREIGN KEY (role) REFERENCES roles (id)
+	) ENGINE=InnoDB COMMENT="Shared notification profiles";
+
+    CREATE TABLE sharednotificationprofile_hostgroups (
+        sharednotificationprofileid int NOT NULL,
+        hostgroupid                 int NOT NULL,
+        PRIMARY KEY (sharednotificationprofileid, hostgroupid),
+        INDEX (sharednotificationprofileid),
+        CONSTRAINT snp_hostgroups_sharednotificationprofileid_fk FOREIGN KEY (sharednotificationprofileid) REFERENCES sharednotificationprofiles(id) ON DELETE CASCADE,
+        INDEX (hostgroupid),
+        CONSTRAINT snp_hostgroups_hostgroupid_fk FOREIGN KEY (hostgroupid) REFERENCES hostgroups(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB COMMENT="Joining table for shared notification profiles to host groups";
+
+    CREATE TABLE sharednotificationprofile_servicegroups (
+        sharednotificationprofileid int NOT NULL,
+        servicegroupid        int NOT NULL,
+        PRIMARY KEY (sharednotificationprofileid, servicegroupid),
+        INDEX (sharednotificationprofileid),
+        CONSTRAINT snp_servicegroups_sharednotificationprofileid_fk FOREIGN KEY (sharednotificationprofileid) REFERENCES sharednotificationprofiles(id) ON DELETE CASCADE,
+        INDEX (servicegroupid),
+        CONSTRAINT snp_servicegroups_servicegroupid_fk FOREIGN KEY (servicegroupid) REFERENCES servicegroups(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB COMMENT="Joining table for shared notification profiles to service groups";
+
+    CREATE TABLE sharednotificationprofile_keywords (
+        sharednotificationprofileid int NOT NULL,
+        keywordid             int NOT NULL,
+        PRIMARY KEY (sharednotificationprofileid, keywordid),
+        INDEX (sharednotificationprofileid),
+        CONSTRAINT snp_keywords_sharednotificationprofileid_fk FOREIGN KEY (sharednotificationprofileid) REFERENCES sharednotificationprofiles(id) ON DELETE CASCADE,
+        INDEX (keywordid),
+        CONSTRAINT snp_keywords_keywordid_fk FOREIGN KEY (keywordid) REFERENCES keywords(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB COMMENT="Joining table for shared notification profiles to keywords";
+
+    CREATE TABLE sharednotificationprofile_notificationmethods (
+        sharednotificationprofileid int NOT NULL,
+        notificationmethodid  int NOT NULL,
+        PRIMARY KEY (sharednotificationprofileid, notificationmethodid),
+        INDEX (sharednotificationprofileid),
+        CONSTRAINT snp_notificationmethods_sharednotificationprofileid_fk FOREIGN KEY (sharednotificationprofileid) REFERENCES sharednotificationprofiles(id) ON DELETE CASCADE,
+        INDEX (notificationmethodid),
+        CONSTRAINT snp_notificationmethods_notificationmethodid_fk FOREIGN KEY (notificationmethodid) REFERENCES notificationmethods(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB COMMENT='Shared notification profile with multiple notification methods';
+
+	CREATE TABLE contact_sharednotificationprofile (
+		contactid INT NOT NULL,
+		sharednotificationprofileid INT NOT NULL,
+		priority INT NOT NULL DEFAULT 1000,
+		PRIMARY KEY (contactid, sharednotificationprofileid),
+		CONSTRAINT contact FOREIGN KEY (contactid) REFERENCES contacts(id) ON DELETE CASCADE,
+		CONSTRAINT sharednotificationprofile FOREIGN KEY (sharednotificationprofileid) REFERENCES sharednotificationprofiles(id) ON DELETE CASCADE
+	) ENGINE=InnoDB COMMENT="Links contacts to shared notification profiles";
+
+	INSERT INTO metadata (name, value) VALUES ('uncommitted', 0);
+	INSERT INTO metadata (name, value) VALUES ('version', '2.8.19');
+    INSERT INTO metadata (name, value) VALUES ('last_housekeeping_time',UNIX_TIMESTAMP());
+    INSERT INTO metadata (name, value) VALUES ('housekeeping_duration','0');
+	INSERT INTO schema_version (major_release, version) VALUES ('2.9', '4');
+	INSERT INTO schema_version (major_release, version) VALUES ('2.10', '5');
+	INSERT INTO schema_version (major_release, version) VALUES ('2.11', '6');
+	INSERT INTO schema_version (major_release, version) VALUES ('2.12', '5');
+	INSERT INTO schema_version (major_release, version) VALUES ('2.13', '2');
+	INSERT INTO schema_version (major_release, version) VALUES ('2.14', '9');
+	INSERT INTO schema_version (major_release, version) VALUES ('3.0', '4');
+	INSERT INTO schema_version (major_release, version) VALUES ('3.1', '4');
+	INSERT INTO schema_version (major_release, version) VALUES ('3.3', '9');
+	INSERT INTO schema_version (major_release, version) VALUES ('3.5', '4');
+	INSERT INTO schema_version (major_release, version) VALUES ('3.6', '1');
+	INSERT INTO schema_version (major_release, version) VALUES ('3.7', '37');
+	INSERT INTO schema_version (major_release, version) VALUES ('3.9', '27');
+	INSERT INTO schema_version (major_release, version) VALUES ('3.11', '15');
+	INSERT INTO schema_version (major_release, version) VALUES ('3.13', '12');
+	INSERT INTO schema_version (major_release, version) VALUES ('3.15', '11');
+    INSERT INTO schema_version (major_release, version, created_at) VALUES ('20120906ios', 'install', NOW());
+    INSERT INTO schema_version (major_release, version, created_at) VALUES ('20121023hostsidx', 'install', NOW());
+    INSERT INTO schema_version (major_release, version, created_at) VALUES ('20130115envvars', 'install', NOW());
+    INSERT INTO schema_version (major_release, version, created_at) VALUES ('20130122snmpport', 'install', NOW());
+    INSERT INTO schema_version (major_release, version, created_at) VALUES ('20130204baduuid', 'install', NOW());
+    INSERT INTO schema_version (major_release, version, created_at) VALUES ('20130221snmpthro', 'install', NOW());
+    INSERT INTO schema_version (major_release, version, created_at) VALUES ('20130219hsteh', 'install', NOW());
+    INSERT INTO schema_version (major_release, version, created_at) VALUES ('20130424alerts', 'install', NOW());
+    INSERT INTO schema_version (major_release, version, created_at) VALUES ('20130521notmeth', 'install', NOW());
+    INSERT INTO schema_version (major_release, version, created_at) VALUES ('20130612accesses', 'install', NOW());
+    INSERT INTO schema_version (major_release, version, created_at) VALUES ('20130814surv', 'install', NOW());
+    INSERT INTO schema_version (major_release, version, created_at) VALUES ('20130702nagvis', 'install', NOW());
+    INSERT INTO schema_version (major_release, version, created_at) VALUES ('20130710hkmd', 'install', NOW());
+    INSERT INTO schema_version (major_release, version, created_at) VALUES ('20130726opsp', 'install', NOW());
+    INSERT INTO schema_version (major_release, version, created_at) VALUES ('20130625meta', 'install', NOW());
+    INSERT INTO schema_version (major_release, version, created_at) VALUES ('20130905hstckint', 'install', NOW());
+
+EOF
+	populate_db
+}
+
+# This should only be for entries that must be in the database for Opsview to work
+# Configuration items should be held in a separate import db
+populate_db() {
+	eval mysql $user_parms $db <<-EOF || die "Cannot populate"
+	# These are all the access points available in Opsview. More to come.
+	# These are fixed access too, so these are the only ones available.
+	# Not in initial_opsview.sql because this is a code specification.
+	# Case-sensitive.
+	INSERT INTO access (id, name) VALUES (1, "VIEWALL");
+	INSERT INTO access (id, name) VALUES (2, "VIEWSOME");
+	INSERT INTO access (id, name) VALUES (3, "ACTIONALL");
+	INSERT INTO access (id, name) VALUES (4, "ACTIONSOME");
+	INSERT INTO access (id, name) VALUES (6, "NOTIFYSOME");
+	INSERT INTO access (id, name) VALUES (7, "CONFIGUREHOSTS");
+	INSERT INTO access (id, name) VALUES (8, "RELOADACCESS");
+	INSERT INTO access (id, name) VALUES (9, "ADMINACCESS");
+	INSERT INTO access (id, name) VALUES (10, "VIEWPORTACCESS");
+	INSERT INTO access (id, name) VALUES (11, "RRDGRAPHS");
+	INSERT INTO access (id, name) VALUES (12, "CONFIGUREVIEW");
+	INSERT INTO access (id, name) VALUES (13, "CONFIGURESAVE");
+	INSERT INTO access (id, name) VALUES (14, "PASSWORDSAVE");
+	INSERT INTO access (id, name) VALUES (15, "CONFIGUREKEYWORDS");
+	INSERT INTO access (id, name) VALUES (16, "DOWNTIMEALL");
+	INSERT INTO access (id, name) VALUES (17, "DOWNTIMESOME");
+	INSERT INTO access (id, name) VALUES (18, "REPORTADMIN");
+	INSERT INTO access (id, name) VALUES (19, "REPORTUSER");
+    INSERT INTO access (id, name) VALUES (20, "TESTCHANGE");
+    INSERT INTO access (id, name) VALUES (21, "TESTALL");
+    INSERT INTO access (id, name) VALUES (22, "TESTSOME");
+    INSERT INTO access (id, name) VALUES (23, "CONFIGUREPROFILES");
+    INSERT INTO access (id, name) VALUES (27, "CONFIGUREROLES");
+    INSERT INTO access (id, name) VALUES (28, "CONFIGURECONTACTS");
+    INSERT INTO access (id, name) VALUES (29, "CONFIGUREHOSTGROUPS");
+    INSERT INTO access (id, name) VALUES (30, "NAGVIS");
+
+
+	# Role information is in initial_opsview.sql
+
+	# For checktypes, do NOT change the id number. However, you can change
+	# the priority for display purposes
+	# A priority of 0 is hidden from the servicecheck page, for future deprecation
+	INSERT INTO checktypes (id, name, priority) VALUES (1, "Active Plugin", 1);
+	INSERT INTO checktypes (id, name, priority) VALUES (2, "Passive", 3);
+	INSERT INTO checktypes (id, name, priority) VALUES (3, "SNMPtrap", 0);
+	INSERT INTO checktypes (id, name, priority) VALUES (4, "SNMP trap", 4);
+	INSERT INTO checktypes (id, name, priority) VALUES (5, "SNMP Polling", 2);
+
+	# Must create servicegroup because embeddedservices needs the foreign key
+	INSERT INTO servicegroups (id, name) VALUES (1, "Opsview");
+	INSERT INTO servicegroups (id, name) VALUES (2, "Network SNMP");
+
+	EOF
+    if [ $TEST -eq 0 ] ; then
+        populate_db.pl icons || die "Cannot populate via populate_db.pl" # Inserts icons and plugins help text
+    else
+        OPSVIEW_TEST=1 populate_db.pl plugins || die "Cannot populate plugins"
+    fi
+	db_import < $topdir/../import/initial_opsview.sql
+
+    if [ $NOPACKS -eq 0 ] ; then
+        # install opspacks
+        extra_args="--force"
+        if [ $NOFORCEOPSPACKS -eq 1 ] ; then
+            extra_args=""
+        fi
+        install_all_opspacks $extra_args --dir $topdir/../import/opspacks || die "Cannot install all opspacks - check log"
+        if [ $TEST -eq 0 ] ; then
+            PERL5LIB="/usr/local/nagios/lib:/usr/local/nagios/perl/lib:/opt/opsview/perl/lib/perl5" $topdir/../import/opsview_master_post_opspacks $topdir/../import/opsview_master.def;
+        fi
+        reset_uncommitted;
+    else
+        echo "Skipping OpsPacks installation";
+    fi
+
+}
+
+function db_backup {
+	if [ $TEST -eq 0 ] ; then
+        # OPS-1751
+        # Cannot use '--ignore-table <table>' as there is no table definition
+        # for restoring to a brand new DB
+		#eval mysqldump $user_parms -l --ignore-table $db.sessions --ignore-table $db.api_sessions --ignore-table $db.temporary_hostmonitoredbynode --ignore-table $db.snmpwalkcache --databases $db
+        # instead remove the data while its being produced.  Will take longer
+        # but will at least contain all table definitions
+		eval mysqldump $user_parms -l --databases $db | perl -n -e 'print unless(m/INSERT INTO `(?:sessions|api_sessions|temporary_hostmonitoredbynode|snmpwalkcache)`/)' | sed 's/ TYPE=/ ENGINE=/'
+	else
+        # Use --compatible to ensure that the output is the same across different versions of mysql
+        # Other changes here to keep consistency between different platforms
+        eval mysqldump $user_parms --skip-extended-insert -l --compatible=mysql40 --databases $db | egrep -v ^-- | egrep -v 'SET @saved_cs_client|SET character_set_client|^INSERT INTO `(auditlogs|reloadmessages|temporary_hostmonitoredbynode|useragents|snmpwalkcache|sessions|api_sessions|monitor_packs)`' | perl -pe 's/ AUTO_INCREMENT=\d+//; s/`'$db'`/`opsview`/g; s/PRIMARY KEY\s+\(/PRIMARY KEY \(/g; s/ auto_increment,/ AUTO_INCREMENT,/g; s/ default / DEFAULT /g' | sed 's/ TYPE=/ ENGINE=/'
+	fi
+}
+
+function filter_test_db_restore {
+    perl -pe 's/`opsview`/`'$db'`/g'
+}
+
+function db_restore {
+	echo "Restoring database $db"
+
+	if [ $TEST -eq 1 ] ; then
+		# This can't be left for regular use because it fails the restore process in the web ui
+		echo "DROP DATABASE IF EXISTS $db" | eval mysql $user_parms || die "Cannot drop db"
+	fi
+
+    if [ $TEST -eq 1 ] ; then
+        filter_test_db_restore | eval mysql $user_parms || die "Cannot import"
+        # Do not bother checking constraints in test db - this makes it much faster
+    else
+        eval mysql $user_parms || die "Cannot import"
+        check_constraints
+    fi
+
+}
+
+# Returns 0 if database exists, otherwise 1
+function db_exists {
+	echo "exit" | eval mysql $user_parms $db
+}
+
+die() { echo "$1" >&2 ; exit 1; }
+
+
+topdir=${0%/db_opsview}
+eval `$topdir/../bin/opsview.sh`
+user=$DBUSER
+if [ "x$user" = "x" ] ; then
+    die "Opsview variables not set"
+fi
+password="$DBPASSWD"
+host=$DBHOST
+db=$DB
+
+TEST=0
+NOPACKS=0
+# This noforce is for testing new opspacks will not clash
+NOFORCEOPSPACKS=0
+PATH=$PATH:$topdir:.
+while getopts ":tonh:" c ; do
+	case $c in
+		t) TEST=1;;
+        o) NOPACKS=1;;
+        n) NOFORCEOPSPACKS=1;;
+        h) host=$OPTARG;;
+		\*) die "Error: unexpected option $c";;
+	esac
+done
+shift $((OPTIND - 1))
+
+user_parms="-u$user -p'$password' -h$host"
+
+[[ -z $1 ]] && die "Must specify a command"
+
+while [[ -n $1 ]] ; do
+	case "$1" in
+		db_export)
+			db_export
+			;;
+		db_export_test)
+			db_export_test
+			;;
+		db_export_initial)
+			db_export_initial
+			;;
+		db_import)
+			db_import
+			;;
+		db_install)
+			db_install
+			;;
+		db_backup)
+			db_backup
+			;;
+		db_restore)
+			db_restore
+			;;
+		db_exists)
+			db_exists
+			exit $?
+			;;
+		*)
+			die "Usage: $0 [-h <host>] {db_export|db_import|db_install|db_backup|db_restore}"
+			;;
+
+	esac
+	shift
+done

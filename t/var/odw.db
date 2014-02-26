@@ -1,0 +1,722 @@
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!40101 SET NAMES utf8 */;
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+
+
+CREATE DATABASE /*!32312 IF NOT EXISTS*/ `odw` /*!40100 DEFAULT CHARACTER SET latin1 */;
+
+USE `odw`;
+
+
+DROP TABLE IF EXISTS `acknowledgement_host`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `acknowledgement_host` (
+  `entry_datetime` datetime NOT NULL,
+  `host` int(11) NOT NULL,
+  `author_name` varchar(128) NOT NULL,
+  `comment_data` text NOT NULL,
+  `is_sticky` smallint(6) NOT NULL,
+  `persistent_comment` smallint(6) NOT NULL,
+  `notify_contacts` smallint(6) NOT NULL,
+  KEY `entry_datetime` (`entry_datetime`,`host`),
+  KEY `acknowledgement_host_host_fk` (`host`),
+  CONSTRAINT `acknowledgement_host_host_fk` FOREIGN KEY (`host`) REFERENCES `hosts` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `acknowledgement_host` WRITE;
+/*!40000 ALTER TABLE `acknowledgement_host` DISABLE KEYS */;
+/*!40000 ALTER TABLE `acknowledgement_host` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `acknowledgement_service`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `acknowledgement_service` (
+  `entry_datetime` datetime NOT NULL,
+  `service` int(11) NOT NULL,
+  `author_name` varchar(128) NOT NULL,
+  `comment_data` text NOT NULL,
+  `is_sticky` smallint(6) NOT NULL,
+  `persistent_comment` smallint(6) NOT NULL,
+  `notify_contacts` smallint(6) NOT NULL,
+  KEY `entry_datetime` (`entry_datetime`,`service`),
+  KEY `acknowledgement_service_service_fk` (`service`),
+  CONSTRAINT `acknowledgement_service_service_fk` FOREIGN KEY (`service`) REFERENCES `servicechecks` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `acknowledgement_service` WRITE;
+/*!40000 ALTER TABLE `acknowledgement_service` DISABLE KEYS */;
+/*!40000 ALTER TABLE `acknowledgement_service` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `availability`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `availability` (
+  `date` date NOT NULL,
+  `hostname` varchar(128) NOT NULL,
+  `servicename` varchar(128) NOT NULL,
+  `percent_total_time_okay` double NOT NULL,
+  `percent_total_scheduled_downtime` double NOT NULL,
+  `percent_total_unscheduled_downtime` double NOT NULL,
+  UNIQUE KEY `date_2` (`date`,`hostname`,`servicename`),
+  KEY `date` (`date`),
+  KEY `hostname` (`hostname`),
+  KEY `servicename` (`servicename`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `availability` WRITE;
+/*!40000 ALTER TABLE `availability` DISABLE KEYS */;
+/*!40000 ALTER TABLE `availability` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `availability_host_summary`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `availability_host_summary` (
+  `date` date NOT NULL,
+  `hostname` varchar(128) NOT NULL,
+  `percent_total_time_okay` double NOT NULL,
+  `percent_total_scheduled_downtime` double NOT NULL,
+  `percent_total_unscheduled_downtime` double NOT NULL,
+  UNIQUE KEY `date_2` (`date`,`hostname`),
+  KEY `date` (`date`),
+  KEY `hostname` (`hostname`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `availability_host_summary` WRITE;
+/*!40000 ALTER TABLE `availability_host_summary` DISABLE KEYS */;
+/*!40000 ALTER TABLE `availability_host_summary` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `availability_hostgroup_summary`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `availability_hostgroup_summary` (
+  `date` date NOT NULL,
+  `hostgroup` varchar(128) NOT NULL,
+  `percent_total_time_okay` double NOT NULL,
+  `percent_total_scheduled_downtime` double NOT NULL,
+  `percent_total_unscheduled_downtime` double NOT NULL,
+  UNIQUE KEY `date_2` (`date`,`hostgroup`),
+  KEY `date` (`date`),
+  KEY `hostgroup` (`hostgroup`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `availability_hostgroup_summary` WRITE;
+/*!40000 ALTER TABLE `availability_hostgroup_summary` DISABLE KEYS */;
+/*!40000 ALTER TABLE `availability_hostgroup_summary` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `availability_summary`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `availability_summary` (
+  `date` date NOT NULL,
+  `percent_total_time_okay` double NOT NULL,
+  `percent_total_scheduled_downtime` double NOT NULL,
+  `percent_total_unscheduled_downtime` double NOT NULL,
+  UNIQUE KEY `date_2` (`date`),
+  KEY `date` (`date`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `availability_summary` WRITE;
+/*!40000 ALTER TABLE `availability_summary` DISABLE KEYS */;
+/*!40000 ALTER TABLE `availability_summary` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `database_version`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `database_version` (
+  `version` varchar(10) default NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `database_version` WRITE;
+/*!40000 ALTER TABLE `database_version` DISABLE KEYS */;
+INSERT INTO `database_version` VALUES ('2.7.8');
+/*!40000 ALTER TABLE `database_version` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `dataloads`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `dataloads` (
+  `id` int(11) NOT NULL auto_increment,
+  `opsview_instance_id` smallint(6) default '1',
+  `period_start_timev` int(11) NOT NULL,
+  `period_end_timev` int(11) NOT NULL,
+  `load_start_timev` int(11) NOT NULL,
+  `load_end_timev` int(11) default NULL,
+  `status` enum('running','failed','success') default NULL,
+  `num_hosts` int(11) default NULL,
+  `num_services` int(11) default NULL,
+  `num_serviceresults` int(11) default NULL,
+  `num_perfdata` int(11) default NULL,
+  `duration` int(11) default NULL,
+  `last_reload_duration` smallint(6) default NULL,
+  `reloads` smallint(6) default NULL,
+  PRIMARY KEY  (`id`),
+  UNIQUE KEY `period_start_timev` (`period_start_timev`,`opsview_instance_id`),
+  KEY `period_end_timev` (`period_end_timev`),
+  KEY `status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `dataloads` WRITE;
+/*!40000 ALTER TABLE `dataloads` DISABLE KEYS */;
+/*!40000 ALTER TABLE `dataloads` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `downtime_host_history`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `downtime_host_history` (
+  `actual_start_datetime` datetime NOT NULL,
+  `actual_end_datetime` datetime NOT NULL,
+  `nagios_object_id` int(11) NOT NULL,
+  `author_name` varchar(128) NOT NULL,
+  `comment_data` text NOT NULL,
+  `entry_datetime` datetime NOT NULL,
+  `scheduled_start_datetime` datetime NOT NULL,
+  `scheduled_end_datetime` datetime NOT NULL,
+  `is_fixed` smallint(6) NOT NULL,
+  `duration` smallint(6) NOT NULL,
+  `was_cancelled` smallint(6) NOT NULL,
+  `nagios_internal_downtime_id` int(11) NOT NULL,
+  KEY `actual_start_datetime` (`actual_start_datetime`,`actual_end_datetime`,`nagios_object_id`),
+  KEY `nagios_object_id` (`nagios_object_id`),
+  KEY `nagios_internal_downtime_id` (`nagios_internal_downtime_id`),
+  CONSTRAINT `downtime_host_history_nagios_object_id_fk` FOREIGN KEY (`nagios_object_id`) REFERENCES `hosts` (`nagios_object_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `downtime_host_history` WRITE;
+/*!40000 ALTER TABLE `downtime_host_history` DISABLE KEYS */;
+/*!40000 ALTER TABLE `downtime_host_history` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `downtime_service_history`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `downtime_service_history` (
+  `actual_start_datetime` datetime NOT NULL,
+  `actual_end_datetime` datetime NOT NULL,
+  `nagios_object_id` int(11) NOT NULL,
+  `author_name` varchar(128) NOT NULL,
+  `comment_data` text NOT NULL,
+  `entry_datetime` datetime NOT NULL,
+  `scheduled_start_datetime` datetime NOT NULL,
+  `scheduled_end_datetime` datetime NOT NULL,
+  `is_fixed` smallint(6) NOT NULL,
+  `duration` smallint(6) NOT NULL,
+  `was_cancelled` smallint(6) NOT NULL,
+  `nagios_internal_downtime_id` int(11) NOT NULL,
+  KEY `actual_start_datetime` (`actual_start_datetime`,`actual_end_datetime`,`nagios_object_id`),
+  KEY `nagios_object_id` (`nagios_object_id`),
+  KEY `nagios_internal_downtime_id` (`nagios_internal_downtime_id`),
+  CONSTRAINT `downtime_service_history_nagios_object_id_fk` FOREIGN KEY (`nagios_object_id`) REFERENCES `servicechecks` (`nagios_object_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `downtime_service_history` WRITE;
+/*!40000 ALTER TABLE `downtime_service_history` DISABLE KEYS */;
+/*!40000 ALTER TABLE `downtime_service_history` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `events`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `events` (
+  `datetime` datetime NOT NULL,
+  `type` enum('host','service') NOT NULL,
+  `hostname` varchar(128) NOT NULL,
+  `servicename` varchar(128) default NULL,
+  `state` varchar(16) NOT NULL,
+  `statetype` varchar(5) NOT NULL,
+  `attempt` int(11) NOT NULL,
+  `laststatechange` datetime NOT NULL,
+  `executiontimetaken` float NOT NULL,
+  `latency` float NOT NULL,
+  `output` longtext,
+  KEY `datetime` (`datetime`),
+  KEY `type` (`type`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `events` WRITE;
+/*!40000 ALTER TABLE `events` DISABLE KEYS */;
+/*!40000 ALTER TABLE `events` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `hosts`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `hosts` (
+  `id` int(11) NOT NULL auto_increment,
+  `name` varchar(255) NOT NULL,
+  `alias` varchar(255) default NULL,
+  `hostgroup1` varchar(128) default NULL,
+  `hostgroup2` varchar(128) default NULL,
+  `hostgroup3` varchar(128) default NULL,
+  `hostgroup4` varchar(128) default NULL,
+  `hostgroup5` varchar(128) default NULL,
+  `hostgroup6` varchar(128) default NULL,
+  `hostgroup7` varchar(128) default NULL,
+  `hostgroup8` varchar(128) default NULL,
+  `hostgroup9` varchar(128) default NULL,
+  `hostgroup` varchar(128) default NULL,
+  `nagios_object_id` int(11) NOT NULL,
+  `monitored_by` varchar(128) default NULL,
+  `active_date` int(11) NOT NULL,
+  `crc` int(11) default NULL,
+  `most_recent` tinyint(1) default NULL,
+  `opsview_instance_id` smallint(6) default '1',
+  PRIMARY KEY  (`id`),
+  UNIQUE KEY `active_date` (`active_date`,`name`),
+  KEY `name` (`name`),
+  KEY `nagios_object_id` (`nagios_object_id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `hosts` WRITE;
+/*!40000 ALTER TABLE `hosts` DISABLE KEYS */;
+INSERT INTO `hosts` VALUES (1,'deletedhost','Host that has been deleted before storing into datawarehouse',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,0,NULL,1289233280,NULL,1,1);
+/*!40000 ALTER TABLE `hosts` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `locks`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `locks` (
+  `name` varchar(32) NOT NULL default '',
+  `value` int(11) default NULL,
+  PRIMARY KEY  (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `locks` WRITE;
+/*!40000 ALTER TABLE `locks` DISABLE KEYS */;
+INSERT INTO `locks` VALUES ('import_disabled',0);
+/*!40000 ALTER TABLE `locks` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `metadata`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `metadata` (
+  `name` varchar(32) NOT NULL default '',
+  `value` varchar(32) default NULL,
+  PRIMARY KEY  (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `metadata` WRITE;
+/*!40000 ALTER TABLE `metadata` DISABLE KEYS */;
+INSERT INTO `metadata` VALUES ('last_successful_servicecheck_id','0');
+/*!40000 ALTER TABLE `metadata` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `notification_host_history`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `notification_host_history` (
+  `entry_datetime` datetime NOT NULL,
+  `host` int(11) NOT NULL,
+  `status` enum('UP','DOWN','UNREACHABLE') default NULL,
+  `output` text,
+  `notification_reason` enum('NORMAL','ACKNOWLEDGEMENT','FLAPPING STARTED','FLAPPING STOPPED','FLAPPING DISABLED','DOWNTIME STARTED','DOWNTIME STOPPED','DOWNTIME CANCELLED','CUSTOM') NOT NULL,
+  `notification_number` smallint(6) NOT NULL,
+  `contactname` varchar(128) NOT NULL,
+  `methodname` varchar(128) NOT NULL,
+  KEY `entry_datetime` (`entry_datetime`,`host`),
+  KEY `notification_host_host_fk` (`host`),
+  CONSTRAINT `notification_host_host_fk` FOREIGN KEY (`host`) REFERENCES `hosts` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `notification_host_history` WRITE;
+/*!40000 ALTER TABLE `notification_host_history` DISABLE KEYS */;
+/*!40000 ALTER TABLE `notification_host_history` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `notification_service_history`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `notification_service_history` (
+  `entry_datetime` datetime NOT NULL,
+  `service` int(11) NOT NULL,
+  `status` enum('OK','WARNING','CRITICAL','UNKNOWN') default NULL,
+  `output` text,
+  `notification_reason` enum('NORMAL','ACKNOWLEDGEMENT','FLAPPING STARTED','FLAPPING STOPPED','FLAPPING DISABLED','DOWNTIME STARTED','DOWNTIME STOPPED','DOWNTIME CANCELLED','CUSTOM') NOT NULL,
+  `notification_number` smallint(6) NOT NULL,
+  `contactname` varchar(128) NOT NULL,
+  `methodname` varchar(128) NOT NULL,
+  KEY `entry_datetime` (`entry_datetime`,`service`),
+  KEY `notification_service_service_fk` (`service`),
+  CONSTRAINT `notification_service_service_fk` FOREIGN KEY (`service`) REFERENCES `servicechecks` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `notification_service_history` WRITE;
+/*!40000 ALTER TABLE `notification_service_history` DISABLE KEYS */;
+/*!40000 ALTER TABLE `notification_service_history` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `performance_data`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `performance_data` (
+  `datetime` datetime NOT NULL,
+  `performance_label` int(11) NOT NULL,
+  `value` double NOT NULL,
+  KEY `datetime` (`datetime`),
+  KEY `performance_label` (`performance_label`),
+  CONSTRAINT `performance_data_performance_labels_fk` FOREIGN KEY (`performance_label`) REFERENCES `performance_labels` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 MAX_ROWS=1000000000;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `performance_data` WRITE;
+/*!40000 ALTER TABLE `performance_data` DISABLE KEYS */;
+/*!40000 ALTER TABLE `performance_data` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `performance_hourly_summary`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `performance_hourly_summary` (
+  `start_datetime` datetime NOT NULL,
+  `performance_label` int(11) NOT NULL,
+  `average` double NOT NULL,
+  `max` double NOT NULL,
+  `min` double NOT NULL,
+  `count` smallint(6) NOT NULL,
+  `stddev` double NOT NULL,
+  `stddevp` double NOT NULL,
+  `first` double NOT NULL,
+  `sum` double NOT NULL,
+  KEY `start_datetime` (`start_datetime`),
+  KEY `performance_label` (`performance_label`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `performance_hourly_summary` WRITE;
+/*!40000 ALTER TABLE `performance_hourly_summary` DISABLE KEYS */;
+/*!40000 ALTER TABLE `performance_hourly_summary` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `performance_labels`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `performance_labels` (
+  `id` int(11) NOT NULL auto_increment,
+  `host` int(11) NOT NULL,
+  `servicecheck` int(11) NOT NULL,
+  `name` varchar(64) default NULL,
+  `units` varchar(16) default NULL,
+  PRIMARY KEY  (`id`),
+  KEY `host` (`host`),
+  KEY `servicecheck` (`servicecheck`),
+  CONSTRAINT `performance_labels_host_fk` FOREIGN KEY (`host`) REFERENCES `hosts` (`id`),
+  CONSTRAINT `performance_labels_servicecheck_fk` FOREIGN KEY (`servicecheck`) REFERENCES `servicechecks` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `performance_labels` WRITE;
+/*!40000 ALTER TABLE `performance_labels` DISABLE KEYS */;
+INSERT INTO `performance_labels` VALUES (1,1,1,'deletedhostservice',NULL);
+/*!40000 ALTER TABLE `performance_labels` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `report_comments`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `report_comments` (
+  `name` varchar(128) NOT NULL,
+  `text` longtext,
+  PRIMARY KEY  (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `report_comments` WRITE;
+/*!40000 ALTER TABLE `report_comments` DISABLE KEYS */;
+/*!40000 ALTER TABLE `report_comments` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `reports`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `reports` (
+  `id` int(11) NOT NULL auto_increment,
+  `filename` varchar(128) NOT NULL,
+  `report_date` int(11) default NULL,
+  `created_on` int(11) default NULL,
+  `created_by` varchar(128) NOT NULL,
+  PRIMARY KEY  (`id`),
+  UNIQUE KEY `filename_2` (`filename`),
+  KEY `filename` (`filename`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `reports` WRITE;
+/*!40000 ALTER TABLE `reports` DISABLE KEYS */;
+/*!40000 ALTER TABLE `reports` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `schema_version`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `schema_version` (
+  `major_release` varchar(16) default NULL,
+  `version` varchar(16) default NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `schema_version` WRITE;
+/*!40000 ALTER TABLE `schema_version` DISABLE KEYS */;
+INSERT INTO `schema_version` VALUES ('2.9','5');
+INSERT INTO `schema_version` VALUES ('2.10','3');
+INSERT INTO `schema_version` VALUES ('2.12','4');
+INSERT INTO `schema_version` VALUES ('3.0','4');
+INSERT INTO `schema_version` VALUES ('3.3','1');
+INSERT INTO `schema_version` VALUES ('3.7','1');
+INSERT INTO `schema_version` VALUES ('3.9','3');
+/*!40000 ALTER TABLE `schema_version` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `service_availability_hourly_summary`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `service_availability_hourly_summary` (
+  `start_datetime` datetime NOT NULL,
+  `servicecheck` int(11) NOT NULL,
+  `seconds_ok` smallint(6) NOT NULL,
+  `seconds_not_ok` smallint(6) NOT NULL,
+  `seconds_warning` smallint(6) NOT NULL,
+  `seconds_critical` smallint(6) NOT NULL,
+  `seconds_unknown` smallint(6) NOT NULL,
+  `seconds_not_ok_hard` smallint(6) NOT NULL,
+  `seconds_warning_hard` smallint(6) NOT NULL,
+  `seconds_critical_hard` smallint(6) NOT NULL,
+  `seconds_unknown_hard` smallint(6) NOT NULL,
+  `seconds_not_ok_scheduled` smallint(6) NOT NULL,
+  `seconds_warning_scheduled` smallint(6) NOT NULL,
+  `seconds_critical_scheduled` smallint(6) NOT NULL,
+  `seconds_unknown_scheduled` smallint(6) NOT NULL,
+  `seconds_unacknowledged` smallint(6) NOT NULL,
+  KEY `start_datetime` (`start_datetime`),
+  KEY `servicecheck` (`servicecheck`),
+  CONSTRAINT `service_availability_hourly_summary_servicecheck_fk` FOREIGN KEY (`servicecheck`) REFERENCES `servicechecks` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `service_availability_hourly_summary` WRITE;
+/*!40000 ALTER TABLE `service_availability_hourly_summary` DISABLE KEYS */;
+/*!40000 ALTER TABLE `service_availability_hourly_summary` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `service_outages`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `service_outages` (
+  `id` int(11) NOT NULL auto_increment,
+  `start_datetime` datetime NOT NULL,
+  `servicecheck` int(11) NOT NULL,
+  `initial_failure_status` enum('OK','WARNING','CRITICAL','UNKNOWN') NOT NULL,
+  `highest_failure_status` enum('OK','WARNING','CRITICAL','UNKNOWN') NOT NULL,
+  `started_in_scheduled_downtime` tinyint(1) default '0',
+  `hard_state_datetime` datetime default NULL,
+  `acknowledged_datetime` datetime default NULL,
+  `acknowledged_by` varchar(64) default NULL,
+  `acknowledged_comment` varchar(255) default NULL,
+  `scheduled_downtime_end_datetime` datetime default NULL,
+  `downtime_duration` int(11) default NULL,
+  `end_datetime` datetime default NULL,
+  PRIMARY KEY  (`id`),
+  KEY `start_datetime` (`start_datetime`),
+  KEY `end_datetime` (`end_datetime`),
+  KEY `servicecheck` (`servicecheck`),
+  CONSTRAINT `service_outages_servicecheck_fk` FOREIGN KEY (`servicecheck`) REFERENCES `servicechecks` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `service_outages` WRITE;
+/*!40000 ALTER TABLE `service_outages` DISABLE KEYS */;
+/*!40000 ALTER TABLE `service_outages` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `service_saved_state`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `service_saved_state` (
+  `start_timev` int(11) NOT NULL,
+  `hostname` varchar(128) NOT NULL,
+  `servicename` varchar(128) NOT NULL,
+  `last_state` enum('OK','WARNING','CRITICAL','UNKNOWN') NOT NULL,
+  `last_hard_state` enum('OK','WARNING','CRITICAL','UNKNOWN') NOT NULL,
+  `acknowledged` smallint(6) NOT NULL,
+  `opsview_instance_id` smallint(6) default '1',
+  KEY `hostname` (`hostname`,`servicename`,`start_timev`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `service_saved_state` WRITE;
+/*!40000 ALTER TABLE `service_saved_state` DISABLE KEYS */;
+/*!40000 ALTER TABLE `service_saved_state` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `servicecheck_results`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `servicecheck_results` (
+  `start_datetime` datetime NOT NULL,
+  `start_datetime_usec` int(11) NOT NULL,
+  `servicecheck` int(11) NOT NULL,
+  `check_type` enum('ACTIVE','PASSIVE') default NULL,
+  `status` enum('OK','WARNING','CRITICAL','UNKNOWN') NOT NULL,
+  `status_type` enum('SOFT','HARD') NOT NULL,
+  `duration` float NOT NULL,
+  `output` text NOT NULL,
+  KEY `start_datetime` (`start_datetime`),
+  KEY `servicecheck` (`servicecheck`),
+  CONSTRAINT `servicecheck_results_servicecheck_fk` FOREIGN KEY (`servicecheck`) REFERENCES `servicechecks` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 MAX_ROWS=1000000000;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `servicecheck_results` WRITE;
+/*!40000 ALTER TABLE `servicecheck_results` DISABLE KEYS */;
+/*!40000 ALTER TABLE `servicecheck_results` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `servicechecks`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `servicechecks` (
+  `id` int(11) NOT NULL auto_increment,
+  `hostname` varchar(128) NOT NULL,
+  `name` varchar(128) NOT NULL,
+  `host` int(11) NOT NULL,
+  `nagios_object_id` int(11) NOT NULL,
+  `description` varchar(255) default NULL,
+  `servicegroup` varchar(128) default NULL,
+  `keywords` text,
+  `active_date` int(11) NOT NULL,
+  `crc` int(11) default NULL,
+  `most_recent` tinyint(1) default NULL,
+  PRIMARY KEY  (`id`),
+  KEY `name` (`name`),
+  KEY `host` (`host`),
+  KEY `nagios_object_id` (`nagios_object_id`),
+  CONSTRAINT `servicecheck_host_fk` FOREIGN KEY (`host`) REFERENCES `hosts` (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `servicechecks` WRITE;
+/*!40000 ALTER TABLE `servicechecks` DISABLE KEYS */;
+INSERT INTO `servicechecks` VALUES (1,'','deletedservicecheck',1,0,'Servicecheck that has been deleted before storing into datawarehouse',NULL,NULL,1289233280,NULL,1);
+/*!40000 ALTER TABLE `servicechecks` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `state_history`;
+SET @saved_cs_client     = @@character_set_client;
+SET character_set_client = utf8;
+CREATE TABLE `state_history` (
+  `datetime` datetime NOT NULL,
+  `datetime_usec` int(11) NOT NULL,
+  `servicecheck` int(11) NOT NULL,
+  `status` enum('OK','WARNING','CRITICAL','UNKNOWN') NOT NULL,
+  `status_type` enum('SOFT','HARD') NOT NULL,
+  `prior_status_datetime` datetime NOT NULL,
+  `prior_status` enum('OK','WARNING','CRITICAL','UNKNOWN','INDETERMINATE') NOT NULL,
+  `output` text NOT NULL,
+  KEY `datetime` (`datetime`,`servicecheck`),
+  KEY `state_history_servicecheck_fk` (`servicecheck`),
+  CONSTRAINT `state_history_servicecheck_fk` FOREIGN KEY (`servicecheck`) REFERENCES `servicechecks` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+SET character_set_client = @saved_cs_client;
+
+
+LOCK TABLES `state_history` WRITE;
+/*!40000 ALTER TABLE `state_history` DISABLE KEYS */;
+/*!40000 ALTER TABLE `state_history` ENABLE KEYS */;
+UNLOCK TABLES;
+/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+/*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
+/*!40101 SET CHARACTER_SET_RESULTS=@OLD_CHARACTER_SET_RESULTS */;
+/*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+

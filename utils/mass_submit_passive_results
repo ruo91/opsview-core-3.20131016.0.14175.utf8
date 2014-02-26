@@ -1,0 +1,214 @@
+#!/usr/bin/perl
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use strict;
+use warnings;
+
+use lib '/usr/local/nagios/perl/lib';
+use lib '/usr/local/nagios/lib';
+
+use FindBin qw($Bin $Script);
+use Getopt::Long qw(:config no_ignore_case bundling no_auto_abbrev);
+use Pod::Usage;
+
+use Runtime::Schema;
+use Opsview::Externalcommand;
+
+my $VERSION = '0.01';
+
+my %options = (
+    'help|h|?'        => 0,
+    'man'             => 0,
+    'version|V'       => 0,
+    'debug:+'         => 0,
+    'force|f'         => 0,
+    'verbose|v'       => 0,
+    'regexp_search|r' => 0,
+);
+
+GetOptions( \%options, keys(%options) ) || pod2usage( -verbose => 1 );
+
+die("Version: $VERSION\n") if ( $options{version} );
+pod2usage( -verbose => 1 ) if ( $options{'?'}  || $options{help} );
+pod2usage( -verbose => 2 ) if ( $options{HELP} || $options{man} );
+
+$options{debug} ||= 0;
+$options{debug} = 8 if ( $options{debug} > 8 );
+
+sub logmsg($@) {
+    my ( $level, @text ) = @_;
+    print @text, $/ if ( $level <= $options{debug} );
+}
+
+logmsg( 1, "Script $Script is running out of $Bin" );
+
+my $servicename = shift;
+my $status_like = shift;
+
+logmsg( 3, 'Connecting to Runtime database' );
+my $schema = Runtime::Schema->my_connect;
+$schema->storage->debug(1) if ( $options{debug} >= 6 );
+
+logmsg( 4, 'Running initial search' );
+my %search = ( current_state => { '!=' => 0 }, );
+
+if ($status_like) {
+    $search{output} = { -like => '%' . $status_like . '%', };
+}
+
+my %join = ( join => 'opsview_host_service', );
+if ( $options{regexp_search} ) {
+    $search{servicename} = { -like => '%' . $servicename . '%', };
+}
+else {
+    $search{servicename} = { '=' => $servicename };
+}
+
+my $search_rs =
+  $schema->resultset('NagiosServicestatus')->search( \%search, \%join );
+
+logmsg( 0, 'Matched ', $search_rs->count, ' service(s)' );
+
+my %matched;
+
+foreach my $service ( $search_rs->all ) {
+    $matched{ $service->opsview_host_service->hostname } =
+      $service->opsview_host_service->servicename;
+    if ( $options{verbose} ) {
+        print 'Host: ', $service->opsview_host_service->hostname, ', Service: ',
+          $service->opsview_host_service->servicename, ', Output: ',
+          $service->output, $/;
+    }
+}
+
+if ( %matched && $options{force} ) {
+    logmsg( 0, 'Submitting commands' );
+
+    foreach my $host ( sort keys %matched ) {
+        my $cmd = Opsview::Externalcommand->new(
+            command => 'PROCESS_SERVICE_CHECK_RESULT',
+            args    => join( ';', $host, $matched{$host}, 0, 'Reset' ),
+        );
+
+        $cmd->submit;
+    }
+}
+
+=head1 NAME
+
+mass_submit_passive_results
+
+=head1 SYNOPSIS
+
+S<< mass_submit_passive_results [-?hV] [-v] [-f] [-r] <service check> [output search] >>
+
+=head1 DESCRIPTION
+
+Search for non-OK check results that optionally contains the given output and 
+submit an OK passive result for it.
+
+Designed for resetting multiple SNMP trap checks with specific output but 
+can be used for other purposes
+
+=head1 OPTIONS
+
+=over
+
+=item --help, -?, -h
+
+Display basic help 
+
+=item --man
+
+Display man page
+
+=item --debug [0-9], --debug [--debug [...]]
+
+Enable debugging mode (using more than once increases verbosity, or specify
+a level explicitly to a maximum of level 8) 
+
+=item --version, -V
+
+Show version information
+
+=item --regexp_search, -r
+
+Perform a regular expression search on the service name to match rather than
+using an exact match
+
+=item --force, -f
+
+Submit the check results to the Opsview system instead of showing what 
+would happen
+
+=item --verbose, -v
+
+Display the matching hosts and services the comand would be submitted for
+
+=back
+
+=head1 ARGUMENTS
+
+=over
+
+=item <service check>
+
+Service check name to submit results for.  Use quotes if the check name
+contains spaces.  Use '-r' for wildcard search on the name.
+
+=item <output search>
+
+Additionally search for the given string in the output of the non-OK check.
+
+=back
+
+=head1 NOTES
+
+N/A
+
+=head1 FILES
+
+N/A
+
+=head1 AUTHOR AND COPYRIGHT
+
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This software is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Opsview; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+=head1 KNOWN BUGS
+
+None known at this time.
+
+=head1 SEE ALSO
+
+L<perl>
+
+=cut

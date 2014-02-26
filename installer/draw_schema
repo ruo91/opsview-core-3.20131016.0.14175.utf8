@@ -1,0 +1,78 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use lib "/usr/local/nagios/perl/lib";
+use lib "/usr/local/nagios/lib";
+use lib "/usr/local/nagios/etc";
+use Class::DBI;
+use Class::DBI::Loader;
+use Class::DBI::Loader::GraphViz;
+use Data::Dumper;
+use GraphViz;
+
+use Opsview::Config;
+
+my $db = $ARGV[0] || "";
+
+my ( $dbi, $database, $username, $password, $namespace );
+
+SWITCH: {
+    foreach ($db) {
+        /^opsview$/ && do {
+            $dbi        = Opsview::Config->dbi;
+            $database   = Opsview::Config->db;
+            $username   = Opsview::Config->dbuser;
+            $password   = Opsview::Config->dbpasswd;
+            $namespace  = "Opsview";
+            $additional = "Opsview";
+            last SWITCH;
+        };
+
+        /^runtime$/ && do {
+            $dbi        = Opsview::Config->runtime_dbi;
+            $database   = Opsview::Config->runtime_db;
+            $username   = Opsview::Config->runtime_dbuser;
+            $password   = Opsview::Config->runtime_dbpasswd;
+            $namespace  = "Runtime";
+            $additional = "Runtime";
+            last SWITCH;
+        };
+
+        do {
+            die( "Database name not provided or unknown" );
+            last SWITCH;
+        };
+    }
+}
+
+my $loader = Class::DBI::Loader->new(
+    dsn  => Opsview::Config->dbi . ":database=" . $database . ";host=localhost",
+    user => $username,
+    password                => $password,
+    namespace               => $namespace,
+    additional_base_classes => $additional,
+    relationships           => 1
+);
+
+my GraphViz $g = $loader->graph_tables;
+my $dot = $g->as_dot;
+print $dot;

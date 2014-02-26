@@ -1,0 +1,223 @@
+#!/usr/bin/perl
+#
+#
+# AUTHORS:
+#       Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+use strict;
+use warnings;
+
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+
+my $np = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => "check_snmp_weblogic_jms_dests",
+    version   => "0.2",
+    blurb =>
+      "Checks JMS consumers, messages, pending messages and pending bytes",
+    snmp => {
+        "snmp-version" => 1,
+        "snmp-timeout" => 2,
+    },
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w, --warning=INTEGER
+    Warning threshold},
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c, --critical=INTEGER
+    Critical threshold},
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "consumers|O=s",
+    help => qq{-C, --consumers=INTEGER
+    Consumers},
+);
+
+$np->add_arg(
+    spec => "messages|M=s",
+    help => qq{-M, --messages=INTEGER
+    Messages},
+);
+
+$np->add_arg(
+    spec => "pendingmessages|P=s",
+    help => qq{-P, --pendingmessages=INTEGER
+    Pending messages},
+);
+
+$np->add_arg(
+    spec => "pendingbytes|B=s",
+    help => qq{-B, --pendingbytes=INTEGER
+    Pending bytes},
+);
+
+$np->getopts;
+
+my $warning          = $np->opts->warning;
+my $critical         = $np->opts->critical;
+my $check_consumers  = 0;
+my $check_messages   = 0;
+my $check_msgpending = 0;
+
+my $count    = 0;
+my $retmsg   = "";
+my $perfdata = "";
+
+if ( $np->opts->consumers ) {
+    $check_consumers = 1;
+}
+elsif ( $np->opts->messages ) {
+    $check_messages = 1;
+}
+elsif ( $np->opts->pendingmessages ) {
+    $check_msgpending = 1;
+}
+elsif ( !$np->opts->pendingbytes ) {
+    print "Must specify one of -O, -M, -P or -B\n";
+    exit 3;
+}
+
+my $s = $np->snmp;
+
+my $oid_testoid         = ".1.3.6.1.4.1.140.625.10.1.0";
+my $oid_jd_consumers    = ".1.3.6.1.4.1.140.625.180.1.30";
+my $oid_jd_messages     = ".1.3.6.1.4.1.140.625.220.1.40";
+my $oid_jd_pending      = ".1.3.6.1.4.1.140.625.220.1.45";
+my $oid_jd_bytespending = ".1.3.6.1.4.1.140.625.220.1.70";
+
+# Call this when you know you'll get a single value back
+sub get_oid_value {
+    our ( $oid, $result, $status, $returnstring );
+
+    $oid = shift(@_);
+
+    if ( !defined( $s->get_next_request($oid) ) ) {
+        if ( !defined( $s->get_request($oid_testoid) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return -1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return -1;
+        }
+    }
+
+    foreach ( $s->var_bind_names() ) {
+        $result = $s->var_bind_list()->{$_};
+        if ( $_ !~ /^$oid/ ) {
+            print "UNKNOWN - OID does not exist!\n";
+            exit 3;
+        }
+    }
+
+    return $result;
+}
+
+if ( !defined( $s->get_request($oid_testoid) ) ) {
+    if ( !defined( $s->get_request($oid_testoid) ) ) {
+        print "Agent not responding\n";
+        exit 1;
+    }
+}
+
+# We either check servers or connections
+if ( $check_consumers eq 1 ) {
+    $count = get_oid_value($oid_jd_consumers);
+
+    if ( $count eq -1 ) {
+        print "UNKNOWN - Plugin error, couldn't retrieve OID\n";
+        exit 3;
+    }
+
+    # Output text
+    $retmsg = "$count consumers";
+
+    # Performance data
+    $perfdata = "consumers=$count;$warning;$critical;";
+}
+elsif ( $check_messages eq 1 ) {
+    $count = get_oid_value($oid_jd_messages);
+
+    if ( $count eq -1 ) {
+        print "UNKNOWN - Plugin error, couldn't retrieve OID\n";
+        exit 3;
+    }
+
+    # Output text
+    $retmsg = "$count messages";
+
+    # Performance data
+    $perfdata = "messages=$count;$warning;$critical;";
+}
+elsif ( $check_msgpending eq 1 ) {
+    $count = get_oid_value($oid_jd_pending);
+
+    if ( $count eq -1 ) {
+        print "UNKNOWN - Plugin error, couldn't retrieve OID\n";
+        exit 3;
+    }
+
+    # Output text
+    $retmsg = "$count pending messages";
+
+    # Performance data
+    $perfdata = "pending_messages=$count;$warning;$critical;";
+}
+else {
+    $count = get_oid_value($oid_jd_bytespending);
+
+    if ( $count eq -1 ) {
+        print "UNKNOWN - Plugin error, couldn't retrieve OID\n";
+        exit 3;
+    }
+
+    # Output text
+    $retmsg = "$count pending bytes";
+
+    # Performance data
+    $perfdata = "pending_bytes=$count;$warning;$critical;";
+
+}
+
+# Show appropriate message (we don't have a critical state)
+if ( $count > $critical ) {
+    print "CRITICAL - $retmsg |$perfdata\n";
+    exit 2;
+}
+elsif ( $count > $warning ) {
+    print "WARNING - $retmsg |$perfdata\n";
+    exit 1;
+}
+else {
+    print "OK - $retmsg |$perfdata\n";
+    exit 0;
+}

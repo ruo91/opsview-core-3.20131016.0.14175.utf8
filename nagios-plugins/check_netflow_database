@@ -1,0 +1,275 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#	check_netflow_database
+#
+# DESCRIPTION:
+#	Check data for a host [optionally for a specific port] within a netflow
+# database populated by FLAVIO does not breach set levels
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use FindBin qw($Bin $Script);
+use lib "$Bin/../perl/lib", "$Bin/../lib", "$Bin/../etc";
+use Nagios::Plugin;
+use DBI;
+use Storable qw(lock_store lock_retrieve);
+use DateTime;
+
+my $VERSION     = "0.01";
+my $config_file = "$Bin/../etc/${Script}.cfg";
+my $store_file  = "$Bin/../var/${Script}.dat";
+
+my %config;
+my $store;
+
+my $np = Nagios::Plugin->new(
+    usage => qq{Usage: 
+ %s [-v] [-h] [-w=<b>] [-c=<b>] [-p=<port>] -H <device>
+   Checks netflow database for given host/IP statistics },
+    shortname => "NETFLOWDB",
+    version   => $VERSION,
+    blurb =>
+      qq{This plugin checks for a specific entry within a netflow database populated 
+by FLAVIO (optionally for a specific port) and it either incoming or outgoing 
+statistics breach the warning or critical levels and alert will be raised.
+
+The service "max_check_attempts" should be set to 1 and "retry_check_interval" 
+should be set to 5 within the service configuration to get alerts when levels
+are breached.  
+
+This check should not be run more often than the data is being populated into 
+the Netflow database for the device else false alerts will be raised.
+
+NOTE: A configuration file can be used to override default settings.  It should
+be located at:
+   $config_file
+The file has the following format (defaults shown here):
+========
+# check_netflow_database service check configuration file
+dbi = dbi:mysql
+host = localhost
+database = netflow
+user = netflow
+password = netflow
+========},
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w, --warning=INTEGER
+   Maximum number of bytes above which a warning event will be generated 
+   (default: 15000)},
+    default => 15000,
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c, --critical=INTEGER
+   Maximum number of bytes above which a critical event will be generated 
+   (default: 20000) },
+    default => 20000,
+);
+
+$np->add_arg(
+    spec => "host|H=s",
+    help => qq{-H, --host=STRING
+   Identifier of device (name or IP) to check in the netflow database },
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "port|p=s",
+    help => qq{-p, --port=INTEGER
+   Port number to check.  If not provided, scans across all ports },
+);
+
+$np->getopts;
+
+alarm $np->opts->timeout;
+
+if ( open( CFG, "<", $config_file ) ) {
+    while (<CFG>) {
+        next if ( /^\s*$/ || /^#/ );
+        s/#.*//;
+        s/\s*$//;
+        chomp();
+        m/(\w+)\s+=\s+(.*)/;
+        $config{$1} = $2;
+    }
+    close(CFG);
+}
+else {
+    warn( "Unable to read $config_file: $!\n" );
+    warn( "Assuming defaults (see '$0 -h' for more information)\n" );
+}
+
+$config{dbi}      ||= "dbi:mysql";
+$config{host}     ||= "localhost";
+$config{database} ||= "netflow";
+$config{user}     ||= "netflow";
+$config{password} ||= "netflow";
+
+my $dbh;
+eval {
+    $dbh = DBI->connect(
+        $config{dbi}
+          . ":database="
+          . $config{database}
+          . ";host="
+          . $config{host},
+        $config{user},
+        $config{password},
+        {
+            RaiseError => 1,
+            AutoCommit => 1,
+        }
+    );
+};
+
+if ( $DBI::err || $@ ) {
+    $np->nagios_die( "Unable to connect to netflow database: " . $DBI::errstr );
+}
+
+my $device_ip = (
+    $dbh->selectrow_array(
+        qq{
+	SELECT ip
+	FROM customers
+	WHERE 
+		name = '} . $np->opts->host . qq{'
+	OR
+		ip = '} . $np->opts->host . qq{'
+}
+    )
+)[0];
+
+if ( !$device_ip ) {
+    $dbh->disconnect();
+    $np->nagios_die( $np->opts->host . " not found in database" );
+}
+
+if ( -f $store_file ) {
+    $store = lock_retrieve($store_file);
+}
+
+my $port = $np->opts->port || "";
+$store->{$device_ip}{"last_check_$port"}
+  ||= DateTime->now( time_zone => 'local' )->subtract( minutes => 30 );
+my $table = $store->{$device_ip}{"last_check_$port"}->strftime( "%Y_%m_%d" );
+$table =~ s/_0/_/g;
+my $starttime = $store->{$device_ip}{"last_check_$port"}->epoch;
+
+my $sql = qq{
+	SELECT 
+		local, 
+		AVG(octets) AS average, 
+		MAX(starttime) as last_check,
+		MAX(octets) as max
+	FROM $table
+	WHERE ip = '$device_ip'
+	AND starttime > $starttime
+};
+$sql .= qq{	AND port = $port 
+} if ($port);
+$sql .= qq{	GROUP BY local 
+};
+
+my $sth = $dbh->prepare($sql)
+  || $np->nagios_die( "Unable to prepare sql: " . $DBI::errstr );
+$sth->execute || $np->nagios_die( "Unable to execute  sql: " . $DBI::errstr );
+
+my %result = (
+    in  => 0,
+    out => 0
+);
+
+while ( my $row = $sth->fetchrow_arrayref ) {
+    my $type;
+    if ( $row->[0] eq "D" ) {
+        $type = "in";
+    }
+    else {
+        $type = "out";
+    }
+
+    $result{$type} = int( $row->[1] );
+
+    # use time of last check in case clocks are out of sync
+    $store->{$device_ip}{"last_check_$port"} = DateTime->from_epoch(
+        epoch     => $row->[2],
+        time_zone => 'local'
+    );
+
+    $np->add_perfdata(
+        label    => $type,
+        uom      => "b",
+        value    => $row->[1],
+        warning  => $np->opts->warning,
+        critical => $np->opts->critical,
+    );
+}
+
+#$store->{$device_ip}{"last_check_$port"} = DateTime->now;
+my $new_table =
+  $store->{$device_ip}{"last_check_$port"}->add( minutes => 5 )
+  ->strftime( "%Y_%m_%d" );
+$new_table =~ s/_0/_/g;
+if ( $table ne $new_table ) {
+    $store->{$device_ip}{"last_check_$port"} =
+      $store->{$device_ip}{"last_check_$port"}->add( minutes => 5 );
+}
+lock_store( $store, $store_file );
+$dbh->disconnect();
+
+if ( !$result{in} ) {
+    $np->add_perfdata(
+        label    => "in",
+        uom      => "b",
+        value    => 0,
+        warning  => $np->opts->warning,
+        critical => $np->opts->critical,
+    );
+}
+if ( !$result{out} ) {
+    $np->add_perfdata(
+        label    => "out",
+        uom      => "b",
+        value    => 0,
+        warning  => $np->opts->warning,
+        critical => $np->opts->critical,
+    );
+}
+if ( !$result{in} && !$result{out} ) {
+    $np->nagios_exit( 0, "No data since check last ran" );
+}
+
+my $exit = $np->check_threshold( $result{in} );
+if ( !$exit ) {
+    $np->check_threshold( $result{out} );
+}
+
+$np->nagios_exit(
+    return_code => $exit,
+    message => "Incoming is: " . $result{in} . ", outgoing is " . $result{out},
+);

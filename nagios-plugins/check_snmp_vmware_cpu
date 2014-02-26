@@ -1,0 +1,380 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#	Written by Neil Ferguson
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+use strict;
+use warnings;
+
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+use Storable qw(lock_store lock_retrieve);
+
+my $script = "check_snmp_vmware_cpu";
+
+my $np = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => $script,
+    version   => "0.2",
+    blurb     => "Checks the CPU usage on a VMware ESX host",
+    snmp      => {
+        "snmp-version" => 2,
+        "snmp-timeout" => 10,
+        "v1-fallback"  => 1,
+    },
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w, --warning=INTEGER
+    Warning threshold for CPU usage (%)},
+    default => 0,
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c, --critical=INTEGER
+    Critical threshold for CPU usage (%)},
+    default => 0,
+);
+
+$np->add_arg(
+    spec => "vm|V=s",
+    help => qq{-V, --vm=STRING
+    Report memory usage of this VM only},
+);
+
+$np->getopts;
+
+my $warning   = $np->opts->warning;
+my $critical  = $np->opts->critical;
+my $vm_name   = "";
+my $hint_dir  = "/usr/local/nagios/var/plugins/vmware/";
+my $hint_file = $hint_dir;
+my @hostnames = split( ',', $np->opts->hostname );
+
+if ( $np->opts->vm ) {
+    $vm_name   = $np->opts->vm;
+    $hint_file = "${hint_file}esx_hint-${vm_name}.dat";
+}
+
+my $s = $np->snmp;
+
+# SNMP variables
+my $oid_sysDescr = ".1.3.6.1.2.1.1.1.0";
+my $oid_namebase = ".1.3.6.1.4.1.6876.2.1.1.2";
+my $oid_vmidbase = ".1.3.6.1.4.1.6876.2.1.1.7.";
+my $oid_vmbase   = ".1.3.6.1.4.1.6876.";
+my $oid_vm_cpu   = "3.1.2.1.3.";
+
+my $retval       = 3;
+my $retmsg       = "";
+my $result_text  = 0;
+my $cpu_util     = 0;
+my $percent_used = 0;
+
+my $store;
+my $store_dir    = "/usr/local/nagios/var/plugins/check_snmp_vmware_cpu/";
+my $store_basefn = "";
+my $storename;
+
+# Temporary store directory must exist
+if ( !-d $store_dir ) {
+    mkdir $store_dir
+      or die( "Cannot create temporary data store directory $store_dir" );
+}
+
+# Our hint file is found in here
+if ( !-d $hint_dir ) {
+    mkdir $hint_dir
+      or die( "Cannot create temporary data store directory $hint_dir" );
+}
+
+# Capture stderr
+#open STDERR, ">>/tmp/cpu-stderr.log";
+
+# Set our base store name as we now have our hostname
+$store_basefn = "$store_dir/$script";
+
+sub two_dp {
+    my $val = shift(@_);
+    return int( $val * 100 ) / 100;
+}
+
+# Call this when you know you'll get a single value back
+sub get_oid_value {
+    our ( $oid, $result, $status, $returnstring );
+
+    $oid = shift(@_);
+
+    if ( !defined( $s->get_request($oid) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            return 3;
+        }
+        else {
+
+            #print "SNMP OID does not exist\n";
+            return "";
+        }
+    }
+
+    foreach ( $s->var_bind_names() ) {
+        $result = $s->var_bind_list()->{$_};
+    }
+
+    if ( $result eq "noSuchObject" || $result eq "noSuchInstance" ) {
+        return "";
+    }
+
+    return $result;
+}
+
+sub get_vm_id {
+    my $name = lc(shift);
+    my $i    = 0;
+    our ( $result, $store, $vm_data, $response, $hostname );
+    my $hint_host = "";
+
+    # Use a hint if we have one
+    if ( -f $hint_file ) {
+        $store     = lock_retrieve($hint_file);
+        $hint_host = $store->{$name};
+    }
+
+    # Move the hint host to the top of the list, if it's
+    # an option
+    if ( grep( /^${hint_host}$/, @hostnames ) ) {
+        my $item;
+        while ( $hostnames[0] ne $hint_host ) {
+            $item = shift(@hostnames);
+            push( @hostnames, $item );
+        }
+    }
+
+    foreach $hostname (@hostnames) {
+        next if ( create_snmp_session($hostname) > 0 );
+
+        $response = $s->get_table($oid_namebase);
+        next if !defined($response);
+
+        %$response = reverse %$response;
+        my ($vmname) = grep( /^$name$/i, keys(%$response) );
+        if ($vmname) {
+
+            #$name=lc($vmname);
+            # Found the VM, write a hint for next time
+            $store->{$name} = $hostname;
+            lock_store( $store, $hint_file );
+
+            my $i = $response->{$vmname};
+            $i =~ s/.*\.//;
+            $result = get_oid_value( $oid_vmidbase . $i );
+            return $result;
+        }
+    }
+
+    print 'VM not found; available VMs are: ',
+      join( ", ", sort( keys(%$response) ) ), $/;
+    exit 3;
+}
+
+sub get_vm_stats {
+    my $vm  = lc( shift(@_) );
+    my $cpu = shift(@_);
+    our ( $prev_cpu, $prev_time );
+    my $store_fn;
+
+    if ( $np->opts->vm ) {
+        $store_fn = $store_basefn . "-$vm.dat";
+    }
+    else {
+        $store_fn = $store_basefn . "-$vm-all.dat";
+    }
+
+    # Previous value?
+    if ( -f $store_fn ) {
+        $store     = lock_retrieve($store_fn);
+        $prev_time = $store->{$vm}[0];
+        $prev_cpu  = $store->{$vm}[1];
+    }
+    else {
+        print "debug";
+
+        # Force usage to 0% if we have no previous data
+        $prev_time = 0;
+        $prev_cpu  = $cpu;
+    }
+
+    #print STDERR "Returning time, cpu as $prev_time, $prev_cpu\n";
+    return ( $prev_time, $prev_cpu );
+}
+
+sub save_vm_stats {
+    my $vm  = lc( shift(@_) );
+    my $cpu = shift(@_);
+    my $store_fn;
+
+    if ( $np->opts->vm ) {
+        $store_fn = $store_basefn . "-$vm.dat";
+    }
+    else {
+        $store_fn = $store_basefn . "-$vm-all.dat";
+    }
+
+    # Update the relevant storable
+    $store->{$vm} = [ time(), $cpu ];
+    lock_store( $store, $store_fn );
+}
+
+sub get_vm_cpu_util {
+    my $i            = 0;
+    my $result       = 0;
+    my $vmid         = 0;
+    my $vm_name_snmp = 0;
+    my $prev_time;
+    my $prev_cpu;
+    my $cur_cpu;
+    my $cpu_usage;
+    my $idmap;
+
+    # Reporting on a single VM
+    if ($vm_name) {
+
+        $vmid = get_vm_id($vm_name);
+        return undef if !defined($vmid);
+        print "\n\n" . $oid_vmbase . $oid_vm_cpu . $vmid . "\n\n";
+        $cur_cpu = get_oid_value( $oid_vmbase . $oid_vm_cpu . $vmid );
+
+        ( $prev_time, $prev_cpu ) = get_vm_stats( $vm_name, $cur_cpu );
+        print "\n\n"
+          . $cur_cpu . "  "
+          . $prev_cpu . "  "
+          . time() . "  "
+          . $prev_time . "  ";
+
+        # Work out the usage in that time (seconds/sec)
+        $cpu_usage = ( $cur_cpu - $prev_cpu ) / ( time() - $prev_time ) * 100;
+
+        # Store the details
+        save_vm_stats( $vm_name, $cur_cpu );
+
+        return $cpu_usage;
+    }
+    else {
+
+        # Total across all VMs
+        our ( $key, $response );
+
+        $idmap = $s->get_table($oid_vmidbase);
+        return undef if !defined($idmap);
+        %$idmap = reverse %$idmap;
+
+        $response = $s->get_table( $oid_vmbase . $oid_vm_cpu );
+        return undef if !defined($response);
+
+        foreach $key ( keys %{$response} ) {
+            my $snmp_id = $key;
+            $cur_cpu = $response->{$key};
+            $snmp_id =~ s/.*\.//;
+
+            $vmid = $idmap->{$snmp_id};
+            $vmid =~ s/.*\.//;
+
+            next if ( !defined($vmid) );
+
+            # Get the name
+            $vm_name_snmp = get_oid_value( $oid_namebase . $vmid );
+
+            # Previous info
+            ( $prev_time, $prev_cpu ) = get_vm_stats( $vm_name_snmp, $cur_cpu );
+
+            # Work out the usage in that time (seconds/sec)
+            $cpu_usage =
+              ( $cur_cpu - $prev_cpu ) / ( time() - $prev_time ) * 100;
+
+            # Store the details
+            save_vm_stats( $vm_name_snmp, $cur_cpu );
+
+            # Finally, keep a total
+            $result = $result + $cpu_usage;
+        }
+    }
+
+    return $result;
+}
+
+sub create_snmp_session {
+
+    if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+        print "Agent not responding\n";
+        return 1;
+    }
+    return 0;
+}
+
+# If we're checking all VMs, we need to start an SNMP session, otherwise
+# get_vm_id() will take care of this
+if ( !$np->opts->vm ) {
+    create_snmp_session( $hostnames[0] );
+
+    # Check for an SNMP error...
+    if ( $s->error ) {
+        print "UNKNOWN - " . $s->error . "|\n";
+        exit 3;
+    }
+}
+
+# Get all the CPU info
+$cpu_util = get_vm_cpu_util();
+if ( !defined($cpu_util) ) {
+    if ( defined($vm_name) ) {
+        print "Could not find VM $vm_name\n";
+    }
+    else {
+        print "Error retrieving memory data from SNMP\n";
+    }
+
+    exit 3;
+}
+
+# Sensible display
+if ( $cpu_util < 0 ) {
+    $cpu_util = 0;
+}
+$cpu_util = two_dp($cpu_util);
+
+$result_text = "$cpu_util% " . "|cpu_util=$cpu_util%;$warning;$critical;;";
+
+# The results are in...
+if ( $cpu_util > $critical && $critical > 0 ) {
+    print "CRITICAL - $result_text\n";
+    exit 2;
+}
+elsif ( $cpu_util > $warning && $warning > 0 ) {
+    print "WARNING - $result_text\n";
+    exit 1;
+}
+
+close STDERR;
+
+print "OK - $result_text\n";
+exit 0

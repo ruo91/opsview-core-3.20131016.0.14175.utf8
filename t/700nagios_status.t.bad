@@ -1,0 +1,68 @@
+#!perl
+# Tests logic in opsview status
+
+use strict;
+use warnings;
+
+use FindBin;
+use lib "$FindBin::Bin/lib", "$FindBin::Bin/../lib", "$FindBin::Bin/../etc";
+
+use Opsview::Nagios;
+use Test::More tests => 7;
+
+# Stop Opsview and clear away for testing
+system("/usr/local/nagios/bin/rc.opsview stop > /dev/null");
+unlink( $Opsview::Nagios::pid_file );
+unlink( $Opsview::Nagios::reload_flag );
+unlink( $Opsview::Nagios::config_output );
+unlink( $Opsview::Nagios::mrtg_output );
+
+system ("touch $Opsview::Nagios::nagios_cfg");
+my $time = scalar localtime;
+
+my $hash;
+$hash = Opsview::Nagios->web_status( { returns => "hash" } );
+is_deeply( $hash, { status => 2 }, "Nagios stopped - no pidfile" );
+
+# Simulate Nagios death by giving bad pid
+open F, "> $Opsview::Nagios::pid_file" or die "Can't write to pidfile";
+print F "657868";	# Random number, hopefully does not actually exist
+close F;
+$hash = Opsview::Nagios->web_status( { returns => "hash" } );
+is_deeply( $hash, { status => 2 }, "Nagios not running - bad pid" );
+
+# Simulate running
+open F, "> $Opsview::Nagios::pid_file" or die "Can't write to pidfile";
+print F $$;
+close F;
+$Opsview::Nagios::nagios_pid=0;	# Forces re-read of pidfile
+$hash = Opsview::Nagios->web_status( { returns => "hash" } );
+is_deeply( $hash, { status => 0, lastupdated => $time }, "Nagios running" );
+
+# Simulate config reload
+open F, "> $Opsview::Nagios::reload_flag" or die "Can't write to reload flag";
+close F;
+$hash = Opsview::Nagios->web_status( { returns => "hash" } );
+is_deeply( $hash, { status => 1, lastupdated => $time }, "Config reloading" );
+unlink( $Opsview::Nagios::reload_flag );
+
+# Simulate config failure
+open F, "> $Opsview::Nagios::config_output" or die "Can't write to config_output";
+print F "Bad stuff";
+close F;
+$hash = Opsview::Nagios->web_status( { returns => "hash" } );
+is_deeply( $hash, { status => 3 , errors => "Bad stuff", lastupdated => $time }, "Bad reload" );
+unlink( $Opsview::Nagios::config_output );
+
+# Simulate warnings
+open F, "> $Opsview::Nagios::mrtg_output" or die "Can't write to mrtg_output";
+print F "Warning stuff";
+close F;
+$hash = Opsview::Nagios->web_status( { returns => "hash" } );
+is_deeply( $hash, { status => 4 , errors => "Warning stuff", lastupdated => $time }, "Warnings from reload" );
+
+# Check xml is returned by default
+$hash = Opsview::Nagios->web_status;
+like( $hash, "/<errors>Warning stuff</errors>.*<lastupdated>$time</lastupdated>.*<status>4</status>/s", "XML output ok");
+
+unlink( $Opsview::Nagios::pid_file );

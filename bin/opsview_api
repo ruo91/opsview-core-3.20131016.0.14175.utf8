@@ -1,0 +1,124 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+# 	opsview_api -f file.xml [VERB] [PATH]
+#
+# DESCRIPTION:
+# 	Interface to Opsview's API mechanism to make changes to the Opsview database via command line
+# 	Supported VERBs:
+# 	 PUT - create a new object
+# 	 DELETE - delete an existing object
+# 	Supported PATHs:
+# 	 /api              - Send object creations here via PUTs
+#	The default VERB is POST, the default PATH is /api
+#	The xml file is mandatory (for now)
+#	You can specify the filename as "-" to use stdin
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+package main;
+
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin", "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+
+use Getopt::Std;
+
+use XML::Simple;
+
+my $server = "localhost:3000"; # Hit the app server - no timeouts there
+
+use LWP::UserAgent;
+my $ua = LWP::UserAgent->new;
+
+my $opts = {};
+getopts( "f:", $opts ) or _exit( "Incorrect options" );
+
+my ( $verb, $path ) = @ARGV;
+
+if ( !$verb ) {
+    $verb = "POST";
+}
+
+if ( !$path ) {
+    $path = "api";
+}
+
+my $xml;
+if ( my $file = $opts->{f} ) {
+    local $/ = undef;
+    if ( $file eq "-" ) {
+        $xml = <>;
+    }
+    else {
+        if ( !-e $file ) {
+            _exit( "File '$file' does not exist" );
+        }
+        open F, $file or _exit( "Cannot open '$file'" );
+        $xml = <F>;
+        close F;
+    }
+}
+_exit("Must specify an XML file") unless $xml;
+
+my $req = HTTP::Request->new(
+    $verb => "http://$server/" . $path,
+    [qw(Content-Type text/xml)],
+    $xml,
+);
+
+# if using GET, the auth details must be supplied in a different way
+if ( $verb =~ m/^get$/i ) {
+    my $xml_ref = XMLin($xml);
+
+    if (   !defined( $xml_ref->{authentication} )
+        || !defined( $xml_ref->{authentication}->{username} )
+        || !defined( $xml_ref->{authentication}->{password} ) )
+    {
+        die( "Authentication details not specified correctly " );
+    }
+
+    $req->header( 'X-Username' => $xml_ref->{authentication}->{username} );
+    $req->header( 'X-Password' => $xml_ref->{authentication}->{password} );
+}
+
+my $res = $ua->request($req);
+print $res->content;
+exit( ( $res->code == 200 ) ? 0 : 1 );
+
+sub _exit {
+    my ( $detail, $status ) = @_;
+    my $xs = XML::Simple->new(
+        NoAttr   => 1,
+        RootName => "opsview"
+    );
+    $status ||= "OPTIONS-ERROR";
+    print $xs->XMLout(
+        {
+            "result" => {
+                status => $status,
+                detail => $detail,
+            }
+        }
+    );
+    exit( ( $status eq "OK" ) ? 0 : 1 );
+}

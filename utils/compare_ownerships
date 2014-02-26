@@ -1,0 +1,75 @@
+#!/usr/bin/perl
+#
+# Expects $1 and $2 to be two files of output
+#  find /usr/local/nagios -ls
+#
+# Will compare user and group ownership and print differences
+# Indexes based on filename
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use warnings;
+use strict;
+
+my $first  = shift @ARGV || die "Must specify a first file";
+my $second = shift @ARGV || die "Must specify a second file";
+
+open FIRST,  "$first"  or die "Cannot open $first: $!";
+open SECOND, "$second" or die "Cannot open $second: $!";
+
+my $errors = 0;
+my $files  = {};
+while (<FIRST>) {
+    my (
+        undef, undef,  $mode, undef, $owner, $group,
+        $size, $month, $day,  $time, @file
+    ) = split;
+    my $file = join( " ", @file );
+    die "Invalid file ($file)" unless $file =~ m%^/%;
+    $files->{$file} = {
+        mode  => $mode,
+        owner => $owner,
+        group => $group
+    };
+}
+
+while (<SECOND>) {
+    my (
+        undef, undef,  $mode, undef, $owner, $group,
+        $size, $month, $day,  $time, @file
+    ) = split;
+    my $file = join( " ", @file );
+    if ( !exists $files->{$file} ) {
+        print "$file: Not in 1st list\n";
+    }
+    else {
+        if ( ( $_ = $files->{$file}->{mode} ) ne $mode ) {
+            print "$file: Mode was $_, now $mode\n";
+            $errors++;
+        }
+        if ( ( $_ = $files->{$file}->{owner} ) ne $owner ) {
+            print "$file: Owner was $_, now $owner\n";
+            $errors++;
+        }
+        if ( ( $_ = $files->{$file}->{group} ) ne $group ) {
+            print "$file: Group was $_, now $group\n";
+            $errors++;
+        }
+    }
+}
+print "Errors: $errors\n";
+exit $errors == 0 ? 0 : 1;

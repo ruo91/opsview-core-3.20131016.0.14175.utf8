@@ -1,0 +1,58 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+# 	create_module {directory}
+#
+# DESCRIPTION:
+# 	Takes an argument of a module directory. Will read the module.info file
+#	to work out the version. Will create a tar file in the current directory
+#	of module_name-version.tar.gz.
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+
+use Cwd;
+use XML::Simple qw(:strict);
+
+use Data::Dumper;
+
+my $root_dir = "/usr/local/nagios";
+my $xs       = new XML::Simple(
+    ForceArray => [qw/dir requires/],
+    KeyAttr    => []
+);
+
+my $module = shift @ARGV || die "Must specify a module";
+
+if ( !-d $module ) {
+    die "No module directory found - are you having a laugh?";
+}
+
+my $config = $xs->XMLin( "$module/module.info" );
+
+my $name    = $config->{name};
+my $version = $config->{version};
+
+system("tar --exclude=.svn --gzip -cvf $name-$version.tar.gz $name") == 0
+  or die "Cannot tar";

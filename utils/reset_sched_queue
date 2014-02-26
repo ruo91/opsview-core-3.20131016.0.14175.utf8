@@ -1,0 +1,71 @@
+#!/usr/bin/perl
+#
+# $Id$
+#
+# Quick script to requeue anything in the scheulding queue
+# where the next check is 60 seconds old
+# Run by hand to check output.  When satisfied, run as
+# $0 | sort -u > /usr/local/nagios/var/rw/nagios.cmd
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use warnings;
+use strict;
+
+my $ret = "/usr/local/nagios/var/retention.dat";
+
+open( RET, "<", $ret ) or die( "Failed to read $ret: $!\n" );
+
+my ( $host, $service, $next_check );
+
+while ( my $line = <RET> ) {
+    next unless ( $line =~ m/^\w/ );
+    my @line = split( / /, $line );
+
+    SWITCH: foreach ( $line[0] ) {
+        m/^info$/    && do { last SWITCH };
+        m/^program$/ && do { last SWITCH };
+
+        m/^host$/ && do {
+            last SWITCH;
+        };
+
+        m/^service$/ && do {
+            while ( ( my $read = <RET> ) !~ /}/ ) {
+                chomp($read);
+                my @read = split( /=/, $read );
+
+                #warn("0=$read[0] 1=$read[1]\n");
+                $host    = $read[1] if ( $read[0] =~ m/host_name/ );
+                $service = $read[1] if ( $read[0] =~ m/service_description/ );
+                $next_check = $read[1] if ( $read[0] =~ m/next_check/ );
+            }
+            my $time = time;
+            if ( !$next_check == 0 ) {
+                if ( $next_check < $time - 60 ) {
+                    $time += int( rand(60) );
+                    print "[", time,
+                      "] SCHEDULE_FORCED_SVC_CHECK;$host;$service;$time\n";
+                }
+            }
+            last SWITCH;
+        };
+
+        do { print "Don't understand $_\n"; last SWITCH; }
+    }
+
+}

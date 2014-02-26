@@ -1,0 +1,11 @@
+{
+  allrows => 25,
+  list    => [
+               { list => ["Another exception", "Coldstart"], name => "cisco" },
+               { list => ["Another exception", "Coldstart"], name => "cisco1" },
+               { list => ["Another exception", "Coldstart"], name => "cisco2" },
+               { list => ["Another exception"], name => "cisco3" },
+             ],
+  rows    => 7,
+  total   => 50,
+}

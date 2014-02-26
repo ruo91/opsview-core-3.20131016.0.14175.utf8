@@ -1,0 +1,7 @@
+Each test is self-contained. At the beginning of each appropriate test,
+will restore a pre-populated database.
+
+These are backend tests, so only model & nagconfgen type
+stuff. Web tests should be done in the opsview-web package
+
+See http://docs.opsview.com/doku.php?id=developer for more details

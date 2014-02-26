@@ -1,0 +1,60 @@
+#!/bin/bash -x
+
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+# stop nagios, amend retention.dat to remove last/next check times, 
+# restart nagios to rescheudle everything in a balanced manner
+
+echo "$(date): Starting"
+echo "$(date): Shutting down Nagios on $(hostname)"
+
+/usr/local/nagios/bin/rc.opsview stop
+
+pipe=/usr/local/nagios/var/rw/nagios.cmd
+
+inner_count_total=6
+inner_count=$inner_count_total
+outter_count=3
+sleep 5
+while /usr/local/nagios/bin/rc.opsview status; do
+	sleep 5
+	echo "$(date): Waiting on pipe removal: inner_count=$inner_count outter_count=$outter_count"
+
+	if [ $inner_count -le 0 ]; then
+		if [ $outter_count -le 0 ]; then
+			echo "$(date): Failed to stop Nagios"
+			exit 255
+		fi
+
+		echo "$(date): Sending kill signal to Nagios processes"
+		pkill -9 -f bin/nagios
+		inner_count=$inner_count_total
+		outter_count=$((outter_count - 1))
+	fi
+	inner_count=$((inner_count - 1))
+done
+
+echo "$(date): Nagios stopped; continuing"
+
+rm -f $pipe
+
+perl -n -i.bak -e 'print unless(m/(?:last|next)_check=/);' /usr/local/nagios/var/retention.dat
+
+echo "$(date): Starting Nagios"
+/usr/local/nagios/bin/rc.opsview start
+
+echo "Completed at $(date)"

@@ -1,0 +1,6 @@
+#!/bin/sh
+#
+#This plugin replaces check_opsview_slave_node in Core Opsview
+
+echo 'Stub Plugin: This plugin is only supported in Opsview Pro and Opsview Enterprise';
+exit 0;

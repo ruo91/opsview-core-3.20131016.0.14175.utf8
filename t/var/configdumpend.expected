@@ -1,0 +1,513 @@
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO,MYSQL40' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+DROP TABLE IF EXISTS `opsview_contacts`;
+CREATE TABLE `opsview_contacts` (
+  `id` int(11) NOT NULL default '0',
+  `contact_object_id` int(11) default NULL,
+  `name` varchar(128) NOT NULL,
+  PRIMARY KEY  (`id`),
+  KEY `contact_object_id` (`contact_object_id`,`id`)
+) TYPE=InnoDB;
+
+LOCK TABLES `opsview_contacts` WRITE;
+/*!40000 ALTER TABLE `opsview_contacts` DISABLE KEYS */;
+INSERT INTO `opsview_contacts` VALUES (1,88,'admin');
+INSERT INTO `opsview_contacts` VALUES (2,96,'nonadmin');
+/*!40000 ALTER TABLE `opsview_contacts` ENABLE KEYS */;
+UNLOCK TABLES;
+DROP TABLE IF EXISTS `opsview_contact_services`;
+CREATE TABLE `opsview_contact_services` (
+  `contactid` int(11) NOT NULL,
+  `service_object_id` int(11) NOT NULL,
+  KEY `service_object_id` (`service_object_id`),
+  KEY `contactid_service_object_id` (`contactid`,`service_object_id`)
+) TYPE=InnoDB;
+
+LOCK TABLES `opsview_contact_services` WRITE;
+/*!40000 ALTER TABLE `opsview_contact_services` DISABLE KEYS */;
+INSERT INTO `opsview_contact_services` VALUES (1,155);
+INSERT INTO `opsview_contact_services` VALUES (2,155);
+/*!40000 ALTER TABLE `opsview_contact_services` ENABLE KEYS */;
+UNLOCK TABLES;
+DROP TABLE IF EXISTS `opsview_host_services`;
+CREATE TABLE `opsview_host_services` (
+  `host_object_id` int(11) NOT NULL default '0',
+  `hostname` varchar(64) NOT NULL default '',
+  `service_object_id` int(11) NOT NULL default '0',
+  `servicename` varchar(128) NOT NULL default '',
+  `perfdata_available` tinyint(1) NOT NULL default '0',
+  `markdown_filter` tinyint(1) NOT NULL default '0',
+  `servicecheck_id` int(11) NOT NULL default '0',
+  `servicegroup_id` int(11) NOT NULL default '0',
+  `icon_filename` varchar(128) default NULL,
+  PRIMARY KEY  (`service_object_id`),
+  KEY `host_object_id` (`host_object_id`),
+  KEY `hostname_servicename_service_object_id` (`hostname`,`servicename`,`service_object_id`),
+  KEY `covering_index` (`host_object_id`,`service_object_id`,`hostname`,`servicename`,`perfdata_available`,`markdown_filter`)
+) TYPE=InnoDB;
+
+LOCK TABLES `opsview_host_services` WRITE;
+/*!40000 ALTER TABLE `opsview_host_services` DISABLE KEYS */;
+INSERT INTO `opsview_host_services` VALUES (136,'monitored_by_slave',5,'VNC',0,0,27,1,'wireless');
+INSERT INTO `opsview_host_services` VALUES (115,'cisco',148,'Another exception',0,0,82,1,'meter');
+INSERT INTO `opsview_host_services` VALUES (115,'cisco',149,'Coldstart',0,0,79,1,'meter');
+INSERT INTO `opsview_host_services` VALUES (115,'cisco',150,'Test exceptions',0,0,81,1,'meter');
+INSERT INTO `opsview_host_services` VALUES (117,'cisco1',151,'Another exception',0,0,82,1,'dsl');
+INSERT INTO `opsview_host_services` VALUES (117,'cisco1',152,'Coldstart',0,0,79,1,'dsl');
+INSERT INTO `opsview_host_services` VALUES (117,'cisco1',153,'Test exceptions',0,0,81,1,'dsl');
+INSERT INTO `opsview_host_services` VALUES (118,'cisco2',154,'Another exception',0,0,82,1,'firewall');
+INSERT INTO `opsview_host_services` VALUES (118,'cisco2',155,'Coldstart',0,0,79,1,'firewall');
+INSERT INTO `opsview_host_services` VALUES (118,'cisco2',156,'Test exceptions',0,0,81,1,'firewall');
+INSERT INTO `opsview_host_services` VALUES (119,'cisco3',157,'Another exception',0,0,82,1,'netbsd');
+INSERT INTO `opsview_host_services` VALUES (119,'cisco3',158,'Coldstart',0,0,79,1,'netbsd');
+INSERT INTO `opsview_host_services` VALUES (119,'cisco3',159,'Test exceptions',0,0,81,1,'netbsd');
+INSERT INTO `opsview_host_services` VALUES (120,'cisco4',160,'Another exception',0,0,82,1,'network');
+INSERT INTO `opsview_host_services` VALUES (120,'cisco4',161,'Coldstart',0,0,79,1,'network');
+INSERT INTO `opsview_host_services` VALUES (120,'cisco4',162,'Test exceptions',0,0,81,1,'network');
+INSERT INTO `opsview_host_services` VALUES (135,'host_locally_monitored',187,'Interface: ADSL',0,0,95,1,'router');
+INSERT INTO `opsview_host_services` VALUES (135,'host_locally_monitored',188,'Interface: Ethernet0',0,0,95,1,'router');
+INSERT INTO `opsview_host_services` VALUES (135,'host_locally_monitored',189,'Interface: Interface with quotes in',0,0,95,1,'router');
+INSERT INTO `opsview_host_services` VALUES (135,'host_locally_monitored',190,'TCP/IP',0,0,29,1,'router');
+INSERT INTO `opsview_host_services` VALUES (136,'monitored_by_slave',193,'/',0,0,47,1,'wireless');
+INSERT INTO `opsview_host_services` VALUES (136,'monitored_by_slave',194,'Check Loadavg',0,0,45,1,'wireless');
+INSERT INTO `opsview_host_services` VALUES (136,'monitored_by_slave',195,'Check Memory',0,0,44,1,'wireless');
+INSERT INTO `opsview_host_services` VALUES (136,'monitored_by_slave',196,'SSH',0,0,22,1,'wireless');
+INSERT INTO `opsview_host_services` VALUES (137,'opslave',197,'/',1,0,47,1,'opsview');
+INSERT INTO `opsview_host_services` VALUES (137,'opslave',198,'Check Loadavg',1,0,45,1,'opsview');
+INSERT INTO `opsview_host_services` VALUES (137,'opslave',199,'Check Memory',1,0,44,1,'opsview');
+INSERT INTO `opsview_host_services` VALUES (137,'opslave',200,'SSH',1,0,22,1,'opsview');
+INSERT INTO `opsview_host_services` VALUES (137,'opslave',201,'VNC',0,0,27,1,'opsview');
+INSERT INTO `opsview_host_services` VALUES (116,'opsview',202,'Opsview daemon',0,0,54,1,'opsview');
+INSERT INTO `opsview_host_services` VALUES (116,'opsview',203,'TCP/IP',1,0,29,1,'opsview');
+INSERT INTO `opsview_host_services` VALUES (116,'opsview',204,'nagios processes',0,0,55,1,'opsview');
+INSERT INTO `opsview_host_services` VALUES (138,'resolved_services',205,'/',0,0,47,1,'switch');
+INSERT INTO `opsview_host_services` VALUES (138,'resolved_services',206,'AFS',0,0,1,1,'switch');
+INSERT INTO `opsview_host_services` VALUES (138,'resolved_services',207,'Check Loadavg',0,0,45,1,'switch');
+INSERT INTO `opsview_host_services` VALUES (138,'resolved_services',208,'Check Memory',0,0,44,1,'switch');
+INSERT INTO `opsview_host_services` VALUES (138,'resolved_services',209,'SSH',0,0,22,1,'switch');
+INSERT INTO `opsview_host_services` VALUES (138,'resolved_services',210,'TCP/IP',0,0,29,1,'switch');
+INSERT INTO `opsview_host_services` VALUES (138,'resolved_services',211,'VNC',0,0,27,1,'switch');
+INSERT INTO `opsview_host_services` VALUES (214,'doesnt_exist_1',216,'TCP/IP',0,0,29,1,'hub');
+INSERT INTO `opsview_host_services` VALUES (215,'doesnt_exist_2',217,'TCP/IP',0,0,29,1,'proxy');
+INSERT INTO `opsview_host_services` VALUES (214,'doesnt_exist_1',218,'faked ok service',0,0,0,0,'hub');
+/*!40000 ALTER TABLE `opsview_host_services` ENABLE KEYS */;
+UNLOCK TABLES;
+DROP TABLE IF EXISTS `opsview_hostgroups`;
+CREATE TABLE `opsview_hostgroups` (
+  `id` int(11) NOT NULL default '0',
+  `parentid` int(11) default '1',
+  `name` varchar(128) NOT NULL default '',
+  `lft` int(11) default NULL,
+  `rgt` int(11) default NULL,
+  `matpath` text NOT NULL,
+  `matpathid` text NOT NULL,
+  PRIMARY KEY  (`id`),
+  KEY `parentid` (`parentid`)
+) TYPE=InnoDB;
+
+LOCK TABLES `opsview_hostgroups` WRITE;
+/*!40000 ALTER TABLE `opsview_hostgroups` DISABLE KEYS */;
+INSERT INTO `opsview_hostgroups` VALUES (1,NULL,'Opsview',1,20,'Opsview,','1,');
+INSERT INTO `opsview_hostgroups` VALUES (2,3,'Monitoring Servers',11,12,'Opsview,UK,Monitoring Servers,','1,3,2,');
+INSERT INTO `opsview_hostgroups` VALUES (3,1,'UK',8,13,'Opsview,UK,','1,3,');
+INSERT INTO `opsview_hostgroups` VALUES (4,3,'Leaf',9,10,'Opsview,UK,Leaf,','1,3,4,');
+INSERT INTO `opsview_hostgroups` VALUES (5,6,'Leaf2',15,16,'Opsview,UK2,Leaf2,','1,6,5,');
+INSERT INTO `opsview_hostgroups` VALUES (6,1,'UK2',14,19,'Opsview,UK2,','1,6,');
+INSERT INTO `opsview_hostgroups` VALUES (7,1,'singlehost',6,7,'Opsview,singlehost,','1,7,');
+INSERT INTO `opsview_hostgroups` VALUES (8,6,'middling',17,18,'Opsview,UK2,middling,','1,6,8,');
+INSERT INTO `opsview_hostgroups` VALUES (9,1,'alphaearly',2,3,'Opsview,alphaearly,','1,9,');
+INSERT INTO `opsview_hostgroups` VALUES (10,1,'Passive Monitoring',4,5,'Opsview,Passive Monitoring,','1,10,');
+/*!40000 ALTER TABLE `opsview_hostgroups` ENABLE KEYS */;
+UNLOCK TABLES;
+DROP TABLE IF EXISTS `opsview_hostgroup_hosts`;
+CREATE TABLE `opsview_hostgroup_hosts` (
+  `hostgroup_id` int(11) default NULL,
+  `host_object_id` int(11) default NULL,
+  KEY `hostgroup_id` (`hostgroup_id`),
+  KEY `host_object_id` (`host_object_id`)
+) TYPE=InnoDB;
+
+LOCK TABLES `opsview_hostgroup_hosts` WRITE;
+/*!40000 ALTER TABLE `opsview_hostgroup_hosts` DISABLE KEYS */;
+INSERT INTO `opsview_hostgroup_hosts` VALUES (1,116);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (2,116);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (3,116);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (1,135);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (3,135);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (4,135);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (1,136);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (5,136);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (6,136);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (1,137);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (2,137);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (3,137);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (1,138);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (5,138);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (6,138);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (1,115);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (3,115);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (4,115);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (1,117);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (3,117);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (4,117);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (1,118);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (3,118);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (4,118);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (1,119);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (3,119);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (4,119);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (1,120);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (3,120);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (4,120);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (1,214);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (3,214);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (4,214);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (1,215);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (3,215);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (4,215);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (1,224);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (2,224);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (3,224);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (1,225);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (2,225);
+INSERT INTO `opsview_hostgroup_hosts` VALUES (3,225);
+/*!40000 ALTER TABLE `opsview_hostgroup_hosts` ENABLE KEYS */;
+UNLOCK TABLES;
+DROP TABLE IF EXISTS `opsview_monitoringservers`;
+CREATE TABLE `opsview_monitoringservers` (
+  `id` int(11) NOT NULL default '0',
+  `name` varchar(64) NOT NULL default '',
+  `activated` tinyint(1) NOT NULL default '1',
+  `passive` tinyint(1) NOT NULL default '0',
+  `nodes` text NOT NULL,
+  PRIMARY KEY  (`id`)
+) TYPE=InnoDB COMMENT='Runtime list of monitoring servers';
+
+LOCK TABLES `opsview_monitoringservers` WRITE;
+/*!40000 ALTER TABLE `opsview_monitoringservers` DISABLE KEYS */;
+INSERT INTO `opsview_monitoringservers` VALUES (1,'Master Monitoring Server',1,0,'opsview');
+INSERT INTO `opsview_monitoringservers` VALUES (2,'ClusterA',1,0,'');
+INSERT INTO `opsview_monitoringservers` VALUES (3,'Cluster',1,0,'');
+INSERT INTO `opsview_monitoringservers` VALUES (4,'PassiveSlave',1,1,'');
+INSERT INTO `opsview_monitoringservers` VALUES (5,'Deactivated',0,0,'');
+/*!40000 ALTER TABLE `opsview_monitoringservers` ENABLE KEYS */;
+UNLOCK TABLES;
+DROP TABLE IF EXISTS `opsview_monitoringclusternodes`;
+CREATE TABLE `opsview_monitoringclusternodes` (
+  `id` int(11) NOT NULL default '0',
+  `name` varchar(64) NOT NULL default '',
+  `ip` varchar(255) NOT NULL default '',
+  PRIMARY KEY  (`id`)
+) TYPE=InnoDB COMMENT='Runtime list of monitoring cluster nodes';
+
+LOCK TABLES `opsview_monitoringclusternodes` WRITE;
+/*!40000 ALTER TABLE `opsview_monitoringclusternodes` DISABLE KEYS */;
+INSERT INTO `opsview_monitoringclusternodes` VALUES (1,'opslave','opslave');
+INSERT INTO `opsview_monitoringclusternodes` VALUES (2,'opslaveclusterA','opslaveclusterAip');
+INSERT INTO `opsview_monitoringclusternodes` VALUES (3,'opslaveclusterB','opslaveclusterBip');
+INSERT INTO `opsview_monitoringclusternodes` VALUES (4,'opslaveclusterC','opslaveclusterCip');
+INSERT INTO `opsview_monitoringclusternodes` VALUES (5,'PassiveSlave','192.168.105.15');
+INSERT INTO `opsview_monitoringclusternodes` VALUES (6,'cisco2','192.168.10.22');
+/*!40000 ALTER TABLE `opsview_monitoringclusternodes` ENABLE KEYS */;
+UNLOCK TABLES;
+DROP TABLE IF EXISTS `opsview_hosts`;
+CREATE TABLE `opsview_hosts` (
+  `id` int(11) NOT NULL default '0',
+  `opsview_host_id` int(11) NOT NULL default '0',
+  `name` varchar(64) NOT NULL default '',
+  `ip` varchar(255) NOT NULL default '',
+  `alias` varchar(255) NOT NULL default '',
+  `icon_filename` varchar(128) NOT NULL default '',
+  `hostgroup_id` int(11) NOT NULL default '0',
+  `monitored_by` int(11) NOT NULL default '0',
+  `primary_node` int(11) default NULL,
+  `secondary_node` int(11) default NULL,
+  `num_interfaces` int(11) NOT NULL default '0',
+  `num_services` int(11) NOT NULL default '0',
+  `num_children` int(11) NOT NULL default '0',
+  PRIMARY KEY  (`id`),
+  KEY `opsview_host_id` (`opsview_host_id`),
+  KEY `name` (`name`),
+  KEY `hostgroup_idx` (`id`,`hostgroup_id`),
+  KEY `id_num_interfaces_num_services_alias_icon_filename` (`id`,`num_interfaces`,`num_services`,`alias`,`icon_filename`),
+  KEY `num_children` (`num_children`)
+) TYPE=InnoDB;
+
+LOCK TABLES `opsview_hosts` WRITE;
+/*!40000 ALTER TABLE `opsview_hosts` DISABLE KEYS */;
+INSERT INTO `opsview_hosts` VALUES (115,7,'cisco','192.168.10.20','','meter',4,1,NULL,NULL,1,3,0);
+INSERT INTO `opsview_hosts` VALUES (116,1,'opsview','opsviewdev46','Opsview Master Server','opsview',2,1,NULL,NULL,0,3,9);
+INSERT INTO `opsview_hosts` VALUES (117,8,'cisco1','192.168.10.23','','dsl',4,1,NULL,NULL,0,3,0);
+INSERT INTO `opsview_hosts` VALUES (118,9,'cisco2','192.168.10.22','','firewall',4,5,NULL,NULL,0,3,0);
+INSERT INTO `opsview_hosts` VALUES (119,10,'cisco3','192.168.10.22','','netbsd',4,2,NULL,NULL,0,3,0);
+INSERT INTO `opsview_hosts` VALUES (120,11,'cisco4','not_a_real_host','','network',4,1,NULL,NULL,4,3,0);
+INSERT INTO `opsview_hosts` VALUES (135,3,'host_locally_monitored','hostname1','','router',4,1,NULL,NULL,3,4,0);
+INSERT INTO `opsview_hosts` VALUES (136,4,'monitored_by_slave','monitored_by_slave','Host to be monitored by slave','wireless',5,2,NULL,NULL,0,5,0);
+INSERT INTO `opsview_hosts` VALUES (137,5,'opslave','opslave','Slave','opsview',2,2,NULL,NULL,0,5,0);
+INSERT INTO `opsview_hosts` VALUES (138,6,'resolved_services','resolved_services','Host with services based on templates, exceptions and timed exceptions','switch',5,1,NULL,NULL,0,7,0);
+INSERT INTO `opsview_hosts` VALUES (214,14,'doesnt_exist_1','192.168.50.10','problem host - Handled','hub',4,1,NULL,NULL,0,2,0);
+INSERT INTO `opsview_hosts` VALUES (215,15,'doesnt_exist_2','192.168.50.11','problem host - Unhandled','proxy',4,1,NULL,NULL,0,1,0);
+INSERT INTO `opsview_hosts` VALUES (224,19,'opslaveclusterA','opslaveclusterAip','Slave','opsview',2,3,NULL,NULL,0,0,0);
+INSERT INTO `opsview_hosts` VALUES (225,23,'PassiveSlave','192.168.105.15','','opsview',2,4,NULL,NULL,0,0,0);
+/*!40000 ALTER TABLE `opsview_hosts` ENABLE KEYS */;
+UNLOCK TABLES;
+DROP TABLE IF EXISTS `opsview_viewports`;
+CREATE TABLE `opsview_viewports` (
+  `viewportid` int(11) NOT NULL default '0',
+  `keyword` varchar(128) NOT NULL default '',
+  `hostname` varchar(64) NOT NULL default '',
+  `servicename` varchar(128) default NULL,
+  `host_object_id` int(11) NOT NULL default '0',
+  `object_id` int(11) NOT NULL default '0',
+  KEY `viewportid` (`viewportid`),
+  KEY `object_id` (`object_id`),
+  KEY `keyword_host_object_id_service_object_id` (`keyword`,`host_object_id`,`object_id`)
+) TYPE=InnoDB;
+
+LOCK TABLES `opsview_viewports` WRITE;
+/*!40000 ALTER TABLE `opsview_viewports` DISABLE KEYS */;
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco','Coldstart',115,149);
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco1','Coldstart',117,152);
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco2','Coldstart',118,155);
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco3','Coldstart',119,158);
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco4','Coldstart',120,161);
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco','Test exceptions',115,150);
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco1','Test exceptions',117,153);
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco2','Test exceptions',118,156);
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco3','Test exceptions',119,159);
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco4','Test exceptions',120,162);
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco','Another exception',115,148);
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco1','Another exception',117,151);
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco2','Another exception',118,154);
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco3','Another exception',119,157);
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco4','Another exception',120,160);
+INSERT INTO `opsview_viewports` VALUES (3,'cisco_gp1','cisco','Coldstart',115,149);
+INSERT INTO `opsview_viewports` VALUES (3,'cisco_gp1','cisco1','Coldstart',117,152);
+INSERT INTO `opsview_viewports` VALUES (3,'cisco_gp1','cisco2','Coldstart',118,155);
+INSERT INTO `opsview_viewports` VALUES (3,'cisco_gp1','cisco','Test exceptions',115,150);
+INSERT INTO `opsview_viewports` VALUES (3,'cisco_gp1','cisco1','Test exceptions',117,153);
+INSERT INTO `opsview_viewports` VALUES (3,'cisco_gp1','cisco2','Test exceptions',118,156);
+INSERT INTO `opsview_viewports` VALUES (3,'cisco_gp1','cisco','Another exception',115,148);
+INSERT INTO `opsview_viewports` VALUES (3,'cisco_gp1','cisco1','Another exception',117,151);
+INSERT INTO `opsview_viewports` VALUES (3,'cisco_gp1','cisco2','Another exception',118,154);
+INSERT INTO `opsview_viewports` VALUES (4,'cisco_gp2','cisco2','Coldstart',118,155);
+INSERT INTO `opsview_viewports` VALUES (4,'cisco_gp2','cisco3','Coldstart',119,158);
+INSERT INTO `opsview_viewports` VALUES (4,'cisco_gp2','cisco4','Coldstart',120,161);
+INSERT INTO `opsview_viewports` VALUES (4,'cisco_gp2','cisco2','Test exceptions',118,156);
+INSERT INTO `opsview_viewports` VALUES (4,'cisco_gp2','cisco3','Test exceptions',119,159);
+INSERT INTO `opsview_viewports` VALUES (4,'cisco_gp2','cisco4','Test exceptions',120,162);
+INSERT INTO `opsview_viewports` VALUES (4,'cisco_gp2','cisco2','Another exception',118,154);
+INSERT INTO `opsview_viewports` VALUES (4,'cisco_gp2','cisco3','Another exception',119,157);
+INSERT INTO `opsview_viewports` VALUES (4,'cisco_gp2','cisco4','Another exception',120,160);
+INSERT INTO `opsview_viewports` VALUES (5,'disabled','opslave','/',137,197);
+INSERT INTO `opsview_viewports` VALUES (9,'allhandled','doesnt_exist_2','TCP/IP',215,217);
+INSERT INTO `opsview_viewports` VALUES (8,'allservicechecks','opsview','nagios processes',116,204);
+INSERT INTO `opsview_viewports` VALUES (8,'allservicechecks','opsview','Opsview daemon',116,202);
+INSERT INTO `opsview_viewports` VALUES (8,'allservicechecks','opsview','TCP/IP',116,203);
+INSERT INTO `opsview_viewports` VALUES (8,'allservicechecks','host_locally_monitored','Interface: ADSL',135,187);
+INSERT INTO `opsview_viewports` VALUES (8,'allservicechecks','host_locally_monitored','Interface: Ethernet0',135,188);
+INSERT INTO `opsview_viewports` VALUES (8,'allservicechecks','host_locally_monitored','Interface: Interface with quotes in',135,189);
+INSERT INTO `opsview_viewports` VALUES (8,'allservicechecks','host_locally_monitored','TCP/IP',135,190);
+INSERT INTO `opsview_viewports` VALUES (8,'allservicechecks','opslave','/',137,197);
+INSERT INTO `opsview_viewports` VALUES (8,'allservicechecks','opslave','Check Loadavg',137,198);
+INSERT INTO `opsview_viewports` VALUES (8,'allservicechecks','opslave','Check Memory',137,199);
+INSERT INTO `opsview_viewports` VALUES (8,'allservicechecks','opslave','SSH',137,200);
+INSERT INTO `opsview_viewports` VALUES (8,'allservicechecks','opslave','VNC',137,201);
+INSERT INTO `opsview_viewports` VALUES (7,'allhosts','host_locally_monitored','Interface: ADSL',135,187);
+INSERT INTO `opsview_viewports` VALUES (7,'allhosts','host_locally_monitored','Interface: Ethernet0',135,188);
+INSERT INTO `opsview_viewports` VALUES (7,'allhosts','host_locally_monitored','Interface: Interface with quotes in',135,189);
+INSERT INTO `opsview_viewports` VALUES (7,'allhosts','monitored_by_slave','/',136,193);
+INSERT INTO `opsview_viewports` VALUES (7,'allhosts','opslave','/',137,197);
+INSERT INTO `opsview_viewports` VALUES (7,'allhosts','resolved_services','/',138,205);
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco',NULL,115,115);
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco1',NULL,117,117);
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco2',NULL,118,118);
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco3',NULL,119,119);
+INSERT INTO `opsview_viewports` VALUES (2,'cisco','cisco4',NULL,120,120);
+INSERT INTO `opsview_viewports` VALUES (3,'cisco_gp1','cisco',NULL,115,115);
+INSERT INTO `opsview_viewports` VALUES (3,'cisco_gp1','cisco1',NULL,117,117);
+INSERT INTO `opsview_viewports` VALUES (3,'cisco_gp1','cisco2',NULL,118,118);
+INSERT INTO `opsview_viewports` VALUES (4,'cisco_gp2','cisco2',NULL,118,118);
+INSERT INTO `opsview_viewports` VALUES (4,'cisco_gp2','cisco3',NULL,119,119);
+INSERT INTO `opsview_viewports` VALUES (4,'cisco_gp2','cisco4',NULL,120,120);
+INSERT INTO `opsview_viewports` VALUES (5,'disabled','opslave',NULL,137,137);
+INSERT INTO `opsview_viewports` VALUES (9,'allhandled','doesnt_exist_2',NULL,215,215);
+INSERT INTO `opsview_viewports` VALUES (8,'allservicechecks','opsview',NULL,116,116);
+INSERT INTO `opsview_viewports` VALUES (8,'allservicechecks','host_locally_monitored',NULL,135,135);
+INSERT INTO `opsview_viewports` VALUES (8,'allservicechecks','opslave',NULL,137,137);
+INSERT INTO `opsview_viewports` VALUES (7,'allhosts','host_locally_monitored',NULL,135,135);
+INSERT INTO `opsview_viewports` VALUES (7,'allhosts','monitored_by_slave',NULL,136,136);
+INSERT INTO `opsview_viewports` VALUES (7,'allhosts','opslave',NULL,137,137);
+INSERT INTO `opsview_viewports` VALUES (7,'allhosts','resolved_services',NULL,138,138);
+/*!40000 ALTER TABLE `opsview_viewports` ENABLE KEYS */;
+UNLOCK TABLES;
+DROP TABLE IF EXISTS `opsview_performance_metrics`;
+CREATE TABLE `opsview_performance_metrics` (
+  `service_object_id` int(11) default '0',
+  `id` int(11) NOT NULL auto_increment,
+  `hostname` varchar(64) NOT NULL default '',
+  `servicename` varchar(128) NOT NULL default '',
+  `metricname` varchar(128) NOT NULL default '',
+  `uom` varchar(64) default NULL,
+  PRIMARY KEY  (`id`),
+  KEY `service_object_id` (`service_object_id`),
+  KEY `hostname` (`hostname`),
+  KEY `servicename` (`servicename`),
+  KEY `metricname` (`metricname`)
+) TYPE=InnoDB AUTO_INCREMENT=41;
+
+LOCK TABLES `opsview_performance_metrics` WRITE;
+/*!40000 ALTER TABLE `opsview_performance_metrics` DISABLE KEYS */;
+INSERT INTO `opsview_performance_metrics` VALUES (216,1,'doesnt_exist_1','TCP/IP','pl','%');
+INSERT INTO `opsview_performance_metrics` VALUES (216,2,'doesnt_exist_1','TCP/IP','rta','ms');
+INSERT INTO `opsview_performance_metrics` VALUES (216,3,'doesnt_exist_1','TCP/IP','rtmax','ms');
+INSERT INTO `opsview_performance_metrics` VALUES (216,4,'doesnt_exist_1','TCP/IP','rtmin','ms');
+INSERT INTO `opsview_performance_metrics` VALUES (217,5,'doesnt_exist_2','TCP/IP','pl','%');
+INSERT INTO `opsview_performance_metrics` VALUES (217,6,'doesnt_exist_2','TCP/IP','rta','ms');
+INSERT INTO `opsview_performance_metrics` VALUES (217,7,'doesnt_exist_2','TCP/IP','rtmax','ms');
+INSERT INTO `opsview_performance_metrics` VALUES (217,8,'doesnt_exist_2','TCP/IP','rtmin','ms');
+INSERT INTO `opsview_performance_metrics` VALUES (190,9,'host_locally_monitored','TCP/IP','pl','%');
+INSERT INTO `opsview_performance_metrics` VALUES (190,10,'host_locally_monitored','TCP/IP','rta','ms');
+INSERT INTO `opsview_performance_metrics` VALUES (190,11,'host_locally_monitored','TCP/IP','rtmax','ms');
+INSERT INTO `opsview_performance_metrics` VALUES (190,12,'host_locally_monitored','TCP/IP','rtmin','ms');
+INSERT INTO `opsview_performance_metrics` VALUES (196,13,'monitored_by_slave','SSH','time','s');
+INSERT INTO `opsview_performance_metrics` VALUES (5,18,'monitored_by_slave','VNC','time','s');
+INSERT INTO `opsview_performance_metrics` VALUES (197,26,'opslave','/','root','MB');
+INSERT INTO `opsview_performance_metrics` VALUES (199,27,'opslave','Check Memory','utilisation','');
+INSERT INTO `opsview_performance_metrics` VALUES (200,30,'opslave','SSH','time','s');
+INSERT INTO `opsview_performance_metrics` VALUES (203,35,'opsview','TCP/IP','pl','%');
+INSERT INTO `opsview_performance_metrics` VALUES (203,36,'opsview','TCP/IP','rta','ms');
+INSERT INTO `opsview_performance_metrics` VALUES (203,37,'opsview','TCP/IP','rtmax','ms');
+INSERT INTO `opsview_performance_metrics` VALUES (203,38,'opsview','TCP/IP','rtmin','ms');
+/*!40000 ALTER TABLE `opsview_performance_metrics` ENABLE KEYS */;
+UNLOCK TABLES;
+DROP TABLE IF EXISTS `opsview_host_objects`;
+CREATE TABLE `opsview_host_objects` (
+  `host_object_id` int(11) NOT NULL default '0',
+  `hostname` varchar(64) NOT NULL default '',
+  `object_id` int(11) NOT NULL default '0',
+  `name2` varchar(128) default NULL,
+  `perfdata_available` tinyint(1) NOT NULL default '0',
+  `markdown_filter` tinyint(1) NOT NULL default '0',
+  `servicecheck_id` int(11) NOT NULL default '0',
+  `servicegroup_id` int(11) NOT NULL default '0',
+  PRIMARY KEY  (`object_id`),
+  KEY `object_lookup_idx` (`object_id`,`host_object_id`,`name2`,`hostname`),
+  KEY `host_object_id_idx` (`host_object_id`),
+  KEY `covering_index` (`host_object_id`,`object_id`,`hostname`,`name2`,`perfdata_available`,`markdown_filter`),
+  KEY `events_view_index` (`object_id`,`hostname`,`name2`,`markdown_filter`)
+) TYPE=InnoDB;
+
+LOCK TABLES `opsview_host_objects` WRITE;
+/*!40000 ALTER TABLE `opsview_host_objects` DISABLE KEYS */;
+INSERT INTO `opsview_host_objects` VALUES (136,'monitored_by_slave',5,'VNC',0,0,27,1);
+INSERT INTO `opsview_host_objects` VALUES (115,'cisco',115,NULL,0,0,0,0);
+INSERT INTO `opsview_host_objects` VALUES (116,'opsview',116,NULL,0,0,0,0);
+INSERT INTO `opsview_host_objects` VALUES (117,'cisco1',117,NULL,0,0,0,0);
+INSERT INTO `opsview_host_objects` VALUES (118,'cisco2',118,NULL,0,0,0,0);
+INSERT INTO `opsview_host_objects` VALUES (119,'cisco3',119,NULL,0,0,0,0);
+INSERT INTO `opsview_host_objects` VALUES (120,'cisco4',120,NULL,0,0,0,0);
+INSERT INTO `opsview_host_objects` VALUES (135,'host_locally_monitored',135,NULL,0,0,0,0);
+INSERT INTO `opsview_host_objects` VALUES (136,'monitored_by_slave',136,NULL,0,0,0,0);
+INSERT INTO `opsview_host_objects` VALUES (137,'opslave',137,NULL,0,0,0,0);
+INSERT INTO `opsview_host_objects` VALUES (138,'resolved_services',138,NULL,0,0,0,0);
+INSERT INTO `opsview_host_objects` VALUES (115,'cisco',148,'Another exception',0,0,82,1);
+INSERT INTO `opsview_host_objects` VALUES (115,'cisco',149,'Coldstart',0,0,79,1);
+INSERT INTO `opsview_host_objects` VALUES (115,'cisco',150,'Test exceptions',0,0,81,1);
+INSERT INTO `opsview_host_objects` VALUES (117,'cisco1',151,'Another exception',0,0,82,1);
+INSERT INTO `opsview_host_objects` VALUES (117,'cisco1',152,'Coldstart',0,0,79,1);
+INSERT INTO `opsview_host_objects` VALUES (117,'cisco1',153,'Test exceptions',0,0,81,1);
+INSERT INTO `opsview_host_objects` VALUES (118,'cisco2',154,'Another exception',0,0,82,1);
+INSERT INTO `opsview_host_objects` VALUES (118,'cisco2',155,'Coldstart',0,0,79,1);
+INSERT INTO `opsview_host_objects` VALUES (118,'cisco2',156,'Test exceptions',0,0,81,1);
+INSERT INTO `opsview_host_objects` VALUES (119,'cisco3',157,'Another exception',0,0,82,1);
+INSERT INTO `opsview_host_objects` VALUES (119,'cisco3',158,'Coldstart',0,0,79,1);
+INSERT INTO `opsview_host_objects` VALUES (119,'cisco3',159,'Test exceptions',0,0,81,1);
+INSERT INTO `opsview_host_objects` VALUES (120,'cisco4',160,'Another exception',0,0,82,1);
+INSERT INTO `opsview_host_objects` VALUES (120,'cisco4',161,'Coldstart',0,0,79,1);
+INSERT INTO `opsview_host_objects` VALUES (120,'cisco4',162,'Test exceptions',0,0,81,1);
+INSERT INTO `opsview_host_objects` VALUES (135,'host_locally_monitored',187,'Interface: ADSL',0,0,95,1);
+INSERT INTO `opsview_host_objects` VALUES (135,'host_locally_monitored',188,'Interface: Ethernet0',0,0,95,1);
+INSERT INTO `opsview_host_objects` VALUES (135,'host_locally_monitored',189,'Interface: Interface with quotes in',0,0,95,1);
+INSERT INTO `opsview_host_objects` VALUES (135,'host_locally_monitored',190,'TCP/IP',0,0,29,1);
+INSERT INTO `opsview_host_objects` VALUES (136,'monitored_by_slave',193,'/',0,0,47,1);
+INSERT INTO `opsview_host_objects` VALUES (136,'monitored_by_slave',194,'Check Loadavg',0,0,45,1);
+INSERT INTO `opsview_host_objects` VALUES (136,'monitored_by_slave',195,'Check Memory',0,0,44,1);
+INSERT INTO `opsview_host_objects` VALUES (136,'monitored_by_slave',196,'SSH',0,0,22,1);
+INSERT INTO `opsview_host_objects` VALUES (137,'opslave',197,'/',1,0,47,1);
+INSERT INTO `opsview_host_objects` VALUES (137,'opslave',198,'Check Loadavg',1,0,45,1);
+INSERT INTO `opsview_host_objects` VALUES (137,'opslave',199,'Check Memory',1,0,44,1);
+INSERT INTO `opsview_host_objects` VALUES (137,'opslave',200,'SSH',1,0,22,1);
+INSERT INTO `opsview_host_objects` VALUES (137,'opslave',201,'VNC',0,0,27,1);
+INSERT INTO `opsview_host_objects` VALUES (116,'opsview',202,'Opsview daemon',0,0,54,1);
+INSERT INTO `opsview_host_objects` VALUES (116,'opsview',203,'TCP/IP',1,0,29,1);
+INSERT INTO `opsview_host_objects` VALUES (116,'opsview',204,'nagios processes',0,0,55,1);
+INSERT INTO `opsview_host_objects` VALUES (138,'resolved_services',205,'/',0,0,47,1);
+INSERT INTO `opsview_host_objects` VALUES (138,'resolved_services',206,'AFS',0,0,1,1);
+INSERT INTO `opsview_host_objects` VALUES (138,'resolved_services',207,'Check Loadavg',0,0,45,1);
+INSERT INTO `opsview_host_objects` VALUES (138,'resolved_services',208,'Check Memory',0,0,44,1);
+INSERT INTO `opsview_host_objects` VALUES (138,'resolved_services',209,'SSH',0,0,22,1);
+INSERT INTO `opsview_host_objects` VALUES (138,'resolved_services',210,'TCP/IP',0,0,29,1);
+INSERT INTO `opsview_host_objects` VALUES (138,'resolved_services',211,'VNC',0,0,27,1);
+INSERT INTO `opsview_host_objects` VALUES (214,'doesnt_exist_1',214,NULL,0,0,0,0);
+INSERT INTO `opsview_host_objects` VALUES (215,'doesnt_exist_2',215,NULL,0,0,0,0);
+INSERT INTO `opsview_host_objects` VALUES (214,'doesnt_exist_1',216,'TCP/IP',0,0,29,1);
+INSERT INTO `opsview_host_objects` VALUES (215,'doesnt_exist_2',217,'TCP/IP',0,0,29,1);
+INSERT INTO `opsview_host_objects` VALUES (214,'doesnt_exist_1',218,'faked ok service',0,0,0,0);
+INSERT INTO `opsview_host_objects` VALUES (224,'opslaveclusterA',224,NULL,0,0,0,0);
+INSERT INTO `opsview_host_objects` VALUES (225,'PassiveSlave',225,NULL,0,0,0,0);
+/*!40000 ALTER TABLE `opsview_host_objects` ENABLE KEYS */;
+UNLOCK TABLES;
+DROP TABLE IF EXISTS `opsview_servicechecks`;
+CREATE TABLE `opsview_servicechecks` (
+  `id` int(11) NOT NULL,
+  `name` varchar(64) NOT NULL default '',
+  `description` varchar(128) NOT NULL default '',
+  `multiple` tinyint(1) NOT NULL default '0',
+  `active` tinyint(1) NOT NULL default '0',
+  `markdown_filter` tinyint(1) NOT NULL default '0',
+  `cascaded_from` int(11) NOT NULL default '0',
+  `servicegroup_id` int(11) NOT NULL default '0',
+  PRIMARY KEY  (`id`)
+) TYPE=InnoDB;
+
+LOCK TABLES `opsview_servicechecks` WRITE;
+/*!40000 ALTER TABLE `opsview_servicechecks` DISABLE KEYS */;
+INSERT INTO `opsview_servicechecks` VALUES (1,'AFS','AFS over TCP',0,1,0,0,1);
+INSERT INTO `opsview_servicechecks` VALUES (22,'SSH','Checks SSH on TCP port 22',0,1,0,0,1);
+INSERT INTO `opsview_servicechecks` VALUES (27,'VNC','Checks VNC on TCP port 5900',0,1,0,0,1);
+INSERT INTO `opsview_servicechecks` VALUES (29,'TCP/IP','Checks IP connectivity',0,1,0,0,1);
+INSERT INTO `opsview_servicechecks` VALUES (44,'Check Memory','Checks Memory Utilisation',0,1,0,0,1);
+INSERT INTO `opsview_servicechecks` VALUES (45,'Check Loadavg','Checks Load Average',0,1,0,0,1);
+INSERT INTO `opsview_servicechecks` VALUES (47,'/','Utilisation of / partition',0,1,0,0,1);
+INSERT INTO `opsview_servicechecks` VALUES (54,'Opsview daemon','Checks Opsview daemon is running',0,1,0,0,1);
+INSERT INTO `opsview_servicechecks` VALUES (55,'nagios processes','Checks nagios processes',0,1,0,0,1);
+INSERT INTO `opsview_servicechecks` VALUES (79,'Coldstart','',0,0,0,0,1);
+INSERT INTO `opsview_servicechecks` VALUES (81,'Test exceptions','Stuffed',0,0,0,0,1);
+INSERT INTO `opsview_servicechecks` VALUES (82,'Another exception','Stuffed',0,0,0,0,1);
+INSERT INTO `opsview_servicechecks` VALUES (95,'Interface','Checks for interfaces',1,0,0,107,1);
+/*!40000 ALTER TABLE `opsview_servicechecks` ENABLE KEYS */;
+UNLOCK TABLES;
+DROP TABLE IF EXISTS `opsview_servicegroups`;
+CREATE TABLE `opsview_servicegroups` (
+  `id` int(11) NOT NULL,
+  `name` varchar(128) NOT NULL default '',
+  PRIMARY KEY  (`id`)
+) TYPE=InnoDB;
+
+LOCK TABLES `opsview_servicegroups` WRITE;
+/*!40000 ALTER TABLE `opsview_servicegroups` DISABLE KEYS */;
+INSERT INTO `opsview_servicegroups` VALUES (1,'Operations');
+/*!40000 ALTER TABLE `opsview_servicegroups` ENABLE KEYS */;
+UNLOCK TABLES;
+/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+

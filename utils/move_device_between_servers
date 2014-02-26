@@ -1,0 +1,226 @@
+#!/usr/bin/perl
+use strict;
+use warnings;
+
+use lib '/usr/local/nagios/perl/lib';
+use lib '/usr/local/nagios/lib';
+
+use Opsview;
+use Opsview::Monitoringserver;
+use Opsview::Host;
+use Log::Log4perl;
+use Log::Log4perl::Appender::Screen;
+
+use FindBin qw($Bin $Script);
+
+my $VERSION = '0.01';
+
+use Pod::Usage;
+use Getopt::Long qw (:config no_ignore_case bundling no_auto_abbrev);
+
+=head1 NAME
+
+move_device_between_servers
+
+=head1 SYNOPSIS
+
+S<< move_device_between_servers [-?hV] <From> <To>  <device> [...] >>
+
+=head1 DESCRIPTION
+
+Moved a monitored device from monitoring server From to To
+
+=head1 OPTIONS
+
+=over
+
+=cut
+
+#### Set up default options available for all scripts,
+# i.e. "<script> --version" or "<script> --help"
+# All command line options are stored within a hash for easy access
+# This initialises hash and defines some entries in one go
+# See "perldoc perldata" for more info
+my %options = (
+    'help|h|?'  => 0,
+    'man'       => 0,
+    'version|V' => 0,
+    'debug:+'   => 0,
+);
+
+#### Document default options
+
+=item --help, -?, -h
+
+Display basic help 
+
+=item --man
+
+Display man page
+
+=item --debug [0-9], --debug [--debug [...]]
+
+Enable debugging mode (using more than once increases verbosity, or specify
+a level explicitly to a maximum of level 8) 
+
+=item --version, -V
+
+Show version information
+
+=cut
+
+#### End of options
+
+=back
+
+=head1 ARGUMENTS
+
+=over
+
+=item <From>
+
+Monitoring server to move the device from
+
+=item <To>
+
+Monitoring server to move the device to
+
+=item <device> [...]
+
+One or more deivers to move from C<From> to C<To>
+
+=back
+
+=cut
+
+GetOptions( \%options, keys(%options) ) || pod2usage( -verbose => 1 );
+die("Version: $VERSION\n") if ( $options{version} );
+pod2usage( -verbose => 1 ) if ( $options{'?'}  || $options{help} );
+pod2usage( -verbose => 2 ) if ( $options{HELP} || $options{man} );
+$options{debug} ||= 0;
+$options{debug} = 8 if ( $options{debug} > 8 );
+
+Log::Log4perl::init( "$Bin/../etc/Log4perl.conf" );
+my $logger   = Log::Log4perl->get_logger($Script);
+my $appender = Log::Log4perl::Appender->new(
+    "Log::Log4perl::Appender::Screen",
+    name   => "screenlog",
+    stderr => 0
+);
+$logger->add_appender($appender);
+
+my $from = shift;
+if ( !$from ) {
+    $logger->warn( '"From" server has not been provided' );
+    list_servers();
+    die $/;
+}
+my $from_obj = Opsview::Monitoringserver->search( { name => $from } )->first;
+if ( !$from_obj ) {
+    $logger->warn( 'Unable to find monitoring server "', $from, '"', $/ );
+    list_servers();
+    die $/;
+}
+my $to = shift;
+if ( !$to ) {
+    $logger->warn( '"To" server has not been provided' );
+    list_servers();
+    die $/;
+}
+my $to_obj = Opsview::Monitoringserver->search( { name => $to } )->first;
+if ( !$to_obj ) {
+    $logger->warn( 'Unable to find monitoring server "', $to, '"' );
+    list_servers();
+    die $/;
+}
+
+if ( $from eq $to ) {
+    $logger->warn( '"From" and "To" cannot be the same server ', "($from)" );
+    list_servers();
+    die $/;
+}
+
+if ( !@ARGV ) {
+    $logger->warn( 'No monitored devices to move provided ', $/ );
+    list_devices($from_obj);
+    die $/;
+}
+
+foreach my $device (@ARGV) {
+    my $host = Opsview::Host->search( { name => $device } )->first;
+    if ( !$host ) {
+        $logger->warn( 'Unable to find device "', $device, '"' );
+        next;
+    }
+
+    if ( $host->monitored_by() == $to_obj ) {
+        $logger->warn( $host->name, ' already monitored by ',
+            $host->monitored_by->name );
+        next;
+
+    }
+
+    $host->monitored_by($to_obj);
+    $host->uncommitted(1);
+    $host->update;
+    $logger->warn( 'Amended ', $host->name, ' to be monitored by ',
+        $host->monitored_by->name );
+}
+
+sub list_servers {
+    print 'Available monitoring servers are : ', $/;
+    my @servers = Opsview::Monitoringserver->retrieve_all;
+    foreach my $server (@servers) {
+        print "\t", $server->name, ' (', $server, ') ', $/;
+    }
+}
+
+sub list_devices {
+    my ($monitoring_server) = @_;
+    print 'Available devices on ', $from_obj->name, ' are : ', $/;
+    my @devices = $from_obj->monitors;
+    foreach my $device (@devices) {
+        print "\t", $device->name, $/;
+    }
+}
+
+__END__
+# Remaining POD for man page/help text
+
+=head1 NOTES
+
+Changes as logged under 'WARN' into the F<opsviewd.log> logfile
+
+=head1 FILES
+
+F</var/log/opsview/opsviewd.log> - actions taken are logged into here
+
+=head1 AUTHOR AND COPYRIGHT
+
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This software is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Opsview; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+=head1 KNOWN BUGS
+
+None at this time
+
+=head1 SEE ALSO
+
+L<perl>
+
+L<http://docs.opsview.com/>
+
+=cut

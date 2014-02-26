@@ -1,0 +1,261 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin/../perl/lib", "$Bin/../lib";
+use Nagios::Plugin qw(OK UNKNOWN %ERRORS %STATUS_TEXT);
+use Runtime;
+use Runtime::Searches;
+
+my $np = Nagios::Plugin->new(
+    shortname => "KEYWORDS",
+    usage     => "Usage: %s --keyword=NAME",
+    blurb =>
+      "One or more keywords may be assigned to hosts and services. These keywords 
+can be used to represent an application or service. This plugin allows you 
+to monitor the status of all services represented by the specified keyword. 
+It will output a summary of any service failures (warning, critical or 
+unknown). The plugin state will reflect the most severe service failure.
+
+This plugin can be used in conjunction with a viewport to provide email or 
+SMS alerts. It can also be used to summarise the status of an entire 
+application, reducing the quantity of alerts generated.",
+    extra => "
+Example: 
+    To monitor all services tagged with the keyword 'opsview':
+
+    check_opsview_keyword --keyword=opsview
+
+    If all services are in an 'OK' state the plugin will output:
+    'OK: opsview'
+
+    If one of the services tagged with the opsview keyword is in a CRITICAL state the plugin will output:
+    'opsview CRITICAL (critical=1)'
+
+    If the overall state algorithm is 'percent_ok', then a percentage is calculated based on 
+    the number of services in an OK state divided by the total number of services. You can then use the --percent_warning
+    and the --percent_critical parameters to set the alert level based on this percentage. 
+
+    For example, if you have a keyword called 'webservers' with 10 services, with 5 in an OK state:
+
+    check_opsview_keyword --keyword=webservers --algorithm=percent_ok --percent_warning=\@50:75 --percent_critical=\@0:50 
+
+    Will calculate the percent OK state as 50% and return CRITICAL.
+",
+);
+
+# Just don't state that keyword is repeatable at the moment
+$np->add_arg(
+    spec     => 'keyword|k=s@',
+    help     => '-k, --keyword=NAME',
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "algorithm=s",
+    help =>
+      "--algorithm=NAME.\n   Algorithm to use to calculate overall state of keyword. Defaults to highest_failure_state. Other options: percent_ok",
+    default => "highest_failure_state",
+);
+
+$np->add_arg(
+    spec => "percent_critical=s",
+    help => "--percent_critical=RANGE. If in this range, raise a CRITICAL",
+);
+
+$np->add_arg(
+    spec => "percent_warning=s",
+    help => "--percent_warning=RANGE. If in this range, raise a WARNING",
+);
+
+$np->getopts;
+
+my $valid_algorithms = {
+    highest_failure_state => 1,
+    percent_ok            => 1,
+};
+my $algorithm =
+  exists $valid_algorithms->{ $np->opts->algorithm }
+  ? $np->opts->algorithm
+  : "highest_failure_state";
+
+my $keywords = $np->opts->keyword || [];
+
+my $viewports = Runtime::Searches->list_summarized_hosts_services(
+    "",
+    {
+        summarizeon => "keyword",
+        keyword     => $keywords
+    }
+);
+
+my @keywords_ok;
+my @keywords_error;
+my @messages = ();
+
+# Indexed by state
+my $keyword_state  = {};
+my $keywords_found = [];
+
+if ( $viewports->{summary}->{total} == 0 ) {
+    $np->nagios_exit( UNKNOWN,
+        "No services found for keywords: " . join( ", ", @$keywords )
+    );
+}
+
+# For each keyword found, generate $keyword_state with the highest state of all services within
+my $num_keywords = scalar @{ $viewports->{list} };
+foreach my $keyword_hash ( @{ $viewports->{list} } ) {
+    if ( $np->opts->verbose >= 3 ) {
+        require Data::Dump;
+        print Data::Dump::dump($keyword_hash) . $/;
+    }
+    my $keyword = $keyword_hash->{name};
+
+    my $keyword_info = { name => $keyword };
+    my $overall_state;
+    if ( $algorithm eq "highest_failure_state" ) {
+        $overall_state = $keyword_hash->{services}->{computed_state};
+    }
+    elsif ( $algorithm eq "percent_ok" ) {
+        my $ok         = $keyword_hash->{services}->{ok}->{handled} || 0;
+        my $total      = $keyword_hash->{services}->{total};
+        my $percentage = $ok / $total * 100;
+        $percentage = sprintf( "%d", $percentage );
+        $np->add_perfdata(
+            label => ( $num_keywords == 1 ? "ok" : "$keyword-ok" ),
+            value => $ok,
+        );
+        $np->add_perfdata(
+            label => ( $num_keywords == 1 ? "total" : "$keyword-total" ),
+            value => $total,
+        );
+        $overall_state = $np->check_threshold(
+            check    => $percentage,
+            warning  => $np->opts->percent_warning,
+            critical => $np->opts->percent_critical,
+        );
+        $overall_state = lc( $STATUS_TEXT{$overall_state} );
+        $keyword_info->{extra_text} = "Percentage:$percentage%";
+    }
+
+    push @{ $keyword_state->{$overall_state} }, $keyword_info;
+    push @{$keywords_found}, $keyword;
+
+    if ( $overall_state eq "ok" ) {
+        next;
+    }
+
+    my $services_error = Runtime::Searches->list_services(
+        "",
+        {
+            keyword => $keyword,
+            state   => [ 1, 2, 3 ],
+            order   => "state_desc"
+        }
+    );
+    my @output;
+
+    # Add output messages together, based on state
+    foreach my $host_hash ( @{ $services_error->{list} } ) {
+        foreach my $service_hash ( @{ $host_hash->{services} } ) {
+            push @output,
+                uc( $service_hash->{state} ) . " "
+              . $host_hash->{name} . "::"
+              . $service_hash->{name};
+        }
+    }
+    $keyword_info->{detail} = \@output;
+    $keyword_info->{errors} = scalar @output;
+    $keyword_info->{critical} =
+      $services_error->{summary}->{service}->{critical} || 0;
+    $keyword_info->{warning} = $services_error->{summary}->{service}->{warning}
+      || 0;
+    $keyword_info->{unknown} = $services_error->{summary}->{service}->{unknown}
+      || 0;
+}
+
+if ( exists $keyword_state->{ok} && scalar keys %$keyword_state == 1 ) {
+    $np->nagios_exit( OK, join( " ", @$keywords_found ) );
+}
+
+my $highest_state;
+
+my @keyword_summary;
+foreach my $s (qw(critical warning unknown ok)) {
+    my $state = uc $s;
+    if ( exists $keyword_state->{$s} ) {
+        $highest_state = $state if ( !$highest_state );
+        foreach my $keyword_info ( @{ $keyword_state->{$s} } ) {
+            @_ = ( $keyword_info->{name}, uc($state) );
+            push @_, $keyword_info->{extra_text} if $keyword_info->{extra_text};
+            my $output = join( " ", @_ );
+            if ( $s ne "ok" ) {
+                $output .= " (" . join(
+                    " ",
+                    map {
+                        $keyword_info->{$_} > 0
+                          ? "$_=" . $keyword_info->{$_}
+                          : ()
+                    } (qw(critical warning unknown))
+                ) . ")";
+            }
+            push @keyword_summary, $output;
+        }
+    }
+}
+
+print join( ", ", @keyword_summary );
+if ( $np->perfdata && $np->all_perfoutput ) {
+    print " |" . $np->all_perfoutput;
+}
+print "\n";
+
+my $total_lines          = 10;
+my $services_per_keyword = 3;
+DETAIL: {
+    foreach my $s (qw(critical warning unknown)) {
+        my $state = uc $s;
+        next unless ( exists $keyword_state->{$s} );
+        KEYWORD: foreach my $keyword_info ( @{ $keyword_state->{$s} } ) {
+            my $detail_lines = $services_per_keyword;
+            print $keyword_info->{name}
+              . " (errors="
+              . $keyword_info->{errors} . "):\n";
+            $total_lines--;
+            foreach my $detail ( @{ $keyword_info->{detail} } ) {
+                print " " . $detail . "\n";
+                $detail_lines--;
+                $total_lines--;
+                if ( $detail_lines <= 0 ) {
+                    print " ...\n";
+                    next KEYWORD;
+                }
+                last DETAIL if $total_lines <= 0;
+            }
+        }
+    }
+}
+
+exit $ERRORS{$highest_state};

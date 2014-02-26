@@ -1,0 +1,688 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#	ndoutils_configdumpend
+#
+# DESCRIPTION:
+#	Runs the SQL required to setup Opsview's helper tables
+#	when the db has been populated
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+use Log::Log4perl;
+use Runtime;
+use Opsview::Config;
+use Utils::Nagiosgraph qw(urldecode);
+
+my $rootdir = "/usr/local/nagios";
+Log::Log4perl::init( "$rootdir/etc/Log4perl.conf" );
+
+my $LAST_RELOAD_TIME = $ARGV[0] || time;
+
+$0 = "ndoutils_configdumpend";
+my $logger = Log::Log4perl->get_logger($0);
+
+my $MAX_RETRIES = 5;
+
+my $dbh = Runtime->db_Main;
+$logger->info(
+    "Start - processing reloads up to "
+      . scalar( localtime($LAST_RELOAD_TIME) )
+);
+
+my $opsview_db = Opsview::Config->db;
+my $runtime_db = Opsview::Config->runtime_db;
+
+sub copy_table {
+    my ( $org_table, $temporary ) = @_;
+    my $new_table;
+    my $create = "CREATE";
+    if ($temporary) {
+        $new_table = $org_table . "_temporary";
+        $create    = "CREATE TEMPORARY";
+    }
+    else {
+        $new_table = $org_table . '_tmp';
+    }
+    $logger->debug( 'Copying ' . $org_table . ' to ' . $new_table );
+    deadlock_protected( 'DROP TABLE IF EXISTS ' . $new_table );
+    deadlock_protected(
+        $create . ' TABLE ' . $new_table . ' LIKE ' . $org_table );
+    return $new_table;
+}
+
+sub rename_table {
+    my $org_table = shift;
+    ( my $new_table = $org_table ) =~ s/_tmp$//;
+    my $old_table = $new_table . '_old';
+    $logger->debug( 'Renaming ' . $org_table . ' to ' . $new_table );
+    deadlock_protected( 'RENAME TABLE '
+          . $new_table . ' TO '
+          . $old_table . ', '
+          . $org_table . ' TO '
+          . $new_table );
+    $logger->debug( 'Dropping ' . $old_table );
+    deadlock_protected( 'DROP TABLE ' . $old_table );
+}
+
+sub deadlock_protected {
+    my @args = @_;
+    my $try  = 0;
+    SQL_DO: eval {
+        $try++;
+        $logger->warn("Restarting query due to deadlock, try: $try.\n")
+          if $try > 1;
+        if ( @args == 1 && ref $args[0] eq 'CODE' ) {
+            $args[0]->();
+        }
+        else {
+            $dbh->do(@args);
+        }
+    };
+    if ( my $e = $@ ) {
+        chomp $e;
+        if ( $e =~ /Deadlock.*transaction/ ) {
+            my $wait_for = $MAX_RETRIES - $try + 1;
+            $logger->warn( "Deadlock detected, retry in ${wait_for}s.\n$e\n" );
+            sleep $wait_for;
+            goto SQL_DO unless $try >= $MAX_RETRIES;
+        }
+        else {
+            $logger->fatal($e);
+        }
+    }
+}
+
+my $table;
+my $temp_table;
+
+# Matches contacts between runtime and opsview
+deadlock_protected(
+    sub {
+        $table = copy_table('opsview_contacts');
+        $dbh->do( "
+    INSERT INTO $table
+    SELECT c.id, o.object_id, c.name
+    FROM
+     $opsview_db.contacts c,
+     nagios_objects o
+    WHERE
+     o.objecttype_id = 10
+     AND binary c.name = o.name1
+    " );
+        rename_table($table);
+    }
+);
+
+# Matches contacts with services based on contactgroups
+# Note: if a contact is marked against a service manually, this will not get picked up
+# Note: duplicate rows are ignored because of the intermediate table
+deadlock_protected(
+    sub {
+        $table = copy_table('opsview_contact_services');
+        $dbh->do( "
+INSERT INTO $table 
+SELECT DISTINCT c.id, s.service_object_id
+FROM
+ opsview_contacts c,
+ nagios_contactgroup_members cgm,
+ nagios_contactgroups cg,
+ nagios_service_contactgroups scg,
+ nagios_services s
+WHERE
+ c.contact_object_id = cgm.contact_object_id
+ AND cgm.contactgroup_id = cg.contactgroup_id
+ AND cg.contactgroup_object_id = scg.contactgroup_object_id
+ AND scg.service_id = s.service_id
+ AND s.config_type = 1
+" );
+        rename_table($table);
+    }
+);
+
+# Copies hostgroup table from opsview
+deadlock_protected(
+    sub {
+        $table = copy_table('opsview_hostgroups');
+        $dbh->do(
+            "INSERT INTO $table SELECT id, parentid, name, lft, rgt, matpath, matpathid FROM $opsview_db.hostgroups"
+        );
+        rename_table($table);
+    }
+);
+
+deadlock_protected(
+    "CREATE TEMPORARY TABLE temp_hosts SELECT object_id AS host_object_id, name1 AS hostname FROM nagios_objects WHERE objecttype_id=1 AND is_active=1"
+);
+
+deadlock_protected(
+    sub {
+        $table = copy_table('opsview_hostgroup_hosts');
+        $dbh->do( "
+INSERT INTO $table
+SELECT parent.id, o.host_object_id 
+FROM $opsview_db.hosts oh, opsview_hostgroups node, opsview_hostgroups parent, temp_hosts o 
+WHERE 
+ oh.hostgroup = node.id 
+ AND node.lft BETWEEN parent.lft AND parent.rgt 
+ AND o.hostname = oh.name
+" );
+        rename_table($table);
+    }
+);
+
+deadlock_protected(
+    sub {
+        $table = copy_table( 'opsview_monitoringservers' );
+        $dbh->do( "
+INSERT INTO $table
+SELECT monitoringservers.id, monitoringservers.name, monitoringservers.activated, monitoringservers.passive,
+ GROUP_CONCAT(hosts.name)
+FROM 
+ $opsview_db.monitoringservers monitoringservers
+LEFT JOIN
+ $opsview_db.monitoringclusternodes
+ON
+ monitoringservers.id = monitoringclusternodes.monitoringcluster
+LEFT JOIN
+ $opsview_db.hosts hosts
+ON
+ monitoringservers.host = hosts.id
+GROUP BY monitoringservers.id
+" );
+        rename_table($table);
+    }
+);
+
+deadlock_protected(
+    sub {
+        $table = copy_table('opsview_monitoringclusternodes');
+        $dbh->do( "
+INSERT INTO $table
+SELECT monitoringclusternodes.id, oh.name, oh.ip
+FROM
+ $opsview_db.monitoringclusternodes monitoringclusternodes,
+ $opsview_db.hosts oh
+WHERE
+ monitoringclusternodes.host = oh.id
+" );
+        rename_table($table);
+    }
+);
+
+my $opsview_hosts_new = copy_table( 'opsview_hosts' );
+
+deadlock_protected(
+    sub {
+        $dbh->do( "
+INSERT INTO $opsview_hosts_new 
+SELECT temp_hosts.host_object_id, oh.id, temp_hosts.hostname, oh.ip, oh.alias, icons.filename, oh.hostgroup, oh.monitored_by, h2mcn.primary_node, h2mcn.secondary_node, 0, 0, 0
+FROM $opsview_db.hosts oh
+LEFT JOIN $opsview_db.temporary_hostmonitoredbynode h2mcn
+ON oh.id = h2mcn.hostid
+JOIN temp_hosts, $opsview_db.icons icons
+WHERE temp_hosts.hostname = oh.name
+AND oh.icon = icons.name
+" );
+    }
+);
+
+deadlock_protected( "DROP TABLE temp_hosts" );
+
+# Update num_interfaces with number of active interfaces set for this host
+$logger->debug( 'Updating num_interfaces' );
+
+deadlock_protected(
+    sub {
+        $dbh->do( "
+UPDATE
+ $opsview_hosts_new hosts,
+ (SELECT hostid, COUNT(*) AS c FROM $opsview_db.hostsnmpinterfaces WHERE active=1 GROUP BY hostid) tt
+SET hosts.num_interfaces=tt.c
+WHERE tt.hostid=hosts.opsview_host_id
+" );
+    }
+);
+
+# Matches hosts with services, based on ndoutils' object ids
+
+deadlock_protected(
+    sub {
+        $table = copy_table( 'opsview_host_services' );
+        $dbh->do( "
+INSERT INTO $table 
+SELECT s.host_object_id, o.name1, o.object_id, o.name2, (s.notes_url != ''), sc.markdown_filter, sc.id, sc.servicegroup, hosts.icon_filename 
+FROM  nagios_objects o
+LEFT JOIN $opsview_db.servicechecks sc 
+ ON o.name2 = sc.name
+JOIN nagios_services s
+ ON o.object_id = s.service_object_id
+JOIN $opsview_hosts_new hosts
+ ON s.host_object_id = hosts.id
+WHERE 
+ o.objecttype_id=2 AND s.config_type = 1
+" );
+    }
+);
+
+# Above misses out multi-servicechecks. Have to do in two steps otherwise the LIKE brings in other servicechecks
+deadlock_protected( "
+UPDATE $table
+LEFT JOIN $opsview_db.servicechecks sc
+ ON servicename LIKE CONCAT(sc.name,': %')
+SET servicecheck_id=sc.id, $table.markdown_filter=sc.markdown_filter, servicegroup_id=sc.servicegroup
+WHERE
+ servicecheck_id=0
+" );
+
+# Update opsview_hosts' num_services. We don't rename this until after we populated opsview_host_services
+$logger->debug( 'Updating num_services' );
+deadlock_protected( "
+UPDATE 
+ $opsview_hosts_new hosts,
+ (SELECT host_object_id AS id, COUNT(*) AS c FROM $table GROUP BY id) tt
+SET hosts.num_services=tt.c
+WHERE tt.id=hosts.id
+" );
+
+# Make tables live in the usual order of opsview_hosts, then opsview_host_services
+rename_table($opsview_hosts_new);
+rename_table($table);
+
+deadlock_protected(
+    sub {
+        $table = copy_table( "opsview_servicechecks" );
+        $dbh->do( "
+INSERT INTO $table
+SELECT DISTINCT(sc.id),sc.name,sc.description,(sc.attribute IS NOT NULL),(sc.checktype=1 || sc.checktype=5),sc.markdown_filter,sc.cascaded_from,sc.servicegroup
+FROM 
+ $opsview_db.servicechecks sc,
+ opsview_host_services
+WHERE
+ opsview_host_services.servicecheck_id = sc.id
+ " );
+        rename_table($table);
+    }
+);
+
+deadlock_protected(
+    sub {
+        $table = copy_table( 'opsview_servicegroups' );
+        $dbh->do( "
+INSERT INTO $table
+SELECT DISTINCT(sg.id),sg.name
+FROM 
+ $opsview_db.servicegroups sg,
+ opsview_servicechecks
+WHERE 
+ opsview_servicechecks.servicegroup_id = sg.id
+" );
+        rename_table($table);
+    }
+);
+
+# Create lookup table so that can link opsview_hostgroup_hosts to nagios_statehistory
+deadlock_protected(
+    sub {
+        $table = copy_table( 'opsview_host_objects' );
+        $dbh->do( "
+INSERT INTO $table 
+(
+SELECT host_object_id, hostname, service_object_id, servicename, perfdata_available, markdown_filter, servicecheck_id, servicegroup_id FROM opsview_host_services
+)
+UNION
+(
+SELECT id, name, id, NULL, 0, 0, 0, 0 FROM opsview_hosts
+)
+" );
+        rename_table($table);
+    }
+);
+
+# Make a hosts only table
+deadlock_protected(
+    sub {
+        $table = copy_table('opsview_contact_hosts');
+        $dbh->do( "
+INSERT INTO $table
+SELECT DISTINCT opsview_contact_services.contactid, opsview_host_services.host_object_id 
+FROM
+ opsview_contact_services,
+ opsview_host_services
+WHERE
+ opsview_host_services.service_object_id = opsview_contact_services.service_object_id
+" );
+        rename_table($table);
+    }
+);
+
+# Make a generic objects table (primarily for joining to nagios_statechanges)
+deadlock_protected(
+    sub {
+        $table = copy_table('opsview_contact_objects');
+        $logger->debug('Running first insert');
+        $dbh->do( "
+INSERT INTO $table
+SELECT contactid, service_object_id
+FROM opsview_contact_services
+" );
+        $logger->debug('Running second insert');
+        $dbh->do( "
+INSERT INTO $table
+SELECT contactid, host_object_id
+FROM opsview_contact_hosts
+" );
+        rename_table($table);
+    }
+);
+
+deadlock_protected(
+    sub {
+        $temp_table = copy_table( 'opsview_viewports', 'temporary' );
+        $dbh->do( "
+INSERT INTO $temp_table 
+SELECT 
+ kh.keywordid, 
+ k.name,
+ ohs.hostname, 
+ ohs.servicename, 
+ ohs.host_object_id, 
+ ohs.service_object_id 
+FROM 
+ $opsview_db.keywords as k,
+ $opsview_db.keywordhosts as kh, 
+ $opsview_db.hosts as h, 
+ $opsview_db.keywordservicechecks as ksc, 
+ $opsview_db.servicechecks as sc, 
+ $runtime_db.opsview_host_services ohs 
+WHERE 
+ ksc.keywordid = kh.keywordid 
+ AND kh.hostid = h.id
+ AND ksc.servicecheckid = sc.id 
+ AND ohs.hostname = h.name 
+ AND (ohs.servicename = sc.name || ohs.servicename like concat(sc.name,': %') )
+ AND kh.keywordid = k.id
+ AND k.all_hosts = 0
+ AND k.all_servicechecks = 0
+" );
+        $dbh->do( "
+INSERT INTO $temp_table 
+SELECT 
+ k.id,
+ k.name,
+ ohs.hostname, 
+ ohs.servicename, 
+ ohs.host_object_id, 
+ ohs.service_object_id 
+FROM 
+ $opsview_db.keywords as k,
+ $opsview_db.keywordhosts as kh, 
+ $opsview_db.hosts as h, 
+ $runtime_db.opsview_host_services ohs 
+WHERE 
+ k.id = kh.keywordid
+ AND kh.hostid = h.id
+ AND ohs.hostname = h.name 
+ AND k.all_servicechecks = 1
+" );
+        $dbh->do( "
+INSERT INTO $temp_table 
+SELECT 
+ k.id,
+ k.name,
+ ohs.hostname, 
+ ohs.servicename, 
+ ohs.host_object_id, 
+ ohs.service_object_id 
+FROM 
+ $opsview_db.keywords as k,
+ $opsview_db.keywordservicechecks as ksc, 
+ $opsview_db.servicechecks as sc, 
+ $runtime_db.opsview_host_services ohs 
+WHERE 
+ k.id = ksc.keywordid
+ AND ksc.servicecheckid = sc.id 
+ AND (ohs.servicename = sc.name || ohs.servicename like concat(sc.name,': %') )
+ AND k.all_hosts = 1
+" );
+    }
+);
+
+deadlock_protected(
+    sub {
+        $table = copy_table('opsview_viewports');
+
+        # Inserts the services
+        $dbh->do( "
+INSERT INTO $table
+SELECT DISTINCT viewportid, keyword, hostname, servicename, host_object_id, object_id 
+FROM $temp_table
+" );
+
+        # Adds the hosts
+        $dbh->do( "
+INSERT INTO $table
+SELECT DISTINCT viewportid, keyword, hostname, NULL, host_object_id, host_object_id
+FROM $temp_table
+" );
+
+        rename_table($table);
+    }
+);
+
+# Make a table with all known hostnames, servicenames and metricnames
+deadlock_protected(
+    sub {
+        $table = copy_table( 'opsview_performance_metrics' );
+        my @perfmetric_values;
+        my $do_large_perfmetric_insert = sub {
+            my $force = shift;
+
+            # Choose 1000 as a general optimisation
+            if (   ( ( my $vals = scalar @perfmetric_values / 4 ) >= 1000 )
+                || ( $force && @perfmetric_values ) )
+            {
+                $dbh->do(
+                    "INSERT INTO $table (hostname, servicename, metricname, uom) VALUES "
+                      . ( join ',', ("(?,?,?,?)") x $vals ),
+                    {}, @perfmetric_values
+                );
+                @perfmetric_values = ();
+            }
+        };
+
+        # Read all hostnames, servicenames, metricnames from var/rrd directory
+        my $rootdir = $ENV{OPSVIEW_TEST_ROOTDIR} || Opsview::Config->root_dir;
+        my $rrddir = "$rootdir/var/rrd";
+        opendir( RRDDIR, "$rrddir" );
+        foreach my $hostname ( sort grep !/^\./, readdir RRDDIR ) {
+            opendir( HOST, "$rrddir/$hostname" );
+            foreach my $servicename ( sort grep !/^\./, readdir HOST ) {
+                opendir( SERVICE, "$rrddir/$hostname/$servicename" );
+                foreach my $metric ( sort grep !/^\./, readdir SERVICE ) {
+                    my $uom = "";
+                    if (   -e "$rrddir/$hostname/$servicename/$metric/uom"
+                        && -s "$rrddir/$hostname/$servicename/$metric/uom" )
+                    {
+                        open UOM, "$rrddir/$hostname/$servicename/$metric/uom";
+                        $uom = <UOM>;
+                        chomp $uom;
+                        close UOM;
+                    }
+                    push @perfmetric_values, urldecode($hostname),
+                      urldecode($servicename), urldecode($metric), $uom;
+                }
+            }
+            $do_large_perfmetric_insert->();
+        }
+        $do_large_perfmetric_insert->(1);
+
+        # Set the service_object_id
+        $dbh->do(
+            "UPDATE $table, opsview_host_services 
+SET $table.service_object_id=opsview_host_services.service_object_id 
+WHERE 
+ opsview_host_services.hostname = $table.hostname
+ AND opsview_host_services.servicename = $table.servicename
+"
+        );
+
+        # These are rrds that exist, but the services are not defined in Opsview/Nagios
+        $dbh->do("DELETE FROM $table WHERE service_object_id=0");
+
+        rename_table($table);
+    }
+);
+
+# Network topology map
+deadlock_protected(
+    sub {
+        $table = copy_table( 'opsview_topology_map' );
+
+        $dbh->do(
+            qq{
+INSERT INTO $table ( monitored_by, object_id, host_id, opsview_host_id,
+    name, parent_id, parent_object_id, parent_name, child_id, child_object_id, child_name )
+SELECT * FROM (
+(
+    select oh.monitored_by, no.object_id, nh_1.host_id,
+    oh.opsview_host_id as opsview_host_id, oh.name, poh.opsview_host_id as parent_id,
+    no_2.object_id as parent_object_id, poh.name as parent_name, NULL as child_id,
+    NULL as child_object_id, NULL as child_name
+    from
+    opsview_hosts oh inner join nagios_objects no on oh.id=no.object_id
+    inner join nagios_hosts nh_1 on no.object_id=nh_1.host_object_id
+    left join nagios_host_parenthosts nhph on nh_1.host_id=nhph.host_id
+    left join nagios_objects no_2 on nhph.parent_host_object_id=no_2.object_id
+    left join opsview_hosts poh on no_2.object_id=poh.id
+)
+union
+(
+    select oh.monitored_by, nhph.parent_host_object_id as object_id,
+    nhph.host_id, oh.opsview_host_id as opsview_host_id, oh.name, NULL as parent_id,
+    NULL as parent_object_id, NULL as parent_name, coh.opsview_host_id as child_id,
+    coh.id as child_parent_id, coh.name as child_name
+    from
+    nagios_host_parenthosts nhph inner join opsview_hosts oh on nhph.parent_host_object_id=oh.id
+    left join nagios_hosts nh on nhph.host_id=nh.host_id left join opsview_hosts coh on nh.host_object_id=coh.id
+) order by opsview_host_id, IF(ISNULL(parent_id),1,0), parent_id, IF(ISNULL(child_id),1,0), child_id
+) _
+    }
+        );
+
+        # Update num_interfaces with number of active interfaces set for this host
+        $logger->debug( 'Updating num_children' );
+        $dbh->do( "
+UPDATE
+ opsview_hosts hosts,
+ (SELECT object_id, COUNT(*) AS c FROM $table WHERE child_id IS NOT NULL GROUP BY object_id) tt
+SET hosts.num_children=tt.c
+WHERE tt.object_id=hosts.id
+" );
+
+        rename_table($table);
+    }
+);
+
+deadlock_protected(
+    sub {
+        $table = copy_table( 'opsview_hosts_matpaths' );
+
+        my $all_host_ids = $dbh->selectcol_arrayref(
+            q{
+            SELECT id FROM opsview_hosts
+        }
+        );
+
+        my $sth_find_parent = $dbh->prepare_cached(
+            q{
+            SELECT parent_object_id
+            FROM opsview_topology_map
+            WHERE object_id = ?
+                AND child_object_id IS NULL
+                AND parent_object_ID IS NOT NULL
+            GROUP BY parent_object_id
+        }
+        );
+
+        my $sth_host_matpath = $dbh->prepare_cached(
+            qq{
+            INSERT INTO $table (object_id, matpath, depth) VALUES(?, ?, ?)
+        }
+        );
+
+        my $find_parent;
+        $find_parent = sub {
+            my $id = shift;
+
+            return unless $id;
+
+            my $parents = $dbh->selectcol_arrayref( $sth_find_parent, {}, $id );
+
+            return @$parents;
+        };
+
+        my $set_host_matpath = sub {
+            my $object_id = shift;
+
+            my $make_tree;
+            $make_tree = sub {
+                my ( $id, $depth, @tree ) = @_;
+
+                return unless $id;
+
+                my @parents = $find_parent->($id);
+
+                if (@parents) {
+                    for my $parent (@parents) {
+                        $make_tree->( $parent, $depth + 1, @tree, $id );
+                    }
+                }
+                else { # reached root
+                    push @tree, $id;
+                    my $matpath = join( ',', reverse @tree ) . ",";
+                    $sth_host_matpath->execute( $object_id, $matpath, $depth );
+                }
+            };
+            $make_tree->( $object_id, 1 );
+        };
+        for my $host_id (@$all_host_ids) {
+            $set_host_matpath->($host_id);
+        }
+        rename_table($table);
+    }
+);
+
+# Clear out downtime that should have finished.  Nagios should pass an event
+# to the db to say the downtime is complete but some circumstances such as
+# db being unavailable can prevent this
+deadlock_protected(
+    q{delete from nagios_scheduleddowntime
+        where scheduled_end_time < NOW()
+            OR ( UNIX_TIMESTAMP(entry_time) < ? AND comment_data LIKE '%Host pending deletion' )},
+    {}, $LAST_RELOAD_TIME
+);
+
+$logger->info( "End" );

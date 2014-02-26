@@ -1,0 +1,460 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#	opsviewd
+#
+# DESCRIPTION:
+#	Opsview daemon. Only run on the master
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use FindBin qw($Bin);
+use lib $Bin, "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+use Opsview;
+use Opsview::Monitoringserver;
+use Opsview::Auditlog;
+use POSIX;
+use IO::Socket;
+use IO::Select;
+use Log::Log4perl;
+use Getopt::Std;
+use Try::Tiny;
+use Scalar::Util qw( looks_like_number );
+use Opsview::Utils qw(get_ssh_version);
+
+$| = 1;
+
+# Set name of process to opsviewd
+$0 = "opsviewd";
+
+my $opts = {};
+getopts( 'hkr', $opts ) || die( "Incorrect usage: $!\n" );
+usage() if ( $opts->{h} );
+
+Log::Log4perl::init_and_watch( "$Bin/../etc/Log4perl.conf", 30 );
+our $logger = Log::Log4perl->get_logger( "opsviewd" );
+
+# Check version of ssh to see what extra options can be used.
+my $ssh_version = get_ssh_version();
+$logger->info( "detected ssh version: $ssh_version" );
+
+my @ssh_options;
+
+# Note: Solaris does not cope with these options so ensure version
+# number is high enough to avoid use there
+if ( $ssh_version >= 4.0 ) {
+    push( @ssh_options,
+        "-o TCPKeepAlive=yes",
+        "-o ServerAliveCountMax=3",
+        "-o ServerAliveInterval=10"
+    );
+}
+
+# Option first added in 4.6p1
+if ( $ssh_version >= 4.6 ) {
+    push( @ssh_options, '-o ExitOnForwardFailure=yes' );
+}
+
+$logger->info( "ssh tunnel options for slaves: @ssh_options" );
+
+my $pidfile = "/usr/local/nagios/var/opsview.pid";
+if ( -e $pidfile ) {
+    open( my $fh, "< $pidfile" )
+      or die "Cannot read pid file - is daemon running?";
+    my $pid = <$fh>;
+    close $fh;
+    if ( kill 0, $pid ) {
+        if ( !$opts->{k} && !$opts->{r} ) {
+            die "opsviewd already running as process $pid\n";
+        }
+        else {
+            kill 'TERM', $pid;
+            die "opsviewd shut down\n" if ( $opts->{k} );
+        }
+    }
+    else {
+        if ( $opts->{k} ) {
+            die "opsviewd is not running\n";
+        }
+        else {
+            $logger->warn( "Crash from previous run. Deleting pid file" );
+            unlink $pidfile or die "Cannot delete pidfile";
+        }
+    }
+}
+
+my $pid = fork;
+exit if $pid;
+die "Couldn't fork: $!" unless defined $pid;
+POSIX::setsid() or die "Cannot daemonize";
+
+$logger->info( "Starting opsviewd" );
+
+open PID, "> $pidfile" or die "Could not write to pid file $pidfile";
+print PID "$$\n";
+close PID;
+
+my $socket          = "/usr/local/nagios/var/rw/opsviewd.cmd";
+my $audit_proxy_log = "/usr/local/nagios/var/opsview_proxy_audit.log";
+my $exec_and_log    = "/usr/local/nagios/bin/exec_and_log";
+
+my $break = 0;
+$SIG{INT} = $SIG{TERM} =
+  sub { $logger->warn( "Received SIG" . shift ); $break++ };
+$SIG{PIPE} = 'IGNORE';
+
+unlink $socket;
+my $server = IO::Socket::UNIX->new(
+    Local  => $socket,
+    Type   => SOCK_STREAM,
+    Listen => 1,
+) or die "Error setting up local socket: $!";
+chmod( 0660, $socket ) or die "Cannot set permissions on $socket";
+
+my $select = IO::Select->new($server);
+
+# When it is working
+#for my $handle (*STDIN, *STDOUT, *STDERR) {
+#	open($handle, "+<", "/dev/null") || die "can't reopen $handle to /dev/null: $!";
+#}
+open( STDIN,  "+<", "/dev/null" ) || die "can't reopen STDIN to /dev/null: $!";
+open( STDOUT, ">",  '/dev/null' ) || die "can't reopen STDOUT to /dev/null: $!";
+open( STDERR, ">",  '/dev/null' ) || die "can't reopen STDERR to /dev/null: $!";
+
+my $num_of_slaves;
+my $master_initiated = !Opsview::Config->slave_initiated;
+
+# Start the ssh pipes to the slaves
+my %tunnels;
+our $zombies = 0;
+if ($master_initiated) {
+    $SIG{CHLD} = sub { $zombies++ };
+    start_tunnels();
+}
+
+# Will continually loop
+my $last_update = ( stat("/usr/local/nagios/libexec") )[9];
+my $c           = 0;
+until ($break) {
+    $c++;
+    while ( my @ready = $select->can_read(0.25) ) {
+        foreach my $fh (@ready) {
+
+            # Not sure why this is a two step select of client
+            # From perldoc IO::Select
+            # Maybe could wait for accept, and then wait for data
+            $fh->autoflush(1);
+            if ( $fh == $server ) {
+                $select->add( $server->accept );
+            }
+            else {
+                my $line = <$fh>;
+                chomp $line;
+
+                if ( $line ne "" )
+                { # Ignore a blank request (may come from check_tcp)
+
+                    # Fork off to run the command to ensure we don't
+                    # block if its long running
+                    my $sub_pid = fork;
+                    goto END_COMMAND if $sub_pid;
+                    $logger->logdie("Couldn't fork: $!")
+                      unless defined $sub_pid;
+                    POSIX::setsid() or die "Cannot daemonize";
+
+                    my @words = $line =~ /\b\S+\b/g;
+                    my $command = shift @words;
+                    $command = lc $command;
+
+                    $logger->info(
+                        "Running '$command' with args: " . join( " ", @words )
+                    );
+
+                    if ( $command eq "web_reload" ) {
+                        system( $exec_and_log,
+                            '/usr/local/nagios/bin/rc.opsview', 'web_reload' );
+                        start_tunnels() if $master_initiated;
+                    }
+                    elsif ( $command eq "promote_mib" ) {
+                        my $oid = $words[0];
+                        my $mibname;
+                        $logger->warn( "$oid: starting promotion" );
+                        open F,
+                          "/usr/local/nagios/bin/promote_mib $oid 2>/dev/null |";
+                        while ( my $output = <F> ) {
+                            if ( $output =~ /^FQN=(.*)$/ ) {
+                                $mibname = $1;
+                                $logger->warn( "$oid: got FQN of '$mibname'" );
+                                next;
+                            }
+                            print $fh $output;
+                            $logger->warn( "$oid: $output" );
+                        }
+                        close F;
+                        $logger->warn( "$oid: completed" );
+                        if ( $? != 0 ) {
+                            print $fh "Problem promoting MIB", $/;
+                        }
+                    }
+                    elsif ( $command eq "restart_tunnel" ) {
+                        my $bad_slave = $words[0];
+                        $logger->warn(
+                            "Received ssh tunnel restart request for $bad_slave"
+                        );
+
+                        if ( !$master_initiated ) {
+                            $logger->warn(
+                                "Not running master ssh initiated tunnels; ignoring"
+                            );
+                        }
+                        elsif (!defined( $tunnels{$bad_slave} )
+                            || !$tunnels{$bad_slave} )
+                        {
+                            $logger->warn(
+                                "No record of ssh tunnel for $bad_slave; ignoring"
+                            );
+                        }
+                        elsif ( $tunnels{$bad_slave}->pid == -1 ) {
+                            $logger->warn(
+                                "Ssh tunnel for $bad_slave should auto-restart; ignoring"
+                            );
+                        }
+                        else {
+                            $logger->warn(
+                                "Running 'kill -TERM' on ",
+                                $tunnels{$bad_slave}->pid,
+                                " for ssh tunnel to $bad_slave"
+                            );
+                            kill 'TERM', $tunnels{$bad_slave}->pid;
+                        }
+                    }
+                    elsif ( $command eq "exec" ) {
+                        my @args = split( /\s+/, $line );
+                        shift @args; # skip exec
+                        $logger->info( "Executing command: @args" );
+                        exec(@args);
+                    }
+                    else {
+                        $logger->warn(
+                            "Unknown command: $command ",
+                            join( " ", @words )
+                        );
+                    }
+
+                    exit;            #  end of forked process:
+                }
+
+                END_COMMAND:
+
+                $select->remove($fh);
+                $fh->close;
+            }
+        }
+    }
+
+    # Every second
+    if ( $c % 4 == 0 ) {
+
+        # This is a polling loop, only run every second
+        if ($master_initiated) {
+            tunnel_death()  if $zombies;
+            start_tunnels() if missing_tunnels();
+        }
+    }
+
+    # Every 10 seconds
+    if ( $c % 40 == 0 ) {
+        if ( -s "/usr/local/nagios/var/slave_commands.cache" ) {
+            $logger->info(
+                "Processing commands found in /usr/local/nagios/var/slave_commands.cache"
+            );
+            system( $exec_and_log, "-f", '/usr/local/nagios/bin/sendcmd2slaves'
+            );
+        }
+        if ( -s $audit_proxy_log ) {
+            $logger->info( "Processing opsview audit proxy log" );
+            unless ( open( F, $audit_proxy_log ) ) {
+                $logger->warn( "Cannot open $audit_proxy_log: $!" );
+            }
+            else {
+                my @lines = <F>;
+                close F;
+                unless ( open F, ">", $audit_proxy_log ) {
+                    $logger->warn( "Cannot write to $audit_proxy_log: $!" );
+                }
+                close F;
+                foreach my $line (@lines) {
+                    chomp $line;
+                    db_protect(
+                        "audit_proxy_log",
+                        sub {
+                            Opsview::Auditlog->insert_audit_proxy_log($line);
+                        }
+                    );
+                }
+            }
+        }
+    }
+
+    # Every minute
+    if ( $c % 240 == 0 ) {
+        my $mod_time = ( stat("/usr/local/nagios/libexec") )[9];
+        if ( $mod_time > $last_update ) {
+            $logger->info(
+                "master libexec directory updated; refreshing opsview config and slaves libexec directory as necessary"
+            );
+            $last_update = $mod_time;
+            system( $exec_and_log, "-f", '/usr/local/nagios/bin/populate_db.pl'
+            );
+            system( $exec_and_log, "-f", '/usr/local/nagios/bin/send2slaves',
+                '-p' );
+        }
+    }
+
+    # Every 10 minutes
+    if ( $c % 2400 == 0 ) {
+
+        # TODO - reset cache?
+        start_tunnels() if $master_initiated;
+    }
+
+    # Reset counter after 10 minutes
+    $c = 0 if ( $c == 2400 );
+}
+
+$logger->info( "Stopping opsviewd" );
+unlink $socket, $pidfile;
+close($server);
+stop_tunnels() if $master_initiated;
+
+# This will get run whenever a process dies. This will fork child processes
+# to run the tunnel. The parent will keep a hash of all the children
+# If there are tunnels that shouldn't be running, this will also kill them
+sub start_tunnels {
+
+    # Get list of all tunnels by node name
+    my %tunnels_running;
+    foreach my $nodename ( keys %tunnels ) {
+        $tunnels_running{$nodename} = 1;
+    }
+    $logger->debug( "Tunnels running: " . join( " ", keys %tunnels_running ) );
+
+    # Delete tunnels that shouldn't be running
+    $logger->debug( "Tunnels left: " . join( " ", keys %tunnels_running ) );
+
+    foreach my $nodename ( keys %tunnels_running ) {
+        my $pid = $tunnels{$nodename}->pid;
+        next if $pid == -1; # Ignore slaves that have problems with tunnels
+        $logger->warn( "Kill tunnel that shouldn't be running, with pid $pid"
+        );
+        kill 'TERM', $pid;
+        delete $tunnels{$nodename};
+    }
+}
+
+sub stop_tunnels {
+    $logger->info( "Stopping tunnels" );
+    foreach my $name ( keys %tunnels ) {
+        my $pid = $tunnels{$name}->pid;
+        next if $pid == -1; # Ignore slaves that have problems with tunnels
+        $logger->warn( "Stopping PID $pid for $name" );
+        kill 'TERM', $pid;
+        delete $tunnels{$name};
+    }
+}
+
+sub tunnel_death {
+    $zombies = 0;
+    while ( ( my $pid = waitpid( -1, &WNOHANG ) ) != -1 ) {
+        last if ( $pid == 0 ); # This appears to be required
+
+        # don't warn on this here as could be a command child,
+        # not a tunnel child
+        #$logger->warn("Child died: $pid");
+
+        foreach my $name ( keys %tunnels ) {
+            if ( $pid == $tunnels{$name}->pid ) {
+                $tunnels{$name}->pid(-1);
+                $logger->warn( "Tunnel pid $pid died for slave $name" );
+            }
+        }
+    }
+}
+
+sub missing_tunnels {
+    foreach my $name ( keys %tunnels ) {
+        return 1 if $tunnels{$name}->pid == -1;
+    }
+    return 0;
+}
+
+sub usage {
+    print <<"!EOF!";
+Usage: $0 [-h] [-k]
+Where:
+  -k        Shut down running daemon
+  -r        Restart running daemon
+  -h        Show this help output
+
+Without options opsviewd will be started
+!EOF!
+    exit 0;
+}
+
+sub db_protect {
+    my ( $name, $coderef ) = @_;
+    my $finished = 0;
+    until ( $finished || $break ) {
+        try {
+            $coderef->();
+            $finished++;
+        }
+        catch {
+            $logger->warn( "Error running $name - retry in 5 seconds: $_" );
+            sleep 5;
+        }
+    }
+}
+
+# This is the object class for the Tunnel processes
+# Required because more than pid is wanted
+package Tunnels;
+
+sub new {
+    my $class = shift;
+    my $self  = {};
+    return bless( $self, $class );
+}
+
+sub AUTOLOAD {
+    my $self = shift;
+    my $attr = our $AUTOLOAD;
+    $attr =~ s/.*:://;
+    return if $attr =~ /^DESTROY$/;
+    if (@_) {
+        return $self->{$attr} = shift;
+    }
+    else {
+        return $self->{$attr};
+    }
+}

@@ -1,0 +1,9 @@
+# Copy to /etc/logrotate.d
+/usr/local/nagios/var/log/*.log {
+        weekly
+        missingok
+        rotate 5
+        compress
+        delaycompress
+        notifempty
+}

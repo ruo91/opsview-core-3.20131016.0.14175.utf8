@@ -1,0 +1,430 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#	Written by Neil Ferguson
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+use strict;
+use warnings;
+
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+use DBI;
+
+my $script = "check_snmp_cisco_linkstatus";
+
+my $np = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => $script,
+    version   => "0.7",
+    blurb     => "Monitors specified interface for link state changes",
+    snmp      => {
+        "snmp-version" => "2c",
+        "snmp-timeout" => 5,
+        "v1-fallback"  => 1,
+    },
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w, --warning=INTEGER
+    Warning threshold (bits per second or n%)},
+    default => 0,
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c, --critical=INTEGER
+    Critical threshold (bits per second or n%)},
+    default => 0,
+);
+
+$np->add_arg(
+    spec => "expirytime|t=s",
+    help => qq{-t, --expirytime=INTEGER
+    Cache expiry time - the time in seconds before the
+    monitored device's interface table is rescanned for
+    new or changed interfaces},
+    default => 60,
+);
+
+$np->add_arg(
+    spec => "interface|i=s",
+    help => qq{-i, --interface=INTEGER
+    Interface name to monitor},
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "outbound|o",
+    help => qq{-o, --outbound=INTEGER
+    Monitor outbound traffic instead of inbound},
+);
+
+$np->getopts;
+
+my $warning               = $np->opts->warning;
+my $critical              = $np->opts->critical;
+my $user_specified_ifname = $np->opts->interface;
+my $direction             = "In";
+my $cache_hold_time       = 1800;
+
+if ( $np->opts->outbound ) {
+    $direction = "Out";
+}
+if ( $np->opts->expirytime ) {
+
+    # Validity test - must be numeric
+    unless ( $np->opts->expirytime =~ /^[0-9]+$/ ) {
+        print
+          "Specify time in seconds - $np->opts->expirytime is not a valid integer\n";
+        exit 3;
+    }
+    $cache_hold_time = $np->opts->expirytime;
+}
+
+my $s = $np->snmp;
+
+my $db_home = "/usr/local/nagios/var/";
+my $db_name = "$script.db";
+
+my $interface_vanished = 0;
+my $rescanned          = 0;
+my $link_speed         = 0;
+my $perfdata           = "";
+my $retval             = 0;
+my $retmsg             = "";
+my $uptime             = 0;
+my @snmp_interface_ids;
+my $throughput     = 0;
+my $throughput_pct = 0;
+my $critical_pct   = 0;
+my $warning_pct    = 0;
+my $hostname       = $np->opts->hostname;
+
+my $oid_sysDescr =
+  ".1.3.6.1.2.1.1.1.0"; # Used to check whether SNMP is actually responding
+my $oid_sysUptime = ".1.3.6.1.2.1.1.3.0"; # SNMP agent uptime
+my $oid_interfaces_base =
+  ".1.3.6.1.2.1.2.2.1";                   # Where all the interface names are
+my $oid_locIfOutBitsSec = "1.3.6.1.4.1.9.2.2.1.1.8";
+my $oid_locIfInBitsSec  = "1.3.6.1.4.1.9.2.2.1.1.6";
+my @interface_list      = ( "$oid_interfaces_base.1" );
+my @interface_data      = (
+    "$oid_interfaces_base.2",             # Friendly interface name
+    "$oid_interfaces_base.5",             # Friendly interface name
+    "$oid_interfaces_base.8"
+);                                        # Friendly interface name
+
+our ( $e, $st_h, $db_h );
+
+# Some of our SQL statements (We do this after getopts because we use
+# the provided hostname variable to create the SQL statements
+my $sql_create_hosts =
+  "CREATE TABLE hosts (hostname UNIQUE,uptime,modified_on)";
+my $sql_create_interfaces = "CREATE TABLE interfaces (hostname,name,ifindex)";
+my $sql_host_info = "SELECT modified_on FROM hosts WHERE hostname='$hostname'";
+
+sub clean_up {
+    if ($st_h) {
+        $st_h->finish();
+        undef($st_h);
+    }
+    $db_h->disconnect();
+}
+
+# Scans a device and populates the db with a list of interfaces for this
+# device, along with their states
+sub rescan_device {
+    my $name;
+
+    # Mark that we've run a rescan
+    $rescanned = 1;
+
+    $db_h->do(
+            "UPDATE hosts SET modified_on="
+          . time()
+          . " WHERE hostname='$hostname'"
+    );
+
+    # Get a list of interfaces (by index)
+    $s->get_entries( -columns => \@interface_list );
+    foreach ( $s->var_bind_names() ) {
+        push( @snmp_interface_ids, $s->var_bind_list()->{$_} );
+    }
+
+    # Remove the previous data
+    $db_h->do( "DELETE FROM interfaces WHERE hostname='$hostname'" );
+
+    my $result = $s->get_entries( -columns => \@interface_data );
+    foreach (@snmp_interface_ids) {
+        $name = $s->var_bind_list()->{"$oid_interfaces_base.2.$_"};
+
+        # Might have nasty quotes etc.
+        $name = $db_h->quote($name);
+
+        $db_h->do(
+                "INSERT INTO interfaces (hostname,name,ifindex) "
+              . "VALUES ('$hostname',$name,'$_')"
+        );
+    }
+
+}
+
+# Call this when you know you'll get a single value back
+sub get_oid_value {
+    our ( $oid, $result, $status, $returnstring );
+
+    $oid = shift(@_);
+
+    if ( !defined( $s->get_request($oid) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return -1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return -1;
+        }
+    }
+
+    foreach ( $s->var_bind_names() ) {
+        $result = $s->var_bind_list()->{$_};
+    }
+
+    return $result;
+}
+
+if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+    if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+        print "Agent not responding";
+        exit 1;
+    }
+}
+
+# We cache interface data in a Berkeley DB for cache_hold_time
+$db_h = DBI->connect( "dbi:SQLite:dbname=$db_home/$db_name", "", "" );
+
+# Check if the db has been set up
+my $res = $db_h->selectall_arrayref(
+    "SELECT name FROM sqlite_master
+		 WHERE type='table'
+		 AND name='hosts'"
+);
+
+#If not defined, define with no value - removes Uninitialized Value warning
+if ( !defined( $res->[0]->[0] ) ) {
+    $res->[0]->[0] = "";
+}
+unless ( $res->[0]->[0] eq "hosts" ) {
+
+    # Create tables
+    $st_h = $db_h->prepare($sql_create_hosts);
+    $st_h->execute()
+      or die( "Can't create hosts table!" );
+
+    $st_h = $db_h->prepare($sql_create_interfaces);
+    $st_h->execute()
+      or die( "Can't create interfaces table!" );
+}
+
+# See if we have a last-checked value for this host
+my $modified_on = "";
+$st_h = $db_h->prepare($sql_host_info);
+$st_h->execute();
+$st_h->bind_columns( \$modified_on );
+$st_h->fetch();
+
+# Check if cache time has expired
+if ( $modified_on eq "" ) {
+
+    # We've not been run before, add host
+    $db_h->do(
+        "INSERT INTO hosts (hostname,uptime,modified_on) VALUES ('$hostname',"
+          . $uptime . ","
+          . time() . ")"
+    );
+    $modified_on = 0; # Force rescan of device
+}
+
+# Elapsed time?
+my $elapsed = time() - $modified_on;
+
+# Has the cache expired?
+if ( $elapsed > $cache_hold_time ) {
+    rescan_device();
+}
+
+## Check our last values against what we have now
+# Get interface information from database
+our ( $ifname, $ifindex, $ifstate );
+$ifindex = "";
+my $dbsafe_ifname = $db_h->quote($user_specified_ifname);
+$st_h = $db_h->prepare(
+        "SELECT ifindex FROM interfaces WHERE hostname='$hostname'"
+      . " AND name=$dbsafe_ifname"
+);
+$st_h->execute();
+$st_h->bind_columns( \$ifindex );
+
+# Get information from switch
+$s->get_entries( -columns => \@interface_data );
+$st_h->fetch();
+
+# If $ifindex is blank, the interface obviously wasn't found :(
+# Note that if a new service check is added to an existing
+# device in Opsview with an interface name that didn't
+# exist when the last rescan was performed, the user will
+# get this message until the cache expires and the device
+# is rescanned.
+if ( $ifindex eq "" ) {
+
+    # In case this interface is new, rescan the device if we haven't already
+    if ( !$rescanned ) {
+        rescan_device();
+    }
+
+    # Check again for the ifindex in the DB
+    $st_h = $db_h->prepare(
+            "SELECT ifindex FROM interfaces WHERE hostname='$hostname'"
+          . " AND name=$dbsafe_ifname"
+    );
+    $st_h->execute();
+    $st_h->bind_columns( \$ifindex );
+    $s->get_entries( -columns => \@interface_data );
+    $st_h->fetch();
+
+    if ( $ifindex eq "" ) {
+        print "UNKNOWN - Interface name not found!\n";
+        clean_up();
+        exit 3;
+    }
+}
+
+# Compare states
+my $name      = $s->var_bind_list()->{"$oid_interfaces_base.2.$ifindex"};
+my $linkstate = $s->var_bind_list()->{"$oid_interfaces_base.8.$ifindex"};
+$link_speed = $s->var_bind_list()->{"$oid_interfaces_base.5.$ifindex"};
+
+# Check whether or not this is still the same interface
+if ( $name eq $user_specified_ifname ) {
+
+    if ( $direction eq 'In' ) {
+        $throughput = get_oid_value( "$oid_locIfInBitsSec.$ifindex" );
+    }
+    else {
+        $throughput = get_oid_value( "$oid_locIfOutBitsSec.$ifindex" );
+    }
+
+    $throughput_pct = int( 10000 * ( $throughput / $link_speed ) ) / 100;
+}
+else {
+    $interface_vanished = 1;
+}
+
+# Do we need to do a rescan?  This might happen when the switch is rebooted, if a
+# virtual interface is given a different ifindex.
+if ($interface_vanished) {
+    rescan_device();
+    clean_up();
+    print
+      "OK - Device was rescanned - ifindex changed for $user_specified_ifname|\n";
+    exit 0;
+}
+
+# Get rid of db handles etc.
+clean_up();
+
+# So what's the verdict?
+# If the interface is down, this is always critical
+if ( $linkstate == 2 ) {
+    $retval = 2;
+    $retmsg = "Interface $user_specified_ifname is DOWN!";
+
+    # Even though we may have had bytes sent/received since the last check
+    # if the state has changed from up to down, we'll still report a
+    # throughput of 0 as this is a more sensible thing to display.
+    $throughput = 0;
+}
+else {
+
+    # The interface is up, so what about the thresholds?
+    if (
+        $critical > 0
+        && (   ( $critical_pct && $throughput_pct > $critical )
+            || ( !$critical_pct && $throughput > $critical ) )
+      )
+    {
+        if ( $direction eq "In" ) {
+            $retmsg =
+              "Inbound throughput ($throughput bps/$throughput_pct%) has exceeded critical threshold!";
+        }
+        else {
+            $retmsg =
+              "Outbound throughput ($throughput bps/$throughput_pct%) has exceeded critical threshold!";
+        }
+        $retval = 2;
+    }
+    elsif (
+        $warning > 0
+        && (   ( $warning_pct && $throughput_pct > $warning )
+            || ( !$warning_pct && $throughput > $warning ) )
+      )
+    {
+        if ( $direction eq "In" ) {
+            $retmsg =
+              "Inbound throughput ($throughput bps/$throughput_pct%) has exceeded warning threshold!";
+        }
+        else {
+            $retmsg =
+              "Outbound throughput ($throughput bps/$throughput_pct%) has exceeded warning threshold!";
+        }
+        $retval = 1;
+    }
+}
+
+# Performance data
+if ( $warning == 0 ) {
+    $warning = "";
+}
+if ( $critical == 0 ) {
+    $critical = "";
+}
+$perfdata = "throughput=${throughput}b;$warning;$critical";
+
+# Show appropriate message (we don't have a warning state)
+if ( $retval == 0 ) {
+    print
+      "OK - Interface is up, throughput $throughput bps $direction|$perfdata\n";
+}
+elsif ( $retval == 1 ) {
+    print "WARNING - $retmsg|$perfdata\n";
+}
+elsif ( $retval == 2 ) {
+    print "CRITICAL - $retmsg|$perfdata\n";
+}
+else {
+    print "UNKNOWN - plugin error $retmsg|$perfdata\n";
+}
+
+exit $retval;

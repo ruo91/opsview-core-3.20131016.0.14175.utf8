@@ -1,0 +1,122 @@
+#!/usr/bin/perl
+# Prints to stdout lots of host and service configuration
+
+use warnings;
+use strict;
+
+my $hosts             = shift @ARGV || 1000;
+my $services_per_host = shift @ARGV || 15;
+
+my $host_scaffold = <<EOF;
+define host {
+host_name	%HOSTNAME%
+alias	%HOSTNAME%
+use	host-global
+}
+EOF
+
+my $service_scaffold = <<EOF;
+define service {
+host_name	%HOSTNAME%
+service_description	%SERVICEDESC%
+use	service-global
+}
+EOF
+
+print <DATA>;
+
+for ( my $i = 0; $i < $hosts; $i++ ) {
+    my $hostname = "host$i";
+
+    my $host_config = $host_scaffold;
+    $host_config =~ s/%HOSTNAME%/$hostname/g;
+    print $host_config;
+
+    for ( my $j = 0; $j < $services_per_host; $j++ ) {
+        my $servicedesc    = "s$j";
+        my $service_config = $service_scaffold;
+
+        $service_config =~ s/%HOSTNAME%/$hostname/g;
+        $service_config =~ s/%SERVICEDESC%/$servicedesc/g;
+
+        print $service_config;
+    }
+}
+
+__DATA__
+define host{
+        name                            host-global
+        event_handler_enabled           0       ; Host event handler is enabled
+        flap_detection_enabled          1       ; Flap detection is enabled
+        process_perf_data               1       ; Process performance data
+        retain_status_information       1       ; Retain status information across program restarts
+        retain_nonstatus_information    1       ; Retain non-status information across program restarts
+        max_check_attempts              2
+        obsess_over_host                0
+        check_freshness                 0
+        passive_checks_enabled          1
+	active_checks_enabled		0
+        check_interval                  0       ; For the moment, set check_interval to 0 so hosts only checked on demand, like Nagios 2
+        register                        0       ; DONT REGISTER THIS DEFINITION IT'S JUST A TEMPLATE!
+	contact_groups			all
+}
+
+define service{
+        name                            service-global
+        active_checks_enabled           0       ; Active service checks are enabled
+        passive_checks_enabled          1       ; Passive service checks are enabled/accepted
+        obsess_over_service             0       ; We should obsess over this service (if necessary)
+        check_freshness                 0      ; Default is to NOT check service 'freshness'
+        notifications_enabled           1       ; Service notifications are enabled
+        event_handler_enabled           1       ; Service event handler is enabled
+        flap_detection_enabled          1       ; Flap detection is enabled
+        process_perf_data               1       ; Process performance data
+        retain_status_information       1       ; Retain status information across program restarts
+        retain_nonstatus_information    1       ; Retain non-status information across program restarts
+	max_check_attempts 1
+	check_interval 5
+	notification_interval 60
+	notification_period 24x7
+        is_volatile                     0
+        check_period                    24x7
+	check_command			notify-none
+        register                        0       ; DONT REGISTER THIS DEFINITION - ITS NOT A REAL SERVICE, JUST A TEMPLATE!
+}
+
+define contactgroup {
+	contactgroup_name all
+}
+
+define timeperiod {
+	timeperiod_name	24x7
+	alias	24x7
+	monday	00:00-24:00
+	tuesday	00:00-24:00
+	wednesday	00:00-24:00
+	thursday	00:00-24:00
+	friday	00:00-24:00
+	saturday	00:00-24:00
+	sunday	00:00-24:00
+}
+
+define timeperiod {
+	timeperiod_name none
+	alias Nothing
+}
+
+define contact {
+	contact_name	admin
+	host_notifications_enabled	0
+	service_notifications_enabled	0
+	host_notification_period	none
+	service_notification_period	none
+	host_notification_options	d,u,f,r,s
+	service_notification_options	w,u,c,r,f,s
+	host_notification_commands	notify-none
+	service_notification_commands	notify-none
+}
+
+define command {
+	command_name	notify-none
+	command_line /usr/local/nagios/notifications/notify-none
+}

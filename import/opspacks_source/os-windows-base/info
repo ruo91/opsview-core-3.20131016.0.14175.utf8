@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.os_windows_base
+VERSION=1.1
+ALIAS=OS - Windows Base
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

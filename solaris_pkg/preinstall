@@ -1,0 +1,5 @@
+touch /usr/local/nagios/var/upgrade.lock
+# If this is an upgrade
+if [ -f $BASEDIR/usr/local/nagios/bin/rc.opsview ]; then
+	/usr/sbin/chroot $BASEDIR /usr/bin/su - nagios -c "/usr/local/nagios/bin/rc.opsview stop"
+fi

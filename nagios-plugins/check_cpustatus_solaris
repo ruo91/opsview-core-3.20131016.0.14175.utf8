@@ -1,0 +1,157 @@
+#!/usr/bin/perl
+
+#  Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#  W: http://www.opsview.com/
+#
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software
+#  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+# psrinfo -v
+
+use strict;
+use FindBin qw($Bin $Script);
+use Getopt::Std;
+use Storable qw(store retrieve);
+
+my $warnings  = 0;
+my $criticals = 0;
+my $processor = 0;
+
+#my @status				= ();
+my %status                    = ();
+my $previous_status           = 0;
+my $previous_status_available = 0;
+my $online                    = 0;
+my $offline                   = 0;
+my $errorstring               = "";
+my $errors                    = 0;
+my $alertonanyfailure         = 0;
+
+( my $script = $0 ) =~ s!.*/!!;
+my $VERSION = "1.0";
+
+my $store_file = "$Bin/../var/${Script}.dat";
+my $store;
+
+use vars qw/$opt_h $opt_a $opt_v/;
+
+getopts( "hva" );
+if ($opt_v) {
+    die "$script version: $VERSION\n";
+}
+if ($opt_h) {
+    usage();
+}
+if ($opt_a) {
+    $alertonanyfailure = 1;
+}
+
+my @psrinfo = `psrinfo -v`;
+
+#my @psrinfo = `./psrinfo`;
+
+#Does state info already exist?
+if ( -f $store_file ) {
+
+    # print "file already exists\n";
+    $previous_status = retrieve($store_file)
+      or die "Can't retrieve %a in $store_file\n";
+    $previous_status_available = "1";
+}
+
+foreach my $line (@psrinfo) {
+    if ( $line =~ /since/ ) {
+        if ( $line =~ /off-line/ ) {
+            $status{$processor} = 0;
+            $offline++;
+            if ( $previous_status_available eq "1" ) {
+                if ( $previous_status->{$processor} == "1" ) {
+                    if ( $errors > 0 ) {
+                        $errorstring = $errorstring . ", ";
+                    }
+                    $errorstring = $errorstring
+                      . "processor $processor state changed to off-line";
+                    $errors++;
+                }
+            }
+        }
+        elsif ( $line =~ /on-line/ ) {
+            $status{$processor} = 1;
+            $online++;
+            if ( $previous_status_available eq "1" ) {
+                if ( $previous_status->{$processor} == "0" ) {
+                    if ( $errors > 0 ) {
+                        $errorstring = $errorstring . ", ";
+                    }
+                    $errorstring = $errorstring
+                      . "processor $processor state changed to on-line";
+                    $errors++;
+                }
+            }
+        }
+        else {
+
+            # Can't get status of processor
+            %status = ( $processor => -1 );
+            if ( $errors > 0 ) {
+                $errorstring = $errorstring . ", ";
+            }
+            $errorstring =
+              $errorstring . "processor $processor state not known ";
+            $errors++;
+        }
+        $processor++;
+    }
+}
+
+store( \%status, $store_file ) or die "Can't store %a in $store_file\n";
+
+if ( $errors > 0 ) {
+    print
+      "CRITICAL: $processor processors ($online online, $offline offline) - $errorstring|online=$online\n";
+    exit 2;
+}
+else {
+    if ( $alertonanyfailure == 1 ) {
+        if ( $offline > 0 ) {
+            print
+              "CRITICAL: $processor processors ($offline offline)|online=$online\n";
+            exit 2;
+        }
+        else {
+            print "$processor processors ($offline offline)|online=$online\n";
+            exit 0;
+        }
+    }
+    else {
+        print "$processor processors ($offline offline)|online=$online\n";
+        exit 0;
+    }
+}
+
+sub usage {
+    print << "USAGE";
+
+$script v$VERSION
+
+Checks CPU status for all CPU's (Solaris). Raises alert if status of any processor changes.
+
+Usage: $script
+
+Options: -a 		Critical alert if any processor is offline. Otherwise will only alert on state change.
+
+		 
+USAGE
+    exit 1;
+}

@@ -1,0 +1,98 @@
+{
+  list => [
+    {
+      actual_start_time => "2007-11-07 13:02:15",
+      author => "admin",
+      comment => "Hostgroup 'Monitoring Servers': testing",
+      objects => {
+        hosts => [
+          { hostname => "cloned2", id => 3 },
+          { hostname => "cisco4", id => 120 },
+        ],
+      },
+      scheduled_end_time => "2007-11-12 13:02:05",
+      start_time => "2007-11-07 13:02:05",
+      started => 1,
+    },
+    {
+      author => "admin",
+      comment => "Service 'Coldstart': testing",
+      objects => {
+        services => [
+          { hostname => "cisco4", id => 161, servicename => "Coldstart" },
+          { hostname => "cisco3", id => 158, servicename => "Coldstart" },
+        ],
+      },
+      scheduled_end_time => "2007-11-20 16:34:47",
+      start_time => "2007-11-20 14:34:47",
+      started => 0,
+    },
+    {
+      actual_start_time => "2007-11-07 13:02:15",
+      author => "admin",
+      comment => "Service 'Coldstart': testing again",
+      objects => {
+        services => [
+          { hostname => "cisco2", id => 155, servicename => "Coldstart" },
+        ],
+      },
+      scheduled_end_time => "2007-11-20 16:34:47",
+      start_time => "2007-11-20 14:34:47",
+      started => 1,
+    },
+    {
+      author => "admin",
+      comment => "Hostgroup 'Leaf': in the future",
+      objects => {
+        services => [
+          { hostname => "cisco2", id => 154, servicename => "Another exception" },
+        ],
+      },
+      scheduled_end_time => "2007-11-20 16:34:47",
+      start_time => "2017-11-20 14:34:47",
+      started => 0,
+    },
+    {
+      author => "admin",
+      comment => "Hostgroup 'Leaf': in the future",
+      objects => { hosts => [{ hostname => "cisco2", id => 118 }] },
+      scheduled_end_time => "2017-11-20 16:34:47",
+      start_time => "2017-11-20 14:34:47",
+      started => 0,
+    },
+    {
+      author => "admin",
+      comment => "Hostgroup 'Leaf2': in the future <script>alert(\"badness\")</script>",
+      objects => {
+        hosts => [{ hostname => "monitored_by_slave", id => 136 }],
+        services => [
+          { hostname => "monitored_by_slave", id => 5, servicename => "VNC" },
+          { hostname => "monitored_by_slave", id => 193, servicename => "/" },
+          {
+            hostname => "monitored_by_slave",
+            id => 194,
+            servicename => "Check Loadavg",
+          },
+          {
+            hostname => "monitored_by_slave",
+            id => 195,
+            servicename => "Check Memory",
+          },
+          { hostname => "monitored_by_slave", id => 196, servicename => "SSH" },
+        ],
+      },
+      scheduled_end_time => "2017-11-20 16:34:47",
+      start_time => "2017-11-20 14:34:47",
+      started => 0,
+    },
+  ],
+  summary => {
+    allrows => 13,
+    num_hosts => 4,
+    num_services => 9,
+    page => 1,
+    rows => 13,
+    totalpages => 1,
+    totalrows => 13,
+  },
+}

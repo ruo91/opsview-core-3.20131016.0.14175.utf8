@@ -1,0 +1,92 @@
+#!/usr/bin/perl -w
+
+#  Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#  W: http://www.opsview.com/
+#
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software
+#  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+#
+# SYNTAX:
+my $usage = qq{
+check_sms_aql_credit
+
+Usage: check_sms_aql_credit -u aql_username -p aql_password -P proxy
+Options: 
+  -u,-p    AQL's username and password
+  -w,-c    Warning and critical thresholds for alerting
+  -P       Proxy to use. Can be empty
+
+};
+
+#
+# DESCRIPTION:
+#	Checks SMS credit balance with AQL
+#       Based on submit_sms script supplied with Opsview
+
+sub usage {
+    if ( $_ = shift ) { print "Error: $_\n" }
+    print $usage;
+    exit 1;
+}
+
+use strict;
+
+use lib "/usr/local/nagios/perl/lib";
+use Getopt::Std;
+use SMS::AQL;
+
+my $exitcode = 0;
+my $aql_options;
+
+sub ldie { $_ = shift; print $_. $/; exit 1 }
+
+my $opts = {};
+getopts( "hu:p:P:w:c:", $opts );
+
+if ( $opts->{h} ) {
+    usage();
+    exit(0);
+}
+
+my $username = $opts->{u} || usage "Must specify AQL username";
+my $password = $opts->{p} || usage "Must specify AQL password";
+my $warning  = $opts->{w} || usage "Must specify warning threshold";
+my $critical = $opts->{c} || usage "Must specify critical threshold";
+if ( $opts->{P} ) {
+    $aql_options->{proxy} = $opts->{P};
+}
+
+my $sms = SMS::AQL->new(
+    {
+        username => $username,
+        password => $password,
+        options  => $aql_options
+    }
+);
+my $credits = $sms->credit;
+
+if ( !defined($credits) || $credits !~ /^-?\d+$/ ) {
+    print "UNKNOWN - " . $sms->last_error . $/;
+    exit 3;
+}
+
+if ( $credits < $critical ) {
+    $exitcode = 2;
+}
+elsif ( $credits < $warning ) {
+    $exitcode = 1;
+}
+
+print "There are $credits credits remaining\n";
+exit $exitcode;

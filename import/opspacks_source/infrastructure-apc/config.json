@@ -1,0 +1,118 @@
+{
+   "attribute" : [],
+   "hosttemplate" : [
+      {
+         "description" : "APC",
+         "managementurls" : [],
+         "name" : "Infrastructure - APC",
+         "servicechecks" : [
+            {
+               "exception" : null,
+               "name" : "APC external temperature probe",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "APC UPS Status",
+               "timed_exception" : null
+            }
+         ]
+      }
+   ],
+   "servicecheck" : [
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -U $SNMPV3_USERNAME$ -P $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -e $SNMPV3_PRIVPROTOCOL$ -x $SNMPV3_PRIVPASSWORD$",
+         "attribute" : null,
+         "calculate_rate" : null,
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Status of APC Uninterruptible Power Supply",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "APC UPS Status",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r,u",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_apcups"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Data Centre - Power"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -U $SNMPV3_USERNAME$ -P $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -e $SNMPV3_PRIVPROTOCOL$ -x $SNMPV3_PRIVPASSWORD$",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "APC UPS external temperature probe reading",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "APC external temperature probe",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r,u,f",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_apc_exttempprobe"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Data Centre - Environment"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      }
+   ],
+   "servicegroup" : [
+      {
+         "name" : "Data Centre - Environment"
+      },
+      {
+         "name" : "Data Centre - Power"
+      }
+   ]
+}

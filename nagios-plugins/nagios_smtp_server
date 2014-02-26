@@ -1,0 +1,218 @@
+#!/usr/bin/perl
+
+################################################################
+# Nagios SMTP server v1.5                                      #
+# Author James Peel - james.peel@opsview.com                   #
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved #
+################################################################
+
+use Carp;
+use Net::SMTP::Server;
+use Net::SMTP::Server::Client;
+use Net::SMTP::Server::Relay;
+use Time::HiRes qw(gettimeofday);
+
+$localaddress   = "10.240.0.34";
+$localtcpport   = "25";
+$validdomain    = "nagios.cmgl.com";
+$configfilepath = "/usr/local/nagios/etc";
+$pidfilepath    = "/usr/local/nagios_smtp";
+$smtphost       = "";
+$timestamp      = "";
+@queue          = ();
+$queuelength    = 0;
+$nomessagesprocessed = 0; # Total number of messages processed since start
+
+$throttle = 0;            # limit number of messages per second to 1
+
+$SIG{HUP}  = 'exit_program';
+$SIG{INT}  = 'exit_program';
+$SIG{QUIT} = 'exit_program';
+
+# Writes process ID to a file
+
+$pid = $$;
+write_pid();
+
+# Start SMTP Server
+
+$server = new Net::SMTP::Server( $localaddress, $localtcpport )
+  || croak( "Unable to handle client connection: $!\n" );
+
+print "\nSMTP started on $localaddress port $localtcpport \nProcess ID: $pid\n";
+print "Listening for messages...\n\n";
+
+while ( $conn = $server->accept() ) {
+    $client = new Net::SMTP::Server::Client($conn)
+      || croak( "Unable to handle client connection: $!\n" );
+
+    # Process the client.  This command will block until
+    # the connecting client completes the SMTP transaction.
+    $client->process || next;
+
+    # Here is where we do the processing
+
+    $smtphost  = "";
+    $timestamp = "";
+
+    print "---------------------------------------------------------\n";
+
+    $status = process_message();
+    if ( $status eq "ok" ) {
+        update_messagequeue();
+    }
+    $nomessagesprocessed++;
+    print "Messages Processed: $nomessagesprocessed\n";
+    print "---------------------------------------------------------\n";
+
+    # sleep $throttle;
+
+}
+
+################################################################
+# Processes incoming SMTP message                              #
+################################################################
+
+sub process_message {
+
+    my $status = "ok";
+
+    my $message = $client->{MSG};
+
+    @messagearray = split( /\n/, $message );
+
+    my $from    = "";
+    my $to      = "";
+    my $subject = "";
+
+    foreach $line (@messagearray) {
+        if ( $line =~ m/From:/ ) {
+            $line =~ s/From://;      # Removes 'From:'
+            $line =~ s/^\s+|\s+$//g; # Removes unnecessary whitespace
+            $from = $line;
+        }
+        if ( $line =~ m/To:/ ) {
+            $line =~ s/To://;        # Removes 'To:'
+            $line =~ s/^\s+|\s+$//g; # Removes unnecessary whitespace
+            $to = $line;
+        }
+        if ( $line =~ m/Subject:/ ) {
+            $line =~ s/Subject://;      # Removes 'Subject:'
+            $line =~ s/CMGL Watchdog//; # Removes CMGL Watchdog
+            $line =~ s/\[''//;
+            $line =~ s/'//;
+            $line =~ s/\[//;
+            $line =~ s/^\s+|\s+$//g;    # Removes unnecessary whitespace
+            $subject = $line;
+        }
+    }
+
+    if ( $from =~ m/$validdomain/ ) {
+
+        # print "From: $from \nTo: $to \n";
+        ( $smtphost, $timestamp ) = split( /:/, $subject );
+        $smtphost  =~ s/^\s+|\s+$//g;   # Removes any dodgy whitespace
+        $timestamp =~ s/^\s+|\s+$//g;   # ditto
+        print "SMTP Host: $smtphost \nTimestamp: $timestamp\n";
+    }
+    else {
+        print "EEK! Invalid message: $from\n";
+        $status = "invalid message";
+    }
+
+    return ($status);
+
+}
+
+################################################################
+# Updates SMTP message queue                                     #
+################################################################
+
+sub update_messagequeue {
+    my @temparray = ();
+    my $row       = 0;
+
+    # Opens queue and locks file
+
+    if ( open FILE, "<$configfilepath/smtpmessagequeue.db" ) {
+        if ( flock( FILE, 2 ) ) {
+
+            # print "opened file and established lock\n";
+        }
+    }
+
+    # file locking still needs attention
+
+    else {
+        print "Can't open file $configfilepath/smtpmessagequeue.db";
+    }
+
+    # Reads queue
+
+    @temparray = <FILE>;
+    foreach $line (@temparray) {
+        ( $queue[$row][0], $queue[$row][1], $queue[$row][2], $queue[$row][3] )
+          = split( /:/, $line );
+        $row++;
+    }
+
+    $queuelength = $row;
+
+    # print "$row rows read from queue\n";
+
+    # Updates array with new message info
+
+    my $row = 0;
+    while ( $row < $queuelength ) {
+        if ( $queue[$row][0] eq $smtphost ) {
+            if ( $queue[$row][2] eq $timestamp ) {
+                my $elapsed = 0;
+                $queue[$row][1] = "received";
+                my $now = gettimeofday;
+                $elapsed = $now - $timestamp;
+                $queue[$row][3] = $elapsed;
+
+                # print "elapsed: $elapsed\n";
+            }
+        }
+        $row++;
+    }
+
+    # Writes updates to queue
+
+    open FILE, ">$configfilepath/smtpmessagequeue.db"
+      or die "Can't open file $configfilepath/smtpmessagequeue.db $1";
+
+    my $row = 0;
+    while ( $row < $queuelength ) {
+        if ( $queue[$row][0] eq "" ) {
+        }
+        else {
+            print FILE
+              "$queue[$row][0]:$queue[$row][1]:$queue[$row][2]:$queue[$row][3]:\n";
+        }
+        $row++;
+    }
+
+    # print "$row rows written back to queue\n";
+
+    # Close queue and release lock
+
+    close FILE;
+
+}
+
+sub exit_program {
+    print "\n\nSMTP server shutting down...\n\n";
+    exit 0;
+}
+
+################################################################
+# Writes process ID to a file                                  #
+################################################################
+
+sub write_pid {
+    open PIDFILE, ">$pidfilepath/pid.txt";
+    print PIDFILE "$pid\n";
+    close PIDFILE;
+}

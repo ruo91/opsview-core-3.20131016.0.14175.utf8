@@ -1,0 +1,16 @@
+#!/bin/bash -x
+
+PKGDIR=$1
+
+if [[ -z "$PKGDIR" ]]; then
+        echo "package directory not specified"
+        exit 1;
+fi
+
+if [[ ! -d $PKGDIR ]]; then
+        echo "package directory doesnt exist"
+        exit 1;
+fi
+
+#perl -n -i -e "
+

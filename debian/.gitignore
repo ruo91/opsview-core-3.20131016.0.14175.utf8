@@ -1,0 +1,12 @@
+/changelog
+/control
+/control.in
+/files
+/opsview
+/opsview-core
+/opsview-core.postinst.debhelper
+/opsview-core.postrm.debhelper
+/opsview-core.prerm.debhelper
+/opsview-core.substvars
+/opsview.init.d
+/opsview-slave

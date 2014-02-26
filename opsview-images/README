@@ -1,0 +1,17 @@
+This directory holds image files used by Opsview.
+
+These files are generated from source files held in 
+an Opsview asset repository, but are stored here for packaging.
+
+There are 3 types of images, in subdirectories:
+  * icons      - fixed size images used as icons
+  * host icons - aka logos, for icons of a host type
+  * images     - other image files, mainly of irregular shape for layout or other purposes
+
+Run "make install" to copy into /usr/local/nagios/share/images.
+Host icons are installed into /usr/local/nagios/share/images/logos.
+We do not use gd2 files for host icons, for simplicity.
+
+Note: some images may initially be from 3rd parties for testing purposes, 
+but the latest versions will be Opsview copyright files
+

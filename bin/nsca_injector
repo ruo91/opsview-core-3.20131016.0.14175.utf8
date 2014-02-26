@@ -1,0 +1,74 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+
+use Getopt::Std;
+
+my $opts = {};
+getopts( "f:c:", $opts ) or die "Getopt failed";
+
+my $file = $opts->{f} || die "Must specify file";
+
+my @lines;
+
+# Read in list of host/service combinations
+my $services = {};
+open S, "$file" or die "Can't read hostservices";
+while (<S>) {
+    chop $_;
+    my ( $host, $servicename ) = split( "\t", $_ );
+    push @lines,
+      "$host\t$servicename\t0\tDummy data: $$ with $file - " . rand(100) . $/;
+}
+close S;
+
+while (1) {
+    send_now();
+    if ( $opts->{c} ) {
+        sleep $opts->{c};
+    }
+    else {
+        exit;
+    }
+}
+
+sub send_now {
+    open( SEND_NSCA, "|-",
+        "/usr/local/nagios/bin/send_nsca", "-H",
+        "localhost",                       "-c",
+        "/usr/local/nagios/etc/send_nsca.cfg"
+    ) or die "send_nsca startup failed";
+
+    #open (SEND_NSCA, "| /bin/false") or die "Something";
+    select( ( select(SEND_NSCA), $| = 1 )[0] ); # Set autoflush
+                                                 #print "?=$?",$/;
+    foreach $_ (@lines) {
+        print SEND_NSCA $_;
+
+        #print $_;
+    }
+    close(SEND_NSCA) or warn $! ? "Syserr: $!" : "Wait status $? from pipe";
+    if ( $? != 0 ) {
+        die "Error sending";
+    }
+}

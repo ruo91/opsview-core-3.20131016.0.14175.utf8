@@ -1,0 +1,2 @@
+active	calls	cbqos	collect	community	depend	devicetype	group	net	node	rancid	role	runupdate	services	snmpport
+true	false	false	true	public	N/A	switch	Leaf	wan	not_a_real_host	false	core	true	n/a	161

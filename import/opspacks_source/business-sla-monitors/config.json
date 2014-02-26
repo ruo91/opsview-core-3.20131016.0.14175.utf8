@@ -1,0 +1,13 @@
+{
+   "attribute" : [],
+   "hosttemplate" : [
+      {
+         "description" : "Service Level monitor providing availability statistics (previous 7 days)",
+         "managementurls" : [],
+         "name" : "Business - SLA Monitors",
+         "servicechecks" : []
+      }
+   ],
+   "servicecheck" : [],
+   "servicegroup" : []
+}

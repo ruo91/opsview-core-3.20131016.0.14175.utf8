@@ -1,0 +1,300 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#	rsync_nmis_database [-r] [-b]
+#	rsync_nmis_database -R nodename
+#
+# DESCRIPTION:
+#	Runs rsync to push NMIS RRD files from this server to
+#	each node listed in nodes.dat if it is the 2ndary node
+#	-r means called before a reload
+#	-R means a node has recovered, so send all the 2ndary hosts back to that node
+#	-b means run in background
+#	All output goes to /usr/local/nagios/var/log/rsync_nmis_database.log
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use FindBin qw($Bin);
+use lib "/usr/local/nagios/perl/lib", "$Bin/../lib", "$Bin/../etc";
+use Opsview::Slave::Host;
+use Opsview::Slave::Node;
+use Opsview::Slave::NodeStatus;
+use Getopt::Std;
+use File::Find;
+use File::Which;
+use Fcntl;
+
+my $rsync_pid;
+my $opts = {};
+getopts( "rbR:l", $opts ) or die "Incorrect options";
+my $reload  = $opts->{r};
+my $recover = $opts->{R};
+
+my $set_lock_file;
+my $lock_file = "/usr/local/nagios/var/rsync_nmis_database.lock";
+
+END {
+    if ($set_lock_file) {
+        print "Removing lock file\n\n\n";
+        unlink $lock_file;
+    }
+}
+
+# Test if a gen_config has occurred for this node
+exit unless ( -e "/usr/local/nagios/etc/nodes.dat" );
+
+# Run in background
+if ( $opts->{b} ) {
+    my $pid = fork;
+
+    # parent
+    if ($pid) {
+        $set_lock_file = 0; # Leave to child to remove
+        exit;
+    }
+    die "Couldn't fork: $!" unless defined $pid;
+
+    require POSIX;
+    POSIX::setsid() or die "Can't start a new session: $!";
+}
+
+# Set signal handlers after forks
+my $errors = 0;
+$SIG{INT} = sub {
+    print "Got INT rsync_pid=$rsync_pid\n";
+    if ($rsync_pid) {
+        print "Killing rsync pid $rsync_pid\n";
+        kill 'INT', $rsync_pid;
+    }
+    die "From SIGINT";
+};
+
+# SIGPIPE = 'IGNORE' just continues, so mimic behaviour
+$SIG{PIPE} = sub {
+    print "Got PIPE rsync_pid=$rsync_pid, continuing\n";
+
+    # Force this to be a failure
+    $errors++;
+};
+
+my $noninteractive = 1;
+if ( $opts->{l} ) {
+    $noninteractive = 0;
+}
+if ($noninteractive) {
+    my $logfile = "/usr/local/nagios/var/log/rsync_nmis_database.log";
+    open( *STDIN, "+<", "/dev/null" )
+      || die "Can't reopen STDIN to /dev/null: $!";
+    open( *STDOUT, ">>", $logfile )
+      || die "Can't reopen STDOUT to /dev/null: $!";
+    open( *STDERR, ">>", $logfile )
+      || die "Can't reopen STDERR to /dev/null: $!";
+    print scalar localtime, " [$$]: start\n";
+}
+
+GET_LOCKFILE: {
+    unless ( sysopen( FLAG, $lock_file, O_WRONLY | O_EXCL | O_CREAT ) ) {
+
+        # Check if process exists
+        open PID, $lock_file or die "Cannot open $lock_file: $!";
+        my $pid = <PID>;
+        close PID;
+        if ( !kill 0, $pid ) {
+            print
+              "Process id $pid does not exist. Will remove lock file and try again\n";
+            unlink $lock_file;
+            goto GET_LOCKFILE;
+        }
+        elsif ($reload) {
+            print "Killing other rsync (pid=$pid), as a reload has priority\n";
+            kill 'INT', $pid;
+
+            # TODO: Probably a loop required here
+            sleep 1;
+            unless ( sysopen( FLAG, $lock_file, O_WRONLY | O_EXCL | O_CREAT ) )
+            {
+                print "Still cannot open $lock_file\n";
+                exit;
+            }
+        }
+        else {
+            print "Another rsync running (pid $pid)\n";
+            exit;
+        }
+    }
+    print FLAG $$;
+    close FLAG;
+    $set_lock_file++;
+}
+
+my @nodes = Opsview::Slave::Node->retrieve_all;
+
+if ( $opts->{l} ) {
+
+    # Print status and quit
+    foreach my $n (@nodes) {
+        print "Node: " . $n->name . "\n";
+        my $nodestatus = Opsview::Slave::NodeStatus->retrieve( $n->name );
+        if ($nodestatus) {
+            print " status=" . $nodestatus->status . "\n";
+        }
+        else {
+            print " No status\n";
+        }
+        print "\n";
+    }
+    exit;
+}
+
+# No syncing required
+exit unless ( @nodes > 1 );
+
+my @hosts = Opsview::Slave::Host->retrieve_all;
+
+# Find this node
+my $self;
+foreach my $n (@nodes) {
+    $self = $n if $n->self == 1;
+}
+unless ($self) {
+    die "Cannot find own node";
+}
+
+print "I am node = " . $self->name, $/;
+
+# If recovery, we limit the rsync to only the node specified
+if ($recover) {
+    @nodes = grep { $_->name eq $recover } @nodes;
+}
+
+# Kick off rsync
+chdir( "/usr/local/nagios/nmis/database" );
+
+# For each node in this cluster, get a list of hosts it would need to rsync
+# and store that information, so there is no other reliance on the database files
+my @stored_hosts_to_rsync = ();
+foreach my $node (@nodes) {
+    next if $node->self == 1;
+    print $node->name, ":", $/;
+    my $nodestatus = Opsview::Slave::NodeStatus->retrieve( $node->name );
+
+    # If node not found in NodeStatus, then assume up. Nagios should flick
+    # to offline when takeover occurs
+    if ( $nodestatus && $nodestatus->status eq "offline" ) {
+        print "Offline - ignoring rsync", $/;
+        next;
+    }
+
+    my @hosts_to_rsync;
+    my @hosts_to_rsync_ips = ();
+
+    # Work out list of hosts to rsync - this code may fail if the files are being overwritten as part of the
+    # Opsview reload
+    if ($reload) {
+
+        # Send all your hosts to every cluster node
+        @hosts_to_rsync = grep { $_->primaryclusternode eq $self->name } @hosts;
+    }
+    elsif ($recover) {
+        @hosts_to_rsync = grep {
+                 $_->secondaryclusternode eq $self->name
+              && $_->primaryclusternode   eq $recover
+        } @hosts;
+    }
+    else {
+
+        # Only send hosts to this cluster node if it is the secondary node
+        @hosts_to_rsync = grep {
+                 $_->primaryclusternode   eq $self->name
+              && $_->secondaryclusternode eq $node->name
+        } @hosts;
+    }
+    print "Hosts to rsync = "
+      . join( " ",
+        map { push @hosts_to_rsync_ips, $_->ip; $_->name . ":" . $_->ip }
+          @hosts_to_rsync ),
+      $/;
+
+    push @stored_hosts_to_rsync,
+      {
+        nodeip => $node->ip,
+        list   => \@hosts_to_rsync_ips
+      };
+}
+
+# Now do the actual rsync, which will take more time than the list of hosts and now does not require the database files
+my $hostips_to_rsync;
+foreach my $h (@stored_hosts_to_rsync) {
+    my $nodeip = $h->{nodeip};
+    $hostips_to_rsync = $h->{list};
+
+    print "Rsync for ip: $nodeip\n";
+
+    # Do actual rsync here with the hash of the host ips
+    $rsync_pid = open RSYNC, "|-", "rsync", "--bwlimit=5000", "-a",
+      "--files-from=-", "-r", "--stats", ".",
+      $nodeip . ":/usr/local/nagios/nmis/database"
+      or die "Cannot run rsync: $!";
+
+    # allow time for rsync output to be grabbed before continuing
+    # to ensure log output is always in the correct order
+    sleep 1;
+    print 'rsync sub process PID is: ', $rsync_pid, $/;
+    if ( my $ionice = which('ionice') ) {
+        print 'Amending IO priority of rsync sub process to "idle"', $/;
+        system( "$ionice -c 3 -p $rsync_pid" );
+    }
+    if ( my $renice = which('renice') ) {
+        print 'Amending CPU priority of rsync sub process to "19"', $/;
+        system( "$renice 19 -p $rsync_pid" );
+    }
+    find( \&print_matching_files, "health", "interface" );
+    close RSYNC;
+
+    print "rsync return code \$?=" . $? . "\n\n";
+
+    $errors++ unless ( $? == 0 );
+}
+
+# Update flag to give the last completed rsync time
+unless ($errors) {
+    my $update_time_flag =
+      "/usr/local/nagios/var/rsync_nmis_database.lastupdate";
+    open RSYNC, ">", $update_time_flag;
+    close RSYNC;
+}
+
+print scalar localtime, " [$$]: end\n";
+
+sub print_matching_files {
+    next if $File::Find::name =~ /\.svn/;
+    print RSYNC "$File::Find::name\n" if ( match_hostip_list($_) );
+}
+
+sub match_hostip_list {
+    my $filename = shift;
+    foreach my $ip (@$hostips_to_rsync) {
+        return 1 if $filename =~ /^${ip}-/;
+    }
+    return 0;
+}

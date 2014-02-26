@@ -1,0 +1,529 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#       Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MErcHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use DBI;
+use Time::HiRes qw(time);
+use Getopt::Std;
+
+# About us
+my $script         = "check_sql_advanced";
+my $script_version = "0.4";
+my $script_description =
+  "Runs SQL queries against a database and performs checks on the results";
+my $verbose = 0; # set to 1 for debug output
+
+my $hostname;
+
+# Performance data - query execution time
+my $perfdata = "";
+
+my $retval      = 0;  # Our return value (default OK)
+my $retmsg      = ""; # The text we return in response
+my $duration    = 0;
+my $warning     = "";
+my $critical    = "";
+my $append_unit = "";
+my @valid_operators =
+  ( 'string', 'str', 'nstr', 'search', 'lt', 'le', 'gt', 'ge', 'eq', 'ne' );
+my $result_regex = "";
+
+# Database variables
+my $dbport         = 0;
+my $query          = "";
+my $dbname         = "";
+my $dbdriver       = "";
+my $user           = "";
+my $password       = "";
+my $query_perfdata = 0;
+
+# Check values
+my $match_val;
+my $match_op;
+
+# Command line arguments
+our (
+    $opt_h, $opt_H, $opt_D, $opt_P, $opt_q, $opt_t, $opt_d,
+    $opt_u, $opt_p, $opt_w, $opt_c, $opt_r, $opt_e, $opt_a
+);
+getopts( "hH:DP:q:t:d:u:p:w:c:r:ea:" );
+
+#  debug output
+if ($opt_D) {
+    $verbose = 1;
+}
+if ($opt_h) {
+    usage();
+    exit 0;
+}
+if ($opt_H) {
+    logger( "Using \$hostname $opt_H" );
+    $hostname = $opt_H;
+}
+else {
+    print "No hostname specified\n";
+    usage();
+    exit 3;
+}
+
+# User specified port number
+if ($opt_P) {
+    if ( $opt_P !~ /[0-9]+/ ) {
+        print "Specify port number as an integer\n";
+        exit 3;
+    }
+
+    $dbport = "port=$opt_P";
+    logger( "Using \$dbport $dbport" );
+}
+if ($opt_q) {
+    logger( "Using \$query $opt_q" );
+    $query = $opt_q;
+}
+else {
+    print "Must specify query! (use -q)\n";
+    exit 3;
+}
+if ($opt_t) {
+    if (   $opt_t eq "mysql"
+        || $opt_t eq "Oracle"
+        || $opt_t eq "oracle"
+        || $opt_t eq "postgresql" )
+    {
+        $dbdriver = $opt_t;
+        logger( "Using database driver $dbdriver" );
+    }
+    else {
+        $dbdriver = $opt_t;
+        logger( "Unsupported database type $opt_t" );
+    }
+}
+else {
+    print "Must specify database type with -t\n";
+    usage();
+    exit 3;
+}
+
+if ($opt_d) {
+    if ( $dbdriver eq "Oracle" || $dbdriver eq "oracle" ) {
+        if ( $opt_d =~ /SID=/i ) {
+            $dbname = $opt_d;
+        }
+        else {
+            $dbname = "sid=" . $opt_d;
+        }
+    }
+    else {
+        logger( "Using \$dbname $opt_d" );
+        $dbname = $opt_d;
+    }
+}
+else {
+    print "Must specify database name with -d\n";
+    usage();
+    exit 3;
+}
+
+# Username
+if ($opt_u) {
+    $user = $opt_u;
+    logger( "Using \$user $user" );
+}
+else {
+    print "Must specify a username with -u\n";
+    usage();
+    exit 3;
+}
+
+# Password
+if ($opt_p) {
+    $password = $opt_p;
+    logger( "Using \$password $password" );
+}
+if ($opt_w) {
+    $warning = $opt_w;
+}
+if ($opt_c) {
+    $critical = $opt_c;
+}
+if ($opt_r) {
+    $result_regex = $opt_r;
+}
+if ($opt_e) {
+
+    # Return query result as performance data
+    $query_perfdata = 1;
+}
+if ($opt_a) {
+    $append_unit = $opt_a;
+}
+
+# Print log messages if debug (verbose) is enabled
+sub logger {
+    my $logmsg = shift(@_);
+
+    if ( $verbose == 1 ) {
+        print "$logmsg\n";
+    }
+
+    return 0;
+}
+
+# Display our usage statement
+sub usage {
+    print <<EOF
+--------------------------------------------------------------------
+
+$script $script_version
+
+$script_description
+
+Usage: $script -H <hostname>
+
+Options: -H     Hostname or IP address of database server
+         -D     Enable debug output
+         -P     Database port number (default port for database
+                type will be used otherwise)
+         -d	Database name
+         -t     Database type - mysql, oracle or postgresql
+         -q     Query to run on database
+         -u     Username to connect to DB with
+         -p     Password to connect to DB with (default blank)
+         -w     Warning criteria (see below)
+         -c     Critical criteria (see below)
+         -r     Regex to apply to database result, for example
+                use 's/%\$//' to change '50%' to '50', so that
+                you can use numerical matches.
+         -e     Return query result as performance data
+
+Warning and Critical Thresholds
+-------------------------------
+
+Warning and critical thresholds are specified in the format:
+
+    operator:value
+
+The available operators are:
+
+    lt - less than
+    le - less than or equal to
+    gt - greater than
+    ge - greater than or equal to
+    eq - equal to
+    ne - not equal to
+    str - string match
+    nstr - string not match
+
+--------------------------------------------------------------------
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This program is free software; you can redistribute it or modify
+it under the terms of the GNU General Public License
+------------------------------------------------------------------
+EOF
+
+}
+
+##########################################################################
+# evaluate_operators
+sub evaluate_operators {
+
+    # args:
+    # 1: Result from database
+    # 2: check (crit / warn)
+    # 3: level
+
+    my $dbresult = shift;
+    my $match    = shift;
+    my $level    = shift;
+
+    # Make sure everything is defined properly
+    if ( not defined $dbresult or not defined $match or not defined $level ) {
+        logger( "One of the match values is not defined!" );
+        print "WARNING: One of the match values is not defined!\n";
+        exit 1;
+    }
+
+    # Split into op and val
+    ( $match_op, $match_val ) = split( ':', $match );
+
+    # Run through the logic and evaluate
+    if ( not defined $match_op or $match_op eq "" ) {
+        print
+          "UNKNOWN: operator is blank in $level match \"$match\" Check command -c or -w syntax\n";
+        exit 3;
+    }
+    else {
+        $match_op = lc($match_op);
+    }
+
+    # Check the match type is recognised
+    my $found = 0;
+    my $val;
+    foreach $val (@valid_operators) {
+        if ( $val eq $match_op ) {
+            $found = 1;
+        }
+    }
+
+    if ( $found == 0 ) {
+        print "Operator $match_op not recognised in "
+          . lc($level)
+          . " criteria.\n";
+        exit 3;
+    }
+
+    if ( $match_op eq 'search' or $match_op eq 'str' ) {
+
+        # Change this to the correct operator
+        logger( "match operator set to 'search' instead of 'string', adjusting"
+        );
+        $match_op = 'string';
+    }
+
+    # I will have to do some checking to see if the values are numeric or strings
+    # Avoid perl barfing if the user inputs alpha when using numeric logic
+    if ( $dbresult =~ /^[\d\.]+$/o ) {
+        logger( "$dbresult is numeric" );
+    }
+    elsif ( $dbresult =~ /^[\s\w\,\\\/]+$/o ) {
+        logger( "$dbresult is alpha" );
+        if ( !( $match_op eq 'string' || $match_op eq "nstr" ) ) {
+            print
+              "UNKNOWN: Result \"$dbresult\" is alphabetical for numeric match! Use string to search instead\n";
+            exit 3;
+        }
+    }
+    else {
+        logger( "$dbresult seems to be alphanum" );
+        print
+          "UNKNOWN: Result $dbresult is not numeric! Use string to search instead\n";
+        exit 3;
+    }
+
+    ####
+    # LT checks
+    if ( $match_op eq 'lt' ) {
+
+        # Neither -t or -d defined, use Regular logic
+        if ( $dbresult < $match_val ) {
+
+            # Do a regular match
+            return
+              "$level: $dbresult $append_unit is less than threshold $match_val";
+        }
+        else {
+            return "";
+        }
+    }
+    ####
+    # GT checks
+    elsif ( $match_op eq 'gt' ) {
+
+        # Regular logic
+        if ( $dbresult > $match_val ) {
+            return
+              "$level: $dbresult $append_unit is greater than threshold $match_val";
+        }
+        else {
+            return "";
+        }
+    }
+    ####
+    # LE checks
+    elsif ( $match_op eq 'le' ) {
+
+        # Regular logic
+        if ( $dbresult <= $match_val ) {
+
+            # Do a regular match
+            return
+              "$level: $dbresult $append_unit is less than or equal to threshold $match_val";
+        }
+        else {
+            return "";
+        }
+    }
+    ####
+    # GE checks
+    elsif ( $match_op eq 'ge' ) {
+
+        # Regular logic
+        if ( $dbresult >= $match_val ) {
+            return
+              "$level: $dbresult $append_unit is greater than or equal to threshold $match_val";
+        }
+        else {
+            return "";
+        }
+    }
+    ####
+    # EQ checks
+    elsif ( $match_op eq 'eq' ) {
+
+        # Regular logic
+        if ( $dbresult == $match_val ) {
+            return
+              "$level: $dbresult $append_unit is equal to threshold $match_val";
+        }
+        else {
+            return "";
+        }
+    }
+    ####
+    # NE checks
+    elsif ( $match_op eq 'ne' ) {
+
+        # Regular logic
+        if ( $dbresult != $match_val ) {
+            return
+              "$level: $dbresult $append_unit is not equal to threshold $match_val";
+        }
+        else {
+            return "";
+        }
+    }
+    ####
+    # String checks
+    elsif ( $match_op eq 'string' ) {
+
+        # do search match
+        logger( "$dbresult =~ /$match_val/i" );
+        if ( $dbresult =~ /$match_val/i ) {
+            return "$level: $dbresult matches $match_val";
+        }
+        else {
+            return "";
+        }
+    }
+    elsif ( $match_op eq 'nstr' ) {
+
+        # do negative search match
+        logger( "$dbresult !~ /$match_val/i" );
+        if ( $dbresult !~ /$match_val/i ) {
+            return "$level: $dbresult does not match $match_val";
+        }
+        else {
+            return "";
+        }
+    }
+    else {
+        die(
+            "Can't match operator $match_op.. Is it misspelled or uppercase? "
+        );
+    }
+}
+
+# Connect to the DB
+my $data_source;
+if ( $dbdriver eq "Sybase" ) {
+    $data_source = "dbi:$dbdriver:server=$hostname;database=$dbname";
+}
+elsif ( $dbdriver eq "Oracle" || $dbdriver eq "oracle" ) {
+    $data_source = "dbi:Oracle:host=$hostname;$dbname;$dbport";
+}
+elsif ( $dbdriver eq "postgresql" ) {
+    $data_source = "dbi:Pg:host=$hostname;dbname=$dbname;$dbport";
+}
+else {
+    $data_source = "dbi:$dbdriver:$dbname;host=$hostname;$dbport";
+}
+
+logger( "Using data source $data_source" );
+
+# Need to use eval to stop error going to stderr
+my $dbh;
+if ( $dbdriver eq "postgresql" ) {
+    eval {
+        $dbh =
+          DBI->connect( $data_source, $user, $password, { AutoCommit => 0 } );
+    };
+}
+else {
+    eval { $dbh = DBI->connect( $data_source, $user, $password ) };
+}
+unless ($dbh) {
+    print "Can't connect to $data_source: $DBI::errstr\n";
+    exit 2;
+}
+
+logger( "Connected to database $dbname on $hostname" );
+
+# Run the query
+my $sth        = $dbh->prepare($query);
+my $beforetime = time;
+$sth->execute();
+
+# Retrieve the results
+my @result = $sth->fetchrow_array();
+$retmsg = "Query returned: $result[0]";
+logger( "Query result was: $result[0]" );
+
+# Work out the query duration, including fetching the rows
+$duration = int( time - $beforetime );
+logger( "Query duration was $duration" );
+
+# Apply any given regex
+my @regexes = split( ';', $result_regex );
+
+foreach my $regex (@regexes) {
+    eval "\$result[0] =~ $regex;";
+}
+
+# No longer need database handles
+undef $sth;
+$dbh->disconnect();
+
+# If we should also return the query result as perf data, do so
+if ($query_perfdata) {
+    my $warn_num = $warning;
+    my $crit_num = $critical;
+
+    $warn_num =~ s/.*://;
+    $crit_num =~ s/.*://;
+
+    $perfdata = "result=" . $result[0] . ";$warn_num;$crit_num;;";
+}
+
+$perfdata .= " execute_time=${duration}s";
+
+# Check warning/critical values
+my $checkres;
+if ( !$critical eq "" ) {
+    $checkres = evaluate_operators( $result[0], $critical, "CRITICAL" );
+    if ( !$checkres eq "" ) {
+        print "$checkres | $perfdata\n";
+        exit 2;
+    }
+}
+
+if ( !$warning eq "" ) {
+    my $checkres = evaluate_operators( $result[0], $warning, "WARNING" );
+    if ( !$checkres eq "" ) {
+        print "$checkres | $perfdata\n";
+        exit 1;
+    }
+}
+
+# Everything must be OK!
+print "OK - result: $result[0]" . " $append_unit | $perfdata\n";
+exit 0;

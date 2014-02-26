@@ -1,0 +1,100 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#	dosh [-a] [-i] [-s {slave1,slave2,...}] <-l|{command}>
+#
+# DESCRIPTION:
+#	Distributed Opsview SHell
+#	Simple way of running command across all nodes
+#	Don't expect this to be supported forever, as future technologies will probably remove
+#	adhoc ssh sessions
+#	Default is to run for only activated slaves. Use -a to mean all
+#
+# -a => use all slaves, including deactivated ones
+# -i => do not check host keys and accepts what we are given (use on first invocation only)
+# -s slave1[,slave2,...] => run on specified slaves only
+# -l => Run bash prompt (alias for a command of '/bin/bash -i').
+#       Will provide shell access across each slave in turn.
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use Getopt::Std;
+use FindBin qw($Bin);
+use lib "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+use Opsview;
+use Opsview::Monitoringserver;
+
+my $opts = {};
+getopts( "s:aivl", $opts ) or die "Incorrect options";
+
+if ( $opts->{l} ) {
+    @ARGV = ( '/bin/bash', '-i' );
+}
+
+die "Must specify command to run" unless (@ARGV);
+my @slaves;
+if ( $opts->{s} ) {
+    foreach my $slave_name ( split( ",", $opts->{s} ) ) {
+        my $s;
+        $s = Opsview::Host->search( name => $slave_name )->first;
+        if ($s) {
+            if ( $s->monitoringserver && $s->monitoringserver->is_slave ) {
+                $s = Opsview::Monitoringclusternode->search( host => $s->id )
+                  ->first; # TODO: This should be abstracted away in model
+                push @slaves, $s;
+            }
+            else {
+                die "$slave_name is not part of a slave monitoring server";
+            }
+        }
+        else {
+            die "Cannot find slave with hostname: $slave_name";
+        }
+    }
+}
+else {
+    if ( $opts->{a} ) {
+        @slaves = Opsview::Monitoringclusternode->retrieve_all;
+    }
+    else {
+        @slaves = Opsview::Monitoringclusternode->retrieve_all_activated;
+    }
+}
+
+if ( !@slaves ) {
+    print "No slaves defined. Finishing", $/;
+    exit 0;
+}
+
+foreach my $node (@slaves) {
+    local @ARGV = @ARGV;
+    print "node=$node\n" if $opts->{v};
+    my @cmd = $node->ssh_command( \@ARGV );
+
+    # if -i (for initial connect) is provided, don't check host keys
+    if ( $opts->{i} ) {
+        splice( @cmd, 1, 0, "-o", "StrictHostKeyChecking=no" );
+    }
+    print "cmd='@cmd'\n" if $opts->{v};
+    system(@cmd);
+}

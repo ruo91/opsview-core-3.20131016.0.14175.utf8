@@ -1,0 +1,39 @@
+{
+  list => [
+    {
+      computed_state => "unknown",
+      description => "cisco devices",
+      downtime => 2,
+      hosts => { handled => 5, total => 5, unhandled => 0, up => { handled => 5 } },
+      name => "cisco",
+      services => {
+        computed_state => "unknown",
+        handled        => 1,
+        total          => 15,
+        unhandled      => 14,
+        unknown        => { handled => 1, unhandled => 14 },
+      },
+    },
+    {
+      computed_state => "unknown",
+      description => "cisco devices, group 1",
+      downtime => 2,
+      hosts => { handled => 3, total => 3, unhandled => 0, up => { handled => 3 } },
+      name => "cisco_gp1",
+      services => {
+        computed_state => "unknown",
+        handled        => 0,
+        total          => 9,
+        unhandled      => 9,
+        unknown        => { unhandled => 9 },
+      },
+    },
+  ],
+  summary => {
+    handled   => 9,
+    host      => { handled => 8, total => 8, unhandled => 0, up => 8 },
+    service   => { handled => 1, total => 24, unhandled => 23, unknown => 24 },
+    total     => 32,
+    unhandled => 23,
+  },
+}

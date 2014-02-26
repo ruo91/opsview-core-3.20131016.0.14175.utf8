@@ -1,0 +1,41 @@
+#!/usr/bin/perl
+# Takes a db file, sends to other host and gets it back
+# convert_db_remote -f db_file -H hostname
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use strict;
+use Getopt::Std;
+
+my $opts = {};
+getopts( "f:H:", $opts ) or die "Bad options";
+my $file = $opts->{f} or die "Need file";
+my $host = $opts->{H} or die "Need host";
+my $shortfile;
+( $shortfile = $file ) =~ s/^.*\///;
+
+system("scp $file $host:/tmp") == 0 or die "Can't copy file";
+system(
+    "ssh $host '/usr/local/nagios/bin/db_opsview -t db_restore < /tmp/$shortfile'"
+  ) == 0
+  or die "Can't restore";
+system(
+    "ssh $host '/usr/local/nagios/bin/db_opsview -t db_backup > /tmp/$shortfile'"
+  ) == 0
+  or die "Can't backup";
+system("scp $host:/tmp/$shortfile $file") == 0 or die "Can't transfer back";
+print "Finished!", $/;

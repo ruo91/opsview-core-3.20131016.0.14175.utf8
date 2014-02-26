@@ -1,0 +1,26 @@
+LOGO - Debian Linux:debian
+LOGO - Linux Penguin:linux
+LOGO - NetBSD:netbsd
+LOGO - OpenBSD:openbsd
+LOGO - Opsview:opsview
+LOGO - Xterminal:xwindows
+SYMBOL - Application:application
+SYMBOL - xDSL:dsl
+SYMBOL - Environment Monitor:meter
+SYMBOL - Equipment Rack:cabinet
+SYMBOL - Firewall:firewall
+SYMBOL - Hub:hub
+SYMBOL - Load Balancer:loadbalancer
+SYMBOL - Network:network
+SYMBOL - Network Cloud:network_cloud
+SYMBOL - Network Device:network_device
+SYMBOL - Proxy:proxy
+SYMBOL - Router:router
+SYMBOL - Server:server
+SYMBOL - Storage:storage
+SYMBOL - Switch:switch
+SYMBOL - Virtual Machine:virtual_machine
+SYMBOL - VLAN:vlan
+SYMBOL - VPN:vpn
+SYMBOL - Web Site:website
+SYMBOL - Wireless Network:wireless

@@ -1,0 +1,240 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#	create_and_send_configs [-r]
+#
+# DESCRIPTION:
+#	Creates configs then
+#	sends configs to master. Slave functionality removed
+#	-r for sending a reload request when config is sent
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+use Opsview;
+use Opsview::Monitoringserver;
+use Opsview::Reloadtime;
+use Opsview::Reloadmessage;
+use Opsview::Hostgroup;
+use Opsview::Auditlog;
+use File::Copy;
+use Getopt::Std;
+use Parallel::Forker;
+use Log::Log4perl;
+use File::Path;
+
+my $opts = {};
+getopts( "rd", $opts ) or die "Incorrect options";
+
+my $master_options = "";
+if ( $opts->{r} ) {
+    $master_options = "-r";
+}
+
+my $base       = "/usr/local/nagios";
+my $config_dir = "$base/configs";
+
+Log::Log4perl::init( "$Bin/../etc/Log4perl.conf" );
+my $logger = Log::Log4perl->get_logger( "create_and_send_configs" );
+
+Opsview::Auditlog->system( "Starting reload" );
+
+my $timing = Opsview::Reloadtime->insert( { start_config => time() } );
+$timing
+  ->update; # Need to update as subsequent forks will destroy variable and error
+$logger->info( "Starting overall" );
+
+# Delete contents of $config_dir first
+opendir( DIR, $config_dir ) or die "Cannot open $config_dir";
+my @dirs = grep !/^\.\.?\z/, readdir DIR;
+closedir DIR;
+foreach my $file (@dirs) {
+    rmtree( "$config_dir/$file" );
+}
+
+my $Fork = Parallel::Forker->new;
+$SIG{CHLD} = sub { $Fork->sig_child() if $Fork };
+$SIG{TERM} = sub { $Fork->kill_tree_all('TERM') if $Fork; die "Quitting...\n" };
+
+# Master stuff
+my $master = Opsview::Monitoringserver->get_master
+  or die "No monitoringservers are defined";
+my $host_dir = "$config_dir/" . $master->name;
+
+my $master_files          = "nrd.conf";
+my $transfer_files        = "*.cfg htpasswd.* *.csv nmis.conf plugins local.d";
+my $transfer_files_conf_d = "conf.d";
+my $configs_tar_gz        = "configs.tar.gz";
+my $configs_tmp_dir       = "$base/tmp";
+mkdir($configs_tmp_dir) unless -d $configs_tmp_dir;
+
+$Fork->max_proc( Opsview::Config->max_parallel_tasks );
+
+#
+# Pre-tasks before configuration generation
+#
+# This section is to do some cleanup tasks before calling nagconfgen
+# Some of these are duplicated within nagconfgen because you can call that
+# for testing purposes
+Opsview->db_Main->do( "TRUNCATE temporary_hostmonitoredbynode" );
+Opsview->db_Main->do( "TRUNCATE " . Opsview::Reloadmessage->table );
+
+# Save this item - should run before other jobs
+# We hold back for now because we are setting everything up first
+my $ms_first_run = $Fork->schedule(
+    run_on_start => sub {
+        $logger->debug( "Start master config" );
+        my $rc = system( "$base/bin/nagconfgen.pl", $config_dir, "1" );
+        $logger->debug( "End master config with rc=$rc" );
+        if ( $rc == -1 ) {
+            $logger->warn("Could not invoke nagconfgen.pl for master: $!");
+            exit 1;
+        }
+        exit $rc >> 8;
+    },
+    name  => "master_config",
+    label => "configs",
+);
+
+# Mrtgconfgen must be run after the reloadmessages table has been truncated
+# This is run in background because we don't want it holding up the overall config generation
+$Fork->schedule(
+    run_on_start => sub {
+        $logger->debug("Starting mrtgconfgen");
+        system(
+            "$base/bin/mrtgconfgen.pl > $base/var/log/mrtgconfgen.log 2>&1 &");
+        $logger->debug("End mrtgconfgen");
+        exit $? >> 8;
+    },
+    name => "mrtgconfgen",
+);
+
+$Fork->schedule(
+    run_on_start => sub {
+        die "Umask failed" unless defined umask 077;
+        chdir "$host_dir" or die "failed to chdir $host_dir";
+        my $rc = system(
+            "tar --gzip -hcf $configs_tmp_dir/$configs_tar_gz $transfer_files $transfer_files_conf_d $master_files 2>&1"
+        );
+        if ( $rc == -1 ) {
+            $logger->warn("Could not invoke tar for master: $!");
+            exit 1;
+        }
+        exit $rc >> 8;
+    },
+    run_after => ["configs"],
+    name      => "master_tar",
+);
+$Fork->schedule(
+    run_on_start => sub {
+        $logger->debug( "Start master verify" );
+        $_ = `$base/bin/process_configs -m -v $configs_tar_gz 2>&1`;
+        my $rc = $?;
+        $logger->debug( "End master verify with rc=$rc" );
+        if ( $rc != 0 ) {
+            print "Error: $_";
+            Opsview::Reloadmessage->create(
+                {
+                    severity          => "critical",
+                    utime             => time,
+                    message           => $_,
+                    monitoringcluster => 1,
+                }
+            );
+        }
+        if ( $rc == -1 ) {
+            exit 1;
+        }
+        exit $rc >> 8;
+    },
+    run_after => ["master_tar"],
+    name      => "master_verify",
+    label     => "verify",
+);
+$Fork->schedule(
+    run_on_start => sub {
+        $logger->debug( "Start master expansion" );
+        $_ =
+          `$base/bin/process_configs -m $master_options $configs_tar_gz 2>&1`;
+        $logger->debug( "End master expansion with rc=$?" );
+        if ( $? != 0 ) {
+            print "Error: $_";
+            Opsview::Reloadmessage->create(
+                {
+                    severity          => "critical",
+                    utime             => time,
+                    message           => $_,
+                    monitoringcluster => 1,
+                }
+            );
+        }
+        exit $? >> 8;
+    },
+    run_after => ["verify"],
+    name      => "master_expansion",
+    label     => "expansion",
+);
+$Fork->schedule(
+    run_on_start => sub { exec "rm -f $configs_tmp_dir/$configs_tar_gz" },
+
+    # Need to specify both so it waits for both to finish
+    run_after => [ "^master_expansion", "^master_verify" ],
+    name      => "master_cleanup",
+);
+
+my $error = 1;
+
+$Fork->schedule(
+    run_on_start  => sub { },
+    run_on_finish => sub { $error = 0 },
+    run_after => ["expansion"],
+    name      => "finish",
+);
+
+# Now run everything
+# We disconnect from the DB before running jobs because mysql sometimes fails
+# if forked processes use the same db connection. Class::DBI will automatically
+# issue a new connection if required
+Opsview->db_Main->disconnect;
+$ms_first_run->run;
+$Fork->ready_all;
+$Fork->wait_all;
+
+if ($error) {
+    $logger->warn( "Failure in configuration generation" );
+    Opsview::Auditlog->system( "Finished reload with errors" );
+}
+else {
+    Opsview::Monitoringserver->write_connections_file;
+    $timing->end_config( time() );
+    $timing->update;
+    Opsview::Auditlog->system( "Finished reload successfully" );
+    system( "$base/bin/rc.opsview backup " . $timing->id . " &", )
+      ; # Run in background to not cause reloads to be slower
+}
+
+$Fork->write_tree( filename => "$base/var/log/create_and_send_configs.debug" );
+
+$logger->info( "Ending overall with error=$error" );
+exit $error;

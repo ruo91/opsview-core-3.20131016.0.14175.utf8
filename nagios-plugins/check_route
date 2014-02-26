@@ -1,0 +1,200 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+#	check_route
+#
+# DESCRIPTION:
+#	Check the route to a device to see if it changes
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+
+use FindBin qw($Bin $Script);
+use lib "$Bin/../perl/lib", "$Bin/../lib", "$Bin/../etc";
+use IPC::Open3;
+use Nagios::Plugin;
+use Storable qw(lock_store lock_retrieve);
+
+my $VERSION         = "0.01";
+my $store_file_base = "$Bin/../var/${Script}_";
+my $store_file;
+
+my $route_before;
+my $route_now;
+
+my $np = Nagios::Plugin->new(
+    usage => qq{Usage:
+ %s [-v] [-h] [-w=<b>] [-c=<b>] [-p=<port>] -H <device>
+   Check route to a device for changes},
+    shortname => "ROUTE",
+    version   => $VERSION,
+    blurb =>
+      qq{This plugin checks for changes to a route to a particular server and will
+raise a warning every time a change is detected.  When a change occurs the
+saved route will be updated for later comparisons.  Alerts will also be raised
+if the route takes too long to completed
+},
+);
+
+$np->add_arg(
+    spec => "host|H=s",
+    help => qq{-H, --host=STRING
+   Name or IP of device to check},
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w, --warning=INTEGER
+   Route time in ms above which a warning alert will be generated
+      (default: 5000)},
+    default => 5000,
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c, --critical=INTEGER
+   Route time in ms above which a critial alert will be generated
+      (default: 10000)},
+    default => 100000,
+);
+
+$np->getopts;
+
+alarm $np->opts->timeout;
+
+# traceroute params are:
+# don't resolve hostname, use ICMP ECHO, only sent one packet
+my $command = 'traceroute -n -I -q 1 ' . $np->opts->host;
+my $pid = open3( undef, \*CHLD_OUT, \*CHLD_ERR, $command );
+waitpid( $pid, 0 );
+my $exit_status = $? >> 8;
+
+if ( $exit_status > 0 ) {
+    my ( $stderr, $errbyte );
+    while ( sysread( CHLD_ERR, $errbyte, 1024 ) ) {
+        $stderr .= $errbyte;
+    }
+    chomp $stderr;
+    $np->nagios_exit( UNKNOWN, $stderr );
+}
+
+my ( $stdout, $outbyte );
+while ( sysread( CHLD_OUT, $outbyte, 4096 ) ) {
+    $stdout .= $outbyte;
+}
+chomp $stdout;
+my @route_used = split /\n/, $stdout;
+
+if ( $np->opts->verbose ) {
+    print 'DEBUG: route now is:', $/;
+}
+
+my $total_time = 0;
+
+# NOTE: expects all hops to provide a valid IP rather than '*'
+foreach my $hop (@route_used) {
+    next if $hop =~ /^traceroute to /;
+    chomp($hop);
+    my ( $hop_count, $hop_host, $time, $time_units ) = $hop =~ m/
+        ^\s*?                   # optional whitespace at line start
+        (\d+)                   # hop count
+        \s+                     # more whitespace
+        (\d+\.\d+\.\d+\.\d+)    # numeric IP address
+        \s+                     # more space
+        (\d+\.\d+)              # time taken
+        \s+                     # more space
+        (\w+)                   # time units
+      /smx;
+
+    if ( $np->opts->verbose ) {
+        print 'DEBUG: ', $hop, $/;
+    }
+
+    $total_time +=
+        $time_units eq 'ms'
+      ? $time
+      : $np->nagios_exit( UNKNOWN, "Cannot cope with line '$hop'" );
+    $route_now->[$hop_count] = $hop_host;
+}
+
+$np->add_perfdata(
+    label    => 'total_time',
+    uom      => "ms",
+    value    => $total_time,
+    warning  => $np->opts->warning,
+    critical => $np->opts->critical,
+);
+
+# don't count element 0 in the @$route_now array
+$np->add_perfdata(
+    label => 'hops',
+    value => scalar(@$route_now) - 1,
+);
+
+$np->add_message(
+    $np->check_threshold($total_time),
+    'Time taken is',
+    $total_time, 'ms'
+);
+
+# ensure we use store file specific to host being checked
+$store_file = $store_file_base . $np->opts->host . '.dat';
+
+if ( -f $store_file ) {
+    $route_before = lock_retrieve($store_file);
+}
+
+my $route_changed = 0;
+
+if ( $np->opts->verbose ) {
+    print 'DEBUG: comparing routes', $/;
+}
+
+if ( $route_before && $route_before->[1] ) {
+
+    # don't count element 0 in the @$route_now array
+    foreach my $hop ( 1 .. scalar(@$route_now) - 1 ) {
+        if ( $np->opts->verbose ) {
+            print 'DEBUG: ', $route_now->[$hop], ' vs ', $route_before->[$hop],
+              $/;
+        }
+        if ( $route_now->[$hop] ne $route_before->[$hop] ) {
+            if ( $np->opts->verbose ) {
+                print 'DEBUG: Stopping comparison; route changed', $/;
+            }
+            $np->add_message( WARNING, "Route has changed" );
+            $route_changed = 1;
+            last;
+        }
+    }
+}
+
+lock_store( $route_now, $store_file );
+
+$np->add_perfdata(
+    label => 'route_change',
+    value => $route_changed,
+);
+
+$np->nagios_exit( $np->check_messages() );

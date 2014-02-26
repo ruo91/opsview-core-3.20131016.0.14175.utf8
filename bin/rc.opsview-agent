@@ -1,0 +1,222 @@
+#! /bin/sh 
+#
+#
+# AUTHORS:
+#  Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+### BEGIN INIT INFO
+# Provides:          opsview-agent
+# Required-Start:    $local_fs $remote_fs $syslog $named $network $time
+# Required-Stop:     $local_fs $remote_fs $syslog $named $network
+# Should-Start:
+# Should-Stop:
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Start/Stop the Nagios remote plugin execution daemon
+### END INIT INFO
+### CHKCONFIG INFO
+# chkconfig: 345 99 01
+# description: Control script for Opsview
+# processname: nrpe
+### END CHKCONFIG INFO
+
+#########
+#
+# NOTE: To work correctly for HA systems, MUST conform to
+#       http://clusterlabs.org/doc/en-US/Pacemaker/1.0/html/Pacemaker_Explained/ap-lsb.html
+#
+# This script is currently used on the slaves as /etc/init.d/opsview-agent via install_slave
+# but on the master, the init script is from a different area - this needs to be simplified!
+#
+#########
+
+# Switch to nagios if run as root
+id | grep "uid=0(" >/dev/null
+if [ $? = "0" ] ; then
+  case "$0" in
+    /*) cmd="$0" ;;
+    *) cmd=`which $0`
+    case "$cmd" in
+      /*) ;;
+      *) cmd="$PWD/$cmd";;
+    esac
+  ;;
+  esac
+  exec su - nagios -c "$cmd $@"
+fi
+
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+NAME=opsview-agent
+DESC=opsview-agent
+AGENT_BASE=/usr/local/nagios
+DAEMON=$AGENT_BASE/bin/nrpe
+CONFIG=$AGENT_BASE/etc/nrpe.cfg
+
+# get the correct PID file out of the config file
+if [ ! -f $CONFIG ]; then
+  echo "$CONFIG doesn't exist - exiting"
+  exit 1
+fi
+
+PIDFILE=`grep "^pid_file=" $CONFIG | awk -F= '{print $2}'`
+if [ "x$PIDFILE" = "x" ]; then
+    echo "pid_file not set in $CONFIG - exiting"
+    exit 1
+fi
+
+die() { echo "$2"; exit $1; }
+
+getpid()
+{
+  if [ -f $PIDFILE ]; then
+    cat $PIDFILE
+  fi
+}
+
+status()
+{
+  PID=`getpid`
+  if [ "x$PID" != "x" ]; then
+    if kill -0 $PID 2>/dev/null; then
+      # check to see if the given pid is nrpe
+      process="`ps -o comm -p $PID | tail -1`"
+      if [ "$process" = "nrpe" ] ||
+         [ "$process" = "/usr/local/nagios/bin/nrpe" ]
+      then
+        echo "NRPE is running as process $PID"
+        return 0
+      fi
+    fi
+
+    # BEWARE: if this is solaris global zone we may get more NRPE
+    # processes than expected due to all the zones so don't do any 
+    # more on Solaris systems to be on safe side
+    uname -s | grep SunOS 1>/dev/null
+    if [ $? = 0 ]; then
+      echo "NRPE is not running"
+      return 0
+    fi
+
+    # this section should cater for when:
+    #   PID recorded AND (its an active AND its not nrpe) OR inactive pid
+
+    # check to ensure its not on another pid
+    PID=`ps -eo pid,comm | awk '$2 == "nrpe" {print $1}'`
+    if [ "x$PID" != "x" ]; then
+      # PID file is wrong for some reason, so update it
+      if [ "`echo $PID | wc -w`" -gt 1 ]; then
+        echo "FATAL: more than 1 nrpe process found:"
+        echo $PID
+        exit 1
+      fi
+      echo $PID > $PIDFILE
+      echo "NRPE is running as process $PID"
+      return 0
+    fi
+  fi
+
+  echo "NRPE is not running"
+  return 3
+}
+
+killproc_nrpe()
+{
+  PID=`getpid`
+  if [ "x$PID" != "x" ]; then
+    kill -0 $PID 2>/dev/null && kill $2 $PID
+  fi
+
+  # BEWARE: if this is solaris global zone we may get more NRPE
+  # processes than expected due to all the zones so don't do any 
+  # more on Solaris systems to be on safe side
+  uname -s | grep SunOS 1>/dev/null
+  if [ $? = 0 ]; then
+    return
+  fi
+
+  # also check to ensure nrpe isnt running on another pid
+  PID=`ps -eo pid,comm | awk '$2 == "nrpe" {print $1}'`
+  if [ "x$PID" != "x" ]; then
+    kill $2 $PID
+  fi
+}
+
+start()
+{
+  if [ ! -f $CONFIG ]; then
+    echo "No nrpe.cfg - exiting"
+    exit 1
+  fi
+
+  # test to see if the pid file can be created
+  touch -a $PIDFILE 1>/dev/null 2>&1
+  if [ $? -ne 0 ]; then
+    echo "Cannot write to $PIDFILE - exiting"
+    exit 1
+  fi
+  # if touch created an remove empty file, remove it
+  test ! -s $PIDFILE && rm -f $PIDFILE
+
+  status nrpe > /dev/null && die 0 "NRPE is already running"
+  
+  $DAEMON -c $CONFIG -d
+
+  echo "NRPE started"
+}
+
+stop()
+{
+  killproc_nrpe
+  if ! status nrpe >/dev/null ; then
+    echo "NRPE stopped"
+  else
+    echo "NRPE is not running"
+  fi
+  return 0
+}
+
+test -x $DAEMON || exit 0
+
+case "$1" in
+  status)
+    status ; exit $?
+  ;;
+
+  start)
+    start
+  ;;
+
+  stop)
+    stop
+  ;;
+
+  restart)
+    stop
+    sleep 1
+    start
+  ;;
+
+  *)
+    echo "Usage: $N {start|stop|restart|status}" 
+    exit 1
+  ;;
+esac
+
+exit 0

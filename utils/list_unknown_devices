@@ -1,0 +1,115 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+#   list_unknown_devices
+#
+# DESCRIPTION:
+#   Search current nagios.log file for passive check results about
+#   unknown hosts and services
+#
+# AUTHORS:
+#   Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+
+use lib '/usr/local/nagios/perl/lib';
+use lib '/usr/local/nagios/lib';
+
+use Data::Dump qw/dump/;
+use List::MoreUtils qw(none any);
+
+use Opsview;
+use Opsview::Host;
+
+my $naglog = '/usr/local/nagios/var/nagios.log';
+my %hosts;
+
+open( my $naglog_fh, '<', $naglog ) || die "Failed to open $naglog: $!", $/;
+
+while ( my $line = <$naglog_fh> ) {
+    next unless ( $line =~ m/Passive check result.*not be found/ );
+
+    my ( $service, $host );
+    ($host)    = $line =~ m/host '(\w+)'?/;
+    ($service) = $line =~ m/service '(.*?)'/;
+
+    if ($service) {
+        $hosts{$host}{$service} = 1;
+    }
+
+}
+
+close($naglog);
+
+foreach my $host ( keys(%hosts) ) {
+    my $host_obj = Opsview::Host->search( name => $host )->first;
+
+    if ( !$host_obj ) {
+        print "Host '$host' missing", $/;
+        next;
+    }
+
+    my @host_svcs;
+    foreach my $obj ( @{ $host_obj->resolved_servicechecks } ) {
+        next unless ($obj);
+        push( @host_svcs, $obj->{servicecheck}->name );
+    }
+
+    foreach my $service ( sort keys( %{ $hosts{$host} } ) ) {
+
+        if ( !any { $_ eq $service } @host_svcs ) {
+            print "Host '$host' missing service '$service'", $/;
+        }
+    }
+}
+
+=pod
+
+=head1 NAME
+
+list_unknown_devices
+
+=head1 SYNOPSIS
+
+list_unknown_devices
+
+=head1 DESCRIPTION
+
+Script to search the current nagios.log file and list passive check results
+for unknown hosts and services.
+
+This can aid in setting up a passive slave
+
+=head1 OUTPUT
+
+Hosts that have not been found in the Opsview configuration will be listed
+
+Services that are not regiestered as being on an existing host will be listed
+
+=head1 OPTIONS
+
+There are no options at this time
+
+=head1 ARGUMENTS
+
+There are no arguments at this time
+
+=cut

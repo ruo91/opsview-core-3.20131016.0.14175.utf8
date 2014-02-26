@@ -1,0 +1,63 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+# 	check_hostgroup_restrictions
+#
+# DESCRIPTION:
+# 	Checks if there are any constraint violations with hostgroup names
+#	Basically runs the check_name_clash_with_same_parent in Opsview::Hostgroup
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use lib "/usr/local/nagios/lib", "/usr/local/nagios/perl/lib";
+use strict;
+use Opsview;
+use Opsview::Hostgroup;
+
+my $errors = 0;
+foreach my $this_hg ( Opsview::Hostgroup->search ) {
+
+    # This is duplicated from Opsview::Hostgroup because there is no guarantee the check_name_clash_with_parent will exist when testing this pre-upgrade
+    my $self     = $this_hg;
+    my $parentid = $self->parentid;
+    if ( ref $parentid ) { $parentid = $parentid->id }
+    {
+        foreach my $hg ( $self->search( parentid => $parentid ) ) {
+            next if ( $self->{id} && $hg->id == $self->{id} );
+            if ( $hg->name eq $self->name ) {
+
+                #$self->_croak("system.messages.hostgroup.samenamesameparentclash");
+                print "Hostgroup id="
+                  . $self->id
+                  . " name="
+                  . $self->name
+                  . " parent_name="
+                  . $self->parentid->name
+                  . " has the same name for the same parent. Please change\n";
+                $errors++;
+            }
+        }
+    }
+}
+if ( $errors == 0 ) {
+    print "No problems with hostgroup hierarchy names\n";
+}
+exit $errors;

@@ -1,0 +1,204 @@
+#
+# Defaults configuration file for Opsview
+#
+# If you need to override any of these values, amend opsview.conf
+# **WARNING** This file will be overwritten on an upgrade
+#
+# Rules for overriding:
+#  This file is read first
+#  Any variables in opsview.conf will override these
+#
+# To access from shell script, use: ". bin/opsview.sh"
+
+# NOTE: If you change the passwords for an existing system, you need to reload and restart Opsview and Opsview Web
+# See http://docs.opsview.com/doku.php?id=opsview-core:faq
+
+# DB for Opsview
+$dbuser = "opsview";
+$dbpasswd = "changeme";
+$db = "opsview";
+$dbi = "dbi:mysql";
+
+$bind_address = "0.0.0.0";
+
+# Set below to 1 if apache has been set up for port 443 use
+$use_https = 0;
+
+# DB information for Runtime
+$runtime_dbuser = "nagios";
+$runtime_dbpasswd = "changeme";
+$runtime_db = "runtime";
+$runtime_dbi = "dbi:mysql";
+
+# Opsview will export database and create tarball of /usr/local/nagios/*
+$backup_dir = "/usr/local/nagios/var/backups";
+$backup_retention_days = 30;
+# Set below to 1 for "rc.opsview cron_daily" to create backups
+# else set to 0 to disable - backups can still be performed manually with
+# "rc.opsview backup"
+$daily_backup = 1;
+
+# Days to keep snmptrapexceptions in runtime db
+$snmptrapexception_retention_days = 60;
+
+# Days to keep Nagios archive logs (holds availability information)
+$archive_retention_days = 180;
+
+# Days to keep non-updated nmis, rrd and mrtg files
+$rrd_retention_days = 30;
+
+# Days to keep snmptrap_tracing files in var/traps.db
+$snmptrap_tracing_retention_days = 8;
+
+# Days to keep NMIS reports in nagios/nmis/htdocs/reports
+$report_retention_days = 730;
+
+# Days to keep NMIS data files in var and database/interface/switch
+$nmis_retention_days = 90;
+
+# Number of concurrent tasks within Opsview
+# Only affects nagconfgen at the moment. Usually linked to number of cpus
+# A value of 0 means run everything at once
+$max_parallel_tasks = 4;
+
+# Turn off drag/drop ability in list view if below is set to 1
+#$dragdrop_disabled = 1;
+
+# If you want to change the logo used in the sidenav. Should be around 140 x 32 in size
+# Should be the path as taken by the webserver
+#$logo_path = "/images/weblogo1.png";
+
+# Web page authentication
+#
+# This defines what to use for authentication. If "htpasswd", passwords
+# for contacts will be stored in the DB and the Apache htpasswd file will be
+# generated for logging in
+$authentication = "htpasswd";
+
+# This is the shared secret that the auth ticket system will use for authentication
+# It should be automatically changed in opsview.conf
+$authtkt_shared_secret = "shared-secret-please-change";
+
+# This is the domain name to set on the authtkt cookie so that it
+# can be shared between servers.  It should match the subdomain of all
+# other servers that also use this cookie.  If blank it defaults
+# to the FQDN of the opsview server.  NOTE:  any browser logged in
+# prior to changing the domain must manually remove the cookie or wait
+# until the cookie expires before access can be regained
+$authtkt_domain = '';
+
+# SNMP trap debugging. Increases load on snmptrap processing. Switch on for short periods only
+#$snmptrap_debug = 1;
+
+# For reverse initiated slaves, need to set below to 1
+# Ports from 25800 upwards maybe used on master
+# NOTE: requires 'autossh' to be installed on the slaves
+$slave_initiated = 0;
+$slave_base_port = 25800;
+
+# Changes nagios.cfg's interval_length to seconds
+# This will be on by default sometime in the future
+# If off, uses minutes as the interval
+# WARNING: You will need to change all values in the database, specifically
+#  the check_interval, retry_check_interval and notification_interval values on hosts and service checks
+$nagios_interval_length_in_seconds = 0;
+
+# This is the instance id for Opsview, to allow multiple Opsview masters to write to a single
+# ODW database. This can be any integer from 1 to 20. Ensure this value is not duplicated between
+# all the Opsview instances.
+# WARNING: See http://docs.opsview.com/doku.php?id=opsview-core:sharedodw for other limitations
+$opsview_instance_id = 1;
+
+# NMIS settings
+# change the number of threads to use when collecting data from devices
+$nmis_maxthreads = 2;
+
+# NSCA settings
+# Set bind address for nsca
+$nsca_server_address = "127.0.0.1";
+$nsca_encryption_method = 2;
+
+# NRD password
+# Shared key for slaves sending results back via NRD
+$nrd_shared_password = "initial";
+
+# Slave send method
+# nrd or nsca
+$slave_send_method = "nrd";
+
+# Default graphing options
+$graph_show_legend = 1;
+$graph_auto_max_metrics = 10;
+
+# Default location of the status.dat file - could be moved to RAM disk
+# if there is a performance requirement.  Restart opsview on all servers
+# (master, then reload, then slaves) as soon as a change has been made
+# Must be a full restart (/etc/init.d/opsview restart) not just a reload
+$status_dat='/usr/local/nagios/var/status.dat';
+
+# Default location of the checkresults spool directory - could be moved
+# to RAM disk if there is a performance requirement.  Ensure the directory
+# exists on all servers before the change has been made, and then restart
+# opsview on all servers (reload, then retart on master and slaves).
+# Must be a full restart (/etc/init.d/opsview restart) not just a reload
+$check_result_path='/usr/local/nagios/var/spool/checkresults';
+
+# Default location of the objects.cache file - could be moved to RAM disk
+# if there is a performance requirement.  Restart opsview on all servers
+# (master, then reload, then slaves) as soon as a change has been made
+# Must be a full restart (/etc/init.d/opsview restart) not just a reload
+$object_cache_file='/usr/local/nagios/var/objects.cache';
+
+# Default location of the ndo.dat file - could be moved to RAM disk
+# if there is a performance requirement.
+# Opsview must be stopped before making this change.
+$ndo_dat_file='/usr/local/nagios/var/ndo.dat';
+
+# Default number of forks MRTG can use to gather information via SNMP
+$mrtg_forks=8;
+
+# Default number of seconds between MRTG web page refreshes
+$mrtg_refresh=300;
+
+# Default values for hosts
+$host_check_interval=5;
+$host_max_check_attempts=2;
+$host_retry_interval=1;
+$host_notification_interval=60;
+$host_flap_detection=1; # on
+
+# Default values for servicechecks
+$service_check_interval=5;
+$service_max_check_attempts=3;
+$service_retry_interval=1;
+$service_flap_detection=1; # on
+
+##########################################################################################################
+# The next section contains examples of how to change configuration parameters in nagios.cfg and cgi.cfg
+# If you wish to change any parameters then copy entire section over to opsview.conf including 'EOF' line,
+# then uncomment relevant line or add your own in.
+# See http://docs.opsview.com/doku.php?id=opsview-core:configuration_files for more details
+
+$overrides = <<'EOF';
+
+# Uncomment next line to change pager/SMS number for Opsview administrator
+# nagios_admin_pager=monitorman@company.com
+
+# Uncomment next line to set maximum concurrent service checks, use this to tune performance settings
+# nagios_max_concurrent_checks=50
+
+# Uncomment next line to disable notifications (for system upgrades and maintenance)
+# nagios_enable_notifications=0
+
+# Uncomment next line to disable authentication for access to monitoring UI, use for debugging only
+# cgi_use_authentication=0
+
+# Uncomment next line to change refresh rate for Nagios monitoring screens
+# cgi_refresh_rate=30
+
+# Uncomment next line to enable logging of passive check results
+# nagios_log_passive_checks=1
+
+EOF
+
+1;

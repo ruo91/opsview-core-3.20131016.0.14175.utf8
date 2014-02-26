@@ -1,0 +1,28 @@
+{
+  list => [
+    {
+      computed_state => "unknown",
+      downtime => undef,
+      hostgroupid => 3,
+      hosts => { handled => 2, total => 2, unhandled => 0, up => { handled => 2 } },
+      leaf => 0,
+      matpath => [{ id => 1, name => "Opsview" }],
+      name => "UK",
+      services => {
+        computed_state => "unknown",
+        handled        => 0,
+        total          => 2,
+        unhandled      => 2,
+        unknown        => { unhandled => 2 },
+      },
+    },
+  ],
+  summary => {
+    handled   => 2,
+    host      => { handled => 2, total => 2, unhandled => 0, up => 2 },
+    service   => { handled => 0, total => 2, unhandled => 2, unknown => 2 },
+    total     => 4,
+    totalhgs  => 3,
+    unhandled => 2,
+  },
+}

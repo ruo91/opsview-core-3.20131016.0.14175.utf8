@@ -1,0 +1,725 @@
+#!/usr/bin/perl
+#
+# AUTHORS: Rohit Deshmukh
+#   Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#
+use strict;
+use warnings;
+use Nagios::Plugin;
+use LWP::UserAgent;
+use URI::URL;
+use Time::HiRes;
+
+my $cache_file_base = "/tmp/_check_apache_performance-";
+
+#valid metricnames array. Keep this list sorted.
+my @valid_metricname = (
+    "accesses",            "active_sessions",
+    "bytes_per_request",   "bytes_per_second",
+    "current_requests",    "idle_worker",
+    "requests_per_second", "shared_memory",
+    "traffic",
+);
+my $np = Nagios::Plugin->new(
+    shortname => "APACHE STATUS",
+    usage =>
+      "%s -H=HOSTNAME [--metricname=METRICNAME]  [ -w ] [ -c ] [ -p ] [ -t ]",
+    extra => "\nValid metricname are:\n  "
+      . join( ", ", @valid_metricname ) . "\n",
+    blurb => "Checks Apache Server status",
+);
+$np->add_arg(
+    spec => "warning|w=s",
+    help =>
+      "-w, --warning=INTEGER:INTEGER. Warning if metric value is outside INTEGER:INTEGER",
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help =>
+      "-c, --critical=INTEGER:INTEGER. Critical if metric value is outside INTEGER:INTEGER",
+);
+
+$np->add_arg(
+    spec     => "hostname|H=s",
+    help     => "-H, --hostname=HOST, name of the host to check",
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "port|p=s",
+    help => "-p, --port=PORT.default port is 80",
+);
+$np->add_arg(
+    spec => "timeout|t=s",
+    help =>
+      "-t, --timeout=INTEGER,HTTP request timeout in seconds, default timeout 15 seconds ",
+);
+$np->add_arg(
+    spec     => "metricname|m=s",
+    help     => " metric name",
+    required => 0,
+);
+$np->add_arg(
+    spec     => "ssl",
+    help     => " Use https, instead of http",
+    required => 0,
+);
+
+$np->getopts;
+
+my $uom_conversion = {
+    "B" => {
+        uom        => "MB",
+        multiplier => 1 * ( 1 / 1024 ) * ( 1 / 1024 )
+    },
+    "KB" => {
+        uom        => "MB",
+        multiplier => 1 / 1024
+    },
+    "MB" => {
+        uom        => "MB",
+        multiplier => 1
+    },
+    "GB" => {
+        uom        => "MB",
+        multiplier => 1 * 1024
+    },
+    "TB" => {
+        uom        => "MB",
+        multiplier => 1 * 1024 * 1024
+    },
+};
+my $uom_conversion_kb = {
+    "B" => {
+        uom        => "KB",
+        multiplier => 1 * ( 1 / 1024 )
+    },
+    "KB" => {
+        uom        => "KB",
+        multiplier => 1
+    },
+    "MB" => {
+        uom        => "KB",
+        multiplier => 1 * 1024
+    },
+    "GB" => {
+        uom        => "KB",
+        multiplier => 1 * 1024 * 1024
+    },
+    "TB" => {
+        uom        => "KB",
+        multiplier => 1 * 1024 * 1024 * 1024
+    },
+};
+
+# We have a mapping file so you can have the different uom values referencing the same conversion
+my $uom_mapping = {
+    "B"  => "B",
+    "KB" => "KB",
+    "kB" => "KB",
+    "mB" => "MB", # nsclient returns back M for MB - grrrrr!
+    "MB" => "MB",
+    "GB" => "GB",
+    "TB" => "TB",
+    "tB" => "TB",
+};
+my $ssl_metrics = {
+    active_sessions => 1,
+    shared_memory   => 1,
+};
+
+my $hostname = $np->opts->hostname;
+my $uri;
+my $o_timeout;
+if   ( $np->opts->timeout ) { $o_timeout = $np->opts->timeout; }
+else                        { $o_timeout = 15; }
+if ( $np->opts->ssl ) {
+    $uri = 'https://';
+}
+else {
+    $uri = 'http://';
+}
+if ( $np->opts->port ) {
+    $uri .= $hostname . ':' . $np->opts->port . '/server-status';
+}
+else { $uri .= $hostname . '/server-status'; }
+my $hdrs = new HTTP::Headers(
+    Accept       => 'text/plain',
+    'User-Agent' => 'STAMPBrowser/1.0'
+);
+my $ua         = new LWP::UserAgent( timeout => $o_timeout );
+my $url        = new URI::URL($uri);
+my $req        = new HTTP::Request( 'GET', $url, $hdrs );
+my $resp       = $ua->request($req);
+my $req_status = $resp->status_line;
+
+if ( $resp->is_success ) {
+    my $code    = $resp->content;
+    my %results = ();
+    while ( $code =~ /<dt>([^<]+)<\/dt>/g ) {
+        my $line = $1;
+        if ( $line
+            =~ /Server\s+uptime:\s+(\d+)\s+days\s+(\d+)\s+hours\s+(\d+)\s+minutes\s+(\d+)\s+seconds/
+          )
+        {
+            $results{'uptime'} = sprintf(
+                "%04s %02s %02s %02s",
+                $1 . " days",
+                $2 . " hours",
+                $3 . " minutes",
+                $4 . " seconds"
+            );
+        }
+        elsif ( $line
+            =~ /Server\s+uptime:\s+(\d+)\s+hours?\s+(\d+)\s+minutes\s+(\d+)\s+seconds/
+          )
+        {
+            $results{'uptime'} = sprintf( "%02s %02s %02s",
+                $1 . " hours",
+                $2 . " minutes",
+                $3 . " seconds"
+            );
+        }
+        elsif ( $line
+            =~ /Total\s+accesses:\s+(\d+)\s+-\s+Total\s+Traffic:\s+([\d\.]+)\s+(\w+)/
+          )
+        {
+
+            # Don't interfere with the cached data if we're not actually using these values in this invocation
+            next
+              if (
+                   $np->opts->metricname
+                && $np->opts->metricname ne "accesses"
+                && $np->opts->metricname ne "traffic"
+              );
+
+            # Use a per-metric cache file, or an 'all' file if we're not checking a specific metric
+            my $file_label;
+            if ( $np->opts->metricname ) {
+                $file_label = $np->opts->metricname;
+            }
+            else {
+                $file_label = "all";
+            }
+
+            my ( $traffic_uom, $traffic_m ) = &convert_uoms( "$3" );
+            my $v = $2 * $traffic_m;
+            my $stat = &get_rate( $1, $v, $file_label );
+            $results{'accesses'} = $stat->{'accesses'};
+            $results{'traffic'}  = $stat->{'traffic'} . " " . $traffic_uom;
+        }
+        elsif ( $line
+            =~ /([\d\.]+) requests\/sec - ([\d\.]+)\s+(\w+)*\/second - ([\d\.]+)\s+(\w+)*\/request/
+          )
+        {
+            $results{'requests_per_second'} = $1;
+            my ( $uom1, $m1 ) = &convert_uoms( "$3", "KB" );
+            $results{'bytes_per_second'} = $2 * $m1 . " " . $uom1;
+            my ( $uom2, $m2 ) = &convert_uoms( "$5", "KB" );
+            $results{'bytes_per_request'} = $4 * $m2 . " " . $uom2;
+        }
+        elsif ( $line
+            =~ /(\d+) requests currently being processed, (\d+) idle workers/ )
+        {
+            $results{'current_requests'} = $1;
+            $results{'idle_worker'}      = $2;
+        }
+
+        #end of elsif()
+    }
+
+    #code to gather shared memory,cache type and active_sessions metrics
+    chomp $code;
+    $code =~ s/[^a-zA-Z0-9 ]*//g;
+    if ( $code
+        =~ m/cache\s+type\s+b(\w+)b\s+shared\s+memory\s+b([\d\.]+)b\s+(\w+)\s+current\s+(\w+)\s+b(\d+)b/
+      )
+    {
+        $results{'cache_type'}      = $1;
+        $results{'shared_memory'}   = $2 . " " . $3;
+        $results{'active_sessions'} = $5;
+    }
+    my $accesses = $results{'accesses'};
+    if ($accesses) { $np->add_message( OK, "accesses= " . $accesses . "," ) }
+    my $active_sessions = $results{'active_sessions'};
+    if ($active_sessions) {
+        $np->add_message( OK, "active_sessions= " . $active_sessions . "," );
+    }
+    my $bytes_per_request = $results{'bytes_per_request'};
+    if ($bytes_per_request) {
+        $np->add_message( OK, "bytes_per_request= " . $bytes_per_request . ","
+        );
+    }
+    my $bytes_per_second = $results{'bytes_per_second'};
+    if ($bytes_per_second) {
+        $np->add_message( OK, "bytes_per_second= " . $bytes_per_second . "," );
+    }
+    my $current_requests = $results{'current_requests'};
+    if ($current_requests) {
+        $np->add_message( OK, "current_requests= " . $current_requests . "," );
+    }
+    my $idle_worker = $results{'idle_worker'};
+    if ($idle_worker) { $np->add_message( OK, "idle_worker= " . $idle_worker ) }
+    my $shared_memory = $results{'shared_memory'};
+    if ($shared_memory) {
+        $np->add_message( OK, "shared_memory= " . $shared_memory . "," );
+    }
+    my $requests_per_second = $results{'requests_per_second'};
+    if ($requests_per_second) {
+        $np->add_message( OK,
+            "requests_per_second= " . $requests_per_second . ","
+        );
+    }
+    my $traffic = $results{'traffic'};
+    if ($traffic) { $np->add_message( OK, "traffic= " . $traffic . "," ) }
+
+    #defining the threshold values
+    my $threshold = $np->set_thresholds(
+        warning  => $np->opts->warning,
+        critical => $np->opts->critical
+    );
+    my %valid_metricname = map { ( $_ => 'metricname' ) } @valid_metricname;
+    if ( $np->opts->metricname ) {
+        my $metricname = $np->opts->metricname;
+
+        #converting to lowecase
+        $metricname = lc $metricname;
+        if ( !exists $valid_metricname{$metricname} ) {
+            $np->nagios_exit( UNKNOWN,
+                "metricname-$metricname is not valid. valid metric names are "
+                  . join( " , ", @valid_metricname )
+            );
+        }
+        if ( !defined $results{$metricname} ) {
+            my $extra_message = "";
+            if ( $ssl_metrics->{$metricname} ) {
+                $extra_message =
+                  ". Need to enable mod_ssl to collect this statistic";
+            }
+            $np->nagios_exit( UNKNOWN,
+                "HTTP request $req_status, but unable to collect performance data of metric $metricname$extra_message"
+            );
+        }
+        my $string_value = $results{$metricname};
+        my @unit_metric  = (
+            "traffic",          "shared_memory",
+            "bytes_per_second", "bytes_per_request"
+        );
+        my %unit_metric = map { ( $_ => 'uom' ) } @unit_metric;
+        my $numeric_value = $string_value;
+        my $uom;
+
+        if ( exists $unit_metric{$metricname} ) {
+            my $unit_string = $results{$metricname};
+            $unit_string =~ /([\d\.]+)\s+(\w+)/;
+            $numeric_value = $1;
+            $uom           = " " . $2;
+        }
+
+        #adding performance data
+        $np->add_perfdata(
+            label     => $metricname,
+            value     => $numeric_value,
+            threshold => $threshold,
+            uom       => $uom,
+        );
+        $np->nagios_exit(
+            return_code => $np->check_threshold($numeric_value),
+            message     => "apache metric-$metricname = $string_value"
+        );
+    }
+
+    #adding performance data
+    foreach my $item (@valid_metricname) {
+        if ( $results{$item} ) {
+            $np->add_perfdata(
+                label => $item,
+                value => $results{$item},
+              )
+
+        }
+    }
+    my ( $codex, $message ) = $np->check_messages();
+    $np->nagios_exit( $codex, $message );
+}
+else {
+    $np->nagios_exit( UNKNOWN, "$req_status" );
+}
+
+#sub to get the performance rate of change of metric
+sub get_rate {
+    my ( $accesses, $traffic, $label ) = @_;
+    my $cache_file_name = "$cache_file_base$hostname-$label-lastrun.tmp";
+
+    my $diff = Nagios::Plugin::Differences->new( "file" => $cache_file_name );
+    my $ts = {
+        accesses => $accesses,
+        traffic  => $traffic
+    };
+    eval { $diff->load_last; };
+    if ($@) {
+        my $read_data = $ts;
+        $diff->new_reading( $read_data, scalar(Time::HiRes::gettimeofday) );
+        $diff->persist;
+
+        $np->nagios_exit( UNKNOWN, "Couldn't see last state $@" );
+    }
+    my $read_data = $ts;
+    $diff->new_reading( $read_data, scalar(Time::HiRes::gettimeofday) );
+    $diff->persist;
+    my $stat = $diff->rate( 'forward_difference_unknown_wrap' );
+    return $stat;
+}
+
+#sub to convert the units
+sub convert_uoms {
+    my ( $uom, $convert_to ) = @_;
+    my $new_uom = $uom || "";
+    my $multiplier = 1;
+    $convert_to = $convert_to || "";
+    if ( $convert_to eq "KB" ) {
+        if ( my $mapped = $uom_mapping->{$uom} ) {
+            if ( my $known_conversion = $uom_conversion_kb->{$mapped} ) {
+                $new_uom    = $known_conversion->{uom};
+                $multiplier = $known_conversion->{multiplier};
+            }
+        }
+        return ( $new_uom, $multiplier );
+    }
+
+    if ( my $mapped = $uom_mapping->{$uom} ) {
+        if ( my $known_conversion = $uom_conversion->{$mapped} ) {
+            $new_uom    = $known_conversion->{uom};
+            $multiplier = $known_conversion->{multiplier};
+        }
+    }
+    return ( $new_uom, $multiplier );
+}
+1;
+
+package Nagios::Plugin::Differences;
+
+use strict;
+no warnings;
+
+use Carp;
+use File::Basename qw//;
+use Storable qw//;
+
+=head1 NAME
+
+Nagios::Plugin::Differences - Module to streamline Nagios plugins
+that need to store temporary data and calculate the differences
+between the readings.
+
+=head1 VERSION
+
+Version 0.01
+
+=cut
+
+our $VERSION = '0.01';
+
+=head1 SYNOPSIS
+
+This module is useful for when there is need to store a set of values
+that need to be reread at the next invocation of the plugin. It provides
+a set of functions to calculate the differences between the readings.
+
+    use Nagios::Plugin::Differences;
+
+    my $npd = Nagios::Plugin::Differences->new();
+    $npd->load_last;
+    # suppose last reading was
+    # { 'bytes' => 200, 'packets' => 3 }
+    # at time 1234567890
+    $npd->new_reading({
+        'bytes' => 500
+        'packets' => 6
+    });
+    # new reading is at time 123456900
+    $npd->persist;
+    my $rate = $npd->rate('difference');
+    # rate returns the bytes/s and the packets/s that had to be
+    # attained to get from the last reading to the new reading
+    # in the time passed between readings
+    # { 'bytes' => 30,
+    #   'packets' => 0.3 }
+
+=head1 FUNCTIONS
+
+=head2 new(%options)
+
+Constructor for the Nagios::Plugin::Differences object. You
+can pass 'file' => '/tmp/xxx' to override the default file
+('/tmp/_nagios_plugin_$0.tmp').
+
+=cut
+
+sub new {
+    my ( $class, %options ) = @_;
+
+    my $self = {
+        'file' =>
+          sprintf( "/tmp/_nagios_plugin_%s.tmp", File::Basename::basename($0) ),
+        %options
+    };
+    bless $self, $class;
+}
+
+=head2 new_reading($data, [$ts])
+
+Report a new reading. The reading has to be a hashref. You can optionally
+pass the timestamp for the reading. If you don't pass $ts, the timestamp
+of the invocation of the method will be used.
+
+=cut
+
+sub new_reading {
+    my ( $self, $data, $ts ) = @_;
+    croak "cannot store non-hashref data" if ( ref($data) ne 'HASH' );
+    $ts = time() if ( not defined $ts );
+
+    $self->{'last'} = $self->{'current'} if ( defined $self->{'current'} );
+    $self->{'current'} = {
+        'ts'   => $ts,
+        'data' => $data
+    };
+}
+
+=head2 persist([$file])
+
+Write the stored data to the temporary file
+
+=cut
+
+sub persist {
+    my ( $self, $file ) = @_;
+    $file ||= $self->{'file'};
+    Storable::lock_store( $self->{'current'}, $file );
+}
+
+=head2 load_last([$file])
+
+Load the last reading from the temporary file.
+
+=cut
+
+sub load_last {
+    my ( $self, $file ) = @_;
+    $file ||= $self->{'file'};
+    $self->{'last'} = $self->{'current'} if ( defined $self->{'current'} );
+    $self->{'current'} = Storable::retrieve($file);
+}
+
+#head2 difference_from_zero
+#
+#Calculate the difference between current and zero.
+#
+#cut
+#
+#sub difference_from_zero {
+#    my ($self) = @_;
+#    return ($self->{'current'}->{'data'});
+#}
+
+=head1 CALCULATING DIFFERENCES
+
+=head2 difference
+
+Calculates the difference between current reading and last reading.
+
+=cut
+
+sub difference {
+    my ($self) = @_;
+
+    die 'no new_reading' if ( not defined $self->{'current'} );
+    die 'no last'        if ( not defined $self->{'last'} );
+
+    my $current_data = $self->{'current'}->{'data'};
+    my $last_data    = $self->{'last'}->{'data'};
+    my $delta        = {};
+
+    foreach my $item ( keys %$last_data ) {
+
+        # if we don't have item, $data_last->{ xxx } will be undef. The correct reading would be zero
+        $delta->{$item} = $current_data->{$item} - ( $last_data->{$item} || 0 );
+    }
+    return ($delta);
+}
+
+=head2 forward_difference($wrap_at)
+
+=cut
+
+sub forward_difference {
+    my ( $self, $wrap_at ) = @_;
+
+    die 'no new_reading' if ( not defined $self->{'current'} );
+    die 'no last'        if ( not defined $self->{'last'} );
+
+    my $current_data = $self->{'current'}->{'data'};
+    my $last_data    = $self->{'last'}->{'data'};
+    my $delta        = {};
+
+    foreach my $item ( keys %$last_data ) {
+        if ( $current_data->{$item} >= $last_data->{$item} ) {
+            $delta->{$item} =
+              $current_data->{$item} - ( $last_data->{$item} || 0 );
+        }
+        else {
+
+            # If the current reading is smaller than the last time we saw it, then we have to
+            # take into account the wrap value.
+            # time |=======|------------|===========|
+            #      0      current       last        wrap
+            $delta->{$item} =
+              ( $wrap_at - $last_data->{$item} ) + $current_data->{$item};
+        }
+    }
+    return ($delta);
+}
+
+=head2 forward_difference_unknown_wrap
+
+If the value of a key from the current reading is less than the last reading, the
+difference will be taken from zero. This is handy when you are storing counters
+that increment, but can be reset to zero.
+
+=cut
+
+sub forward_difference_unknown_wrap {
+    my ($self) = @_;
+
+    die 'no new_reading' if ( not defined $self->{'current'} );
+    die 'no last'        if ( not defined $self->{'last'} );
+
+    my $current_data = $self->{'current'}->{'data'};
+    my $last_data    = $self->{'last'}->{'data'};
+    my $delta        = {};
+
+    foreach my $item ( keys %$last_data ) {
+        if ( $current_data->{$item} >= $last_data->{$item} ) {
+            $delta->{$item} =
+              $current_data->{$item} - ( $last_data->{$item} || 0 );
+        }
+        else {
+
+            # If the current reading is smaller than the last time we saw it, then we have to
+            # discard the last reading. The counter has been reset, and we cannot know what
+            # happened between the last reading and the current one.
+            # time |=======|------------|???????....
+            #             current       last
+            $delta->{$item} = $current_data->{$item};
+        }
+    }
+    return ($delta);
+}
+
+=head2 rate($method, [params_to_method])
+
+Calculate the rate of change (derive) between the current reading and the last reading.
+To calculate rate of change, you need to calculate the change. The change gets calculated
+with any of the "difference" methods
+
+  $npd->rate('difference');
+
+  $npd->rate('forward_difference', 1000);
+
+  $npd->rate('forward_difference_unknown_wrap');
+
+=cut
+
+sub rate {
+    my ( $self, $method, @params_to_method ) = @_;
+
+    my $delta = $self->$method(@params_to_method);
+    my $time  = $self->{'current'}->{'ts'} - $self->{'last'}->{'ts'};
+
+    my $rates = {};
+    foreach my $item ( keys %$delta ) {
+        $rates->{$item} = $delta->{$item} / $time;
+    }
+
+    return $rates;
+}
+
+=head2 proportion(
+
+Calculate the proportions of the values of one key respect to the total sum of all the values.
+
+  proportion({ 'red' => 5, 'green' => 15 });
+  # returns: { 'red' => 0.25, 'green' => 0.75 }
+
+=cut
+
+sub proportion {
+    my ( $self, $hashref ) = @_;
+
+    my $total = 0;
+    map { $total += $_ } values %$hashref;
+
+    my $proportion = {};
+    foreach my $item ( keys %$hashref ) {
+        $proportion->{$item} = $hashref->{$item} / $total;
+    }
+    return ($proportion);
+}
+
+1;
+
+=head1 AUTHOR
+
+JLMARTIN, C<< <jlmartinez at capside.com> >>
+
+=head1 BUGS
+
+Please report any bugs or feature requests to C<bug-nagios-plugin-differences at rt.cpan.org>, or through
+the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=Nagios-Plugin-Differences>.  I will be notified, and then you'll automatically be notified of progress on your bug as I make changes.
+
+=head1 SUPPORT
+
+You can find documentation for this module with the perldoc command.
+
+    perldoc Nagios::Plugin::Differences
+
+You can also look for information at:
+
+=over 4
+
+=item * RT: CPAN's request tracker
+
+L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=Nagios-Plugin-Differences>
+
+=item * AnnoCPAN: Annotated CPAN documentation
+
+L<http://annocpan.org/dist/Nagios-Plugin-Differences>
+
+=item * CPAN Ratings
+
+L<http://cpanratings.perl.org/d/Nagios-Plugin-Differences>
+
+=item * Search CPAN
+
+L<http://search.cpan.org/dist/Nagios-Plugin-Differences>
+
+=back
+
+=head1 ACKNOWLEDGEMENTS
+
+=head1 COPYRIGHT & LICENSE
+
+Copyright 2009 Jose Luis Martinez Torres, all rights reserved.
+
+This program is free software; you can redistribute it and/or modify it
+under the same terms as Perl itself.
+
+
+=cut
+
+1; # End of Nagios::Plugin::Differences

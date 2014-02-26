@@ -1,0 +1,376 @@
+#!/usr/bin/perl
+#
+
+################################################################
+# query_host
+#
+# SYNTAX:
+#	query_host -H host [-t] [-T]
+#	  {
+#	  -p 2c -C snmp_community_string -P 161
+#	  -p 3 -u username -a authprotocol -A authpassword -x privprotocol -X privpassword -P 161
+#	  }
+#
+# DESCRIPTION:
+#	Returns back basic SNMP information for host
+#   -T = test connection
+#	If run with -t, will return an xml format such as:
+#<data>
+#<host sysDescr="Linux opsviewdev46 2.6.18-6-686 #1 SMP Tue Jun 17 21:31:27 UTC 2008 i686">
+#  <interface id="1" ifAlias="" ifLink="up" ifSpeed="10Mbit/s" ifStatus="up" ifDescr="lo" />
+#  <interface id="2" ifAlias="" ifLink="up" ifSpeed="10Mbit/s" ifStatus="up" ifDescr="eth4" />
+#  <interface id="3" ifAlias="" ifLink="up" ifSpeed="10Mbit/s" ifStatus="up" ifDescr="eth3" />
+#  <interface id="4" ifAlias="" ifLink="down" ifSpeed="0kbit/s" ifStatus="down" ifDescr="sit0" />
+#</host>
+#</data>
+#	Check for success by whether the XML is parseable and sysDescr exists
+#	(seems return code is always -1 when using Catalyst)
+#
+#	Must be run as nagios user to ssh to monitoring server
+#
+#	See t/48query_host.t.manual for the manual tests to run
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+################################################################
+
+use strict;
+use FindBin qw($Bin);
+use lib "/usr/local/nagios/perl/lib";
+use lib "$Bin/../lib", "$Bin/../etc";
+use Net::SNMP;
+use Getopt::Std;
+use Opsview::Utils::QueryHost;
+use Data::Dump;
+
+our $VERSION = sprintf( '%d', q$Revision: 12792 $ =~ m/(\d+)/ );
+
+# SNMP fixed values
+my $timeout = 2;
+
+my $opts = {};
+getopts( "hqwtTH:C:M:u:a:A:x:X:p:vDP:l:m:", $opts ) or die "Incorrect options";
+
+if ( $opts->{h} ) {
+    usage();
+    exit 1;
+}
+
+if ( $opts->{v} ) {
+    VERSION_MESSAGE();
+    exit 1;
+}
+
+my $host            = $opts->{H} or die "No hostname specified";
+my $snmp_community  = $opts->{C};
+my $xml             = $opts->{t} || 0;
+my $oid_sysDescr    = ".1.3.6.1.2.1.1.1.0";
+my $oid_sysContact  = ".1.3.6.1.2.1.1.4.0";
+my $oid_sysLocation = ".1.3.6.1.2.1.1.6.0";
+my $snmp_port       = $opts->{P} || 161;
+
+my $tidy_ifdescr_level = $opts->{l} || 0;
+my $snmp_version       = $opts->{p} || "2c";
+
+my $debug = $opts->{D} || 0;
+
+if ( $snmp_version !~ /^([13]|2c)$/ ) {
+    print "SNMP v$snmp_version not supported", $/;
+    exit(1);
+}
+
+my $max_msg_size = $opts->{m} || 0;
+if ( $max_msg_size =~ m/\D/ || $max_msg_size < 0 || $max_msg_size > 65535 ) {
+    print 'Invalid -m (max_msg_size) option', $/;
+    print 'Must be between 0 and 65535',      $/;
+    usage();
+    exit(3);
+}
+
+my $xml_errors   = []; # Use this for errors to return in XML
+my $xml_warnings = [];
+
+my ( $s, $error );
+
+if ( $snmp_version eq "3" ) {
+    my $args = {
+        -username     => $opts->{u},
+        -authpassword => $opts->{A},
+        -authprotocol => $opts->{a},
+        -hostname     => $host,
+        -version      => "3",
+        -timeout      => $timeout,
+        -port         => $snmp_port,
+    };
+    if ( $opts->{X} ) {
+        $args->{-privprotocol} = $opts->{x};
+        $args->{-privpassword} = $opts->{X};
+    }
+    ( $s, $error ) = Net::SNMP->session(%$args);
+    if ( !$s || !defined( $s->get_request($oid_sysDescr) ) ) {
+        $s->close if ($s);
+        print_error( "Cannot connect with SNMPv3: $error" );
+        &my_exit;
+    }
+}
+else {
+    if ( $snmp_community eq "" ) {
+        print_error( "No snmp community specified - not checking for SNMP" );
+        &my_exit;
+    }
+
+    my $try_with_v1 = 1;
+    if ( $snmp_version eq "2c" ) {
+
+        # Try with 2c first
+        ( $s, $error ) = Net::SNMP->session(
+            -community => $snmp_community,
+            -hostname  => $host,
+            -version   => "2c",
+            -timeout   => $timeout,
+            -port      => $snmp_port,
+        );
+
+        if ( !$s || !defined( $s->get_request($oid_sysDescr) ) ) {
+
+            # We return an error message if a device is not communicatable via SNMPv2
+            print_warning( "Cannot connect with SNMPv2c: "
+                  . $s->error
+                  . ". Trying with SNMPv1" )
+              unless ( $opts->{q} );
+            $s->close if ($s);
+
+            sleep 1;
+        }
+        else {
+            $try_with_v1 = 0;
+        }
+    }
+
+    # Allow fallback to 1 for 2c
+    if ($try_with_v1) {
+        ( $s, $error ) = Net::SNMP->session(
+            -community => $snmp_community,
+            -hostname  => $host,
+            -version   => "1",
+            -timeout   => $timeout,
+            -port      => $snmp_port,
+        );
+        if ( $s eq "" ) {
+            print_error( "Agent not responding to SNMPv1: $error. Quiting" );
+            my_exit(1);
+        }
+    }
+}
+
+if ($max_msg_size) {
+    if ( !defined $s->max_msg_size($max_msg_size) ) {
+        print "SNMP Error: ", $s->error, $/;
+        exit 3;
+    }
+}
+
+# Use lots of error trapping here because if this fails, everything below
+# will probably fail
+my $result = $s->get_request( -varbindlist => [$oid_sysDescr] );
+
+if ( !defined $result ) {
+    print_error( "Cannot get sysDescr - check community string: " . $s->error );
+    $s->close;
+    &my_exit(1);
+}
+
+my $sysdescr = $result->{$oid_sysDescr};
+$sysdescr =~ s/\s*[\r\n].*//g; # Not sure why g is required, but is
+
+my $hostinfo;
+
+if ( $opts->{T} ) {
+    $hostinfo->{sysDescr} = $sysdescr;
+    &my_exit(0);
+}
+
+# Get other informaiton
+$result =
+  $s->get_request( -varbindlist => [ $oid_sysContact, $oid_sysLocation ], );
+my $syscontact  = $result->{$oid_sysContact}  || "";
+my $syslocation = $result->{$oid_sysLocation} || "";
+
+my $ifTable = "1.3.6.1.2.1.2";
+
+my $res           = $s->get_request( $ifTable . ".1.0" );
+my $numInterfaces = $res->{ $ifTable . ".1.0" };
+print output( "Number of interfaces", $numInterfaces ) unless $xml;
+
+$res = Opsview::Utils::SnmpInterfaces->get_interface_information(
+    $s,
+    {
+        tidy_ifdescr_level => $tidy_ifdescr_level,
+        ( $debug ? ( extra_stats => 1 ) : 0 ),
+    }
+);
+undef $s;
+my $interfaces = $res->{interfaces};
+
+# Make nicer output information
+foreach my $i ( keys %$interfaces ) {
+    $interfaces->{$i}->{ifDescr} = "N/A" unless $interfaces->{$i}->{ifDescr};
+    $interfaces->{$i}->{ifSpeed} =
+      convert_to_readable( $interfaces->{$i}->{ifSpeed} );
+}
+
+warn( 'Returned data:' . Data::Dump::dump($interfaces) ) if ($debug);
+
+# Print interfaces
+if ($xml) {
+    my @interfaces;
+    foreach my $i ( sort { $a <=> $b } keys %$interfaces ) {
+        my $int = $interfaces->{$i};
+        next if $int->{ifDescr} eq "N/A";
+        my $hash;
+        $hash->{ifDescr} = $int->{ifDescr};
+        $hash->{id}      = $i;
+        $hash->{ifAlias} = $int->{ifAlias};
+        $hash->{ifSpeed} = $int->{ifSpeed};
+
+        # TODO: This should be changed ifAdminStatus - needs web controller change
+        $hash->{ifLink}   = $int->{ifAdminStatus};
+        $hash->{ifStatus} = $int->{ifOperStatus};
+        $hash->{ifName}   = $int->{ifName};
+        push @interfaces, $hash;
+    }
+    $hostinfo = {
+        sysDescr    => $sysdescr,
+        sysContact  => $syscontact,
+        sysLocation => $syslocation,
+        interface   => \@interfaces
+    };
+    &my_exit;
+}
+else {
+    print output( "System description", $sysdescr );
+    print output( "Interfaces" );
+    foreach my $i ( sort { $a <=> $b } keys %$interfaces ) {
+        my $int = $interfaces->{$i};
+        my $info =
+            $int->{ifDescr}
+          . " speed:"
+          . $int->{ifSpeed}
+          . " adminStatus:"
+          . $int->{ifAdminStatus}
+          . " operStatus:"
+          . $int->{ifOperStatus};
+        print "  " . output( $i, $info );
+    }
+}
+
+sub my_exit {
+    my $rc = shift;
+    if ($xml) {
+        require XML::Simple;
+        my $xs = XML::Simple->new(
+            RootName   => "data",
+            ForceArray => [qw(interface)]
+        );
+        my $stuff = {};
+        $stuff->{error}   = $xml_errors   if @$xml_errors;
+        $stuff->{warning} = $xml_warnings if @$xml_warnings;
+        $stuff->{host}    = $hostinfo     if $hostinfo;
+        print $xs->XMLout($stuff);
+    }
+    exit $rc;
+}
+
+sub usage {
+    print "
+$0 -h
+$0 -H <host> -C <community string> [-t] [-q] [-D]
+
+Where:
+	<host>                Hostname or IP of device to query
+	<community string>    Community string for the device
+	-t                    Tabulate information
+	-l                    Set level of tidying of interface ifDescr (def: 0)
+	-m                    Set SNMP max_msg_size (def: SNMP default)
+	-q                    Do not show version errors
+	-D                    Show debug output
+";
+}
+
+sub HELP_MESSAGE {
+    usage();
+    exit 1;
+}
+
+sub VERSION_MESSAGE {
+    print $0. ' version: ' . $VERSION, $/;
+    exit 1;
+}
+
+# Expects $1 (name) and $2 (standard)
+sub output {
+    my ( $attr, $value ) = @_;
+    return "$attr: $value" . $/;
+}
+
+sub print_error {
+    my $value = shift;
+    if ($xml) {
+        push @$xml_errors, $value;
+    }
+    else {
+        print "Error: $value" . $/;
+    }
+}
+
+sub print_warning {
+    my $value = shift;
+    if ($xml) {
+        push @$xml_warnings, $value;
+    }
+    else {
+        print "Warning: $value" . $/;
+    }
+}
+
+# Expects $1 to be an integer. Will then convert to
+# a more readable metric
+# Similar to check_snmp_interfaces_cascade - should refactor
+sub convert_to_readable {
+    my $value = shift;
+    if ( $value == 4294967295 ) {
+        return "N/A";
+    }
+    elsif ( $value >= 1000000000 ) {
+        $value = $value / 1000000000;
+        return $value . "Gbit/s";
+    }
+    elsif ( $value >= 1000000 ) {
+        $value = $value / 1000000;
+        return $value . "Mbit/s";
+    }
+    elsif ( $value >= 1000 ) {
+        $value = $value / 1000;
+        return $value . "Kbit/s";
+    }
+    else {
+        return $value . "kbit/s";
+    }
+}

@@ -1,0 +1,24 @@
+1188490136||opslave||HTTP||HTTP OK HTTP/1.1 200 OK - 879 bytes in 0.010 seconds||time=0.009910s;10.000000;20.000000;0.000000 size=879B;;;0
+1188490136||opslave||SSH||TCP OK - 0.010 second response time on port 22||time=0.010295s;0.000000;0.000000;0.000000;10.000000
+1188490144||opslave||TCP/IP - LAN||PING OK - Packet loss = 0%, RTA = 0.04 ms||
+1188490199||bob||SSH||TCP OK - 0.003 second response time on port 22||time=0.002627s;0.000000;0.000000;0.000000;10.000000
+1188490199||vmhost1||Check Loadavg VM Host||OK - load average: 0.39, 0.48, 0.53||load1=0.390;8.000;12.000;0; load5=0.480;8.000;12.000;0; load15=0.530;8.000;12.000;0;
+1188490199||router||Uptime||Status is OK - Uptime: 29 days, 02:53:16.33||days=29
+1188490199||proddb1||Solaris Memory||OK utilisation: 759 MB, total: 4096 MB (19 %)||utilisation=19
+1188490199||gw||Interface Status||Status is OK - Interfaces: 2 UP, 2 DOWN||in_use=2
+1188490200||mail||HTTP||HTTP OK HTTP/1.1 200 OK - 1495 bytes in 0.106 seconds||time=0.105714s;10.000000;20.000000;0.000000 size=1495B;;;0
+1188490200||mail||SMTP||SMTP OK - 0.152 sec. response time||time=0.152007s;20.000000;40.000000;0.000000
+1188490199||proddb1||Solaris CPU||(4 CPUs, avg: 6.5%) , CPU 0 (3%), CPU 1 (20%), CPU 2 (2%), CPU 3 (1%)||average=6.5
+1188490200||mail||/||DISK OK - free space: / 2870 MB (15% inode=-):||/=15750MB;16758;17689;0;18621
+1188490200||mail||Check Memory||Usage: real 54% (412/757 MB), buffer: 80 MB, cache: 229 MB, swap: 0% (0/954 MB)||utilisation=54
+13571357883856||downloads.opsview.org||HTTP||HTTP OK: HTTP/1.1 301 Moved Permanently - 527 bytes in 0.194 second response time||time=0.193732s;5.000000;15.000000;0.000000 size=527B
+1188490199||mail||TCP/IP - LAN||PING OK - Packet loss = 0%, RTA = 1.26 ms||
+1188490199||vmhost2||TCP/IP - LAN||PING OK - Packet loss = 0%, RTA = 0.13 ms||
+1188490200||internet||TCP/IP - Internet||PING OK - Packet loss = 0%, RTA = 7.68 ms||
+1188490200||opsview||TCP/IP - LAN||PING OK - Packet loss = 0%, RTA = 0.03 ms||
+1188490200||vmhost3||TCP/IP - LAN||PING OK - Packet loss = 0%, RTA = 1.52 ms||
+1188490200||prodweb1||TCP/IP - LAN||PING OK - Packet loss = 0%, RTA = 1.89 ms||
+1188490204||cisco||Interface: FastEthernet0/22||OK - FastEthernet0/22 is up, throughput (in/out) 8.93 Kbps/4.93 Kbps||throughput_in=9147.94b throughput_out=5053.83b;;
+1188490204||cisco2||Interface: Vlan1||OK - Vlan1 is up, throughput (in/out) 1.4 Kbps/6.29 Kbps||throughput_in=1440.29b throughput_out=6450.9b;;
+1188490204||cisco2||Interface: FastEthernet0/24||OK - FastEthernet0/24 is up, throughput (in/out) 415.23 Kbps/48.2 Kbps||throughput_in=425200.4b throughput_out=49366.37b;;
+1188490204||cisco2||Interface: Ethernet0/0||OK - Ethernet0/0 is up, throughput (in/out) 12.04 bps/7.86 bps||throughput_in=12.04b throughput_out=7.86b;10000000;10000000

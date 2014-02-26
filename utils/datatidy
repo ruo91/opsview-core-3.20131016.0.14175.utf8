@@ -1,0 +1,19 @@
+#!/usr/bin/perl
+
+use FindBin qw($Bin);
+use lib "$Bin/../lib";
+use Opsview::Utils qw(apidatatidy);
+
+foreach my $file (@ARGV) {
+    my $data;
+    open IN, $file or die "Cannot open: $file";
+    {
+        $/    = undef;
+        $data = <IN>;
+    }
+    close IN;
+    $data = apidatatidy($data);
+    open( OUT, "> $file" ) or die "Cannot write to: $file";
+    print OUT $data;
+    close OUT;
+}

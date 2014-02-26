@@ -1,0 +1,293 @@
+#!/usr/bin/perl
+#
+# $Id$
+#
+# SYNTAX:
+# 	check_http_authentication
+#
+# DESCRIPTION:
+# 	Log in to web site using provided credentials to check response
+# 	time and page text.
+#
+# AUTHORS:
+#       Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use strict;
+use warnings;
+use FindBin qw($Bin);
+use lib "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+use Nagios::Plugin;
+
+use WWW::Mechanize::Timed;
+use HTTP::Cookies;
+use Crypt::SSLeay;
+
+my $VERSION = sprintf( "%d", q$Revision: 13 $ =~ m!(\d+)! );
+
+my $np = Nagios::Plugin->new(
+    usage =>
+      "Usage: %s [-v|--verbose] [-h|--help] -H <hostname> -u <username> -p <password> [-w, --warning=<seconds>] [-c, --critical=<seconds>]\n   Check a retrieved page after authentication",
+    shortname => "HTTP_AUTH",
+    version   => $VERSION,
+);
+
+$np->add_arg(
+    spec => "host|H=s",
+    help => qq{-H, --host=<hostname>
+   Name/IP of host to run check against},
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "port=s",
+    help => qq{--port=<port>
+   Override port used.  Default http -> 80, https -> 443},
+    required => 0,
+);
+
+$np->add_arg(
+    spec => "path|P=s",
+    help => qq{-P, --path=<path>
+   Path to the login page.  Default: /},
+    default => "/",
+);
+
+$np->add_arg(
+    spec => "form|f=s",
+    help => qq{-f, --form=<login form name>
+   The name of the form used to log in to the web site.},
+    default => "login_form",
+);
+
+$np->add_arg(
+    spec => "username_field=s",
+    help => qq{--username_field=<field name>
+   Form field name for the username.  Default: login_username},
+    default => "login_username",
+);
+
+$np->add_arg(
+    spec => "username|u=s",
+    help => qq{-u,--username=<username>
+   Username to access the web site.  No default set.},
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "password_field=s",
+    help => qq{--password_field=<field name>
+   Form field name for the password.  Default: login_password},
+    default => "login_password",
+);
+
+$np->add_arg(
+    spec => "password|p=s",
+    help => qq{-p,--password=<password>
+   Password to access the web site.  No default set.},
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "use_ssl|S",
+    help => qq{--use_ssl, -S,
+   Use SSL encryption.  Note: if not used, the transaction may switch to using
+   SSL if the login form requires it.  Default: no SSL.},
+    default => 0,
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w,--warning=<seconds>
+   Warning threshhold to load the page within.  Default: 2.00.},
+    default => 2,
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c,--critical=<seconds>
+   Critical threshhold to load the page within.  Default: 3.00.},
+    default => 3,
+);
+
+$np->add_arg(
+    spec => "text|T=s",
+    help => qq{-T,--text=<string>
+   String to search for following successful authentication. 
+   Default: Logged in as:},
+    default => "Logged in as:",
+);
+
+$np->add_arg(
+    spec => "wrong_password|x=s",
+    help => qq{-x,--wrong_password=<string>
+   String to search for following attempted authentication to see if the wrong 
+   password was used. Default: You have entered an invalid password},
+    default => "Username or password mismatch",
+);
+
+$np->getopts;
+alarm $np->opts->timeout;
+
+my ( $url, $www, $cookies, $form, $initial_time, $form_time );
+
+$www = WWW::Mechanize::Timed->new(
+    quiet   => 1,
+    onerror => sub { my_die( 2, "CRITICAL: ", @_ ); }
+);
+$cookies = HTTP::Cookies->new(); # store cookies in memory only
+$www->cookie_jar($cookies);
+$www->timeout( $np->opts->critical );
+
+#### Set customer specific cookies ####
+# Some sites may require a cookie to be set to access the login page correctly
+#$cookies->set_cookie(2, "key", "val", path, domain, port, path_spec, secure, maxage, discard);
+
+if ( $np->opts->use_ssl ) {
+    $url = "https";
+}
+else {
+    $url = "http";
+}
+
+$url .= "://" . $np->opts->host;
+
+if ( $np->opts->port ) {
+    $url .= ':' . $np->opts->port;
+}
+
+$url .= $np->opts->path;
+
+# get the main page
+$www->get($url);
+
+unless ( $www->success ) {
+    $_ = $www->content;
+    s/\n.*//;
+    $np->nagios_exit(
+        return_code => CRITICAL,
+        message     => "Cannot connect to $url: $_"
+    );
+}
+
+$initial_time = $www->client_elapsed_time;
+
+# check the form is in the page we just fetched - first check by form name
+# and then id
+$form = $www->form_name( $np->opts->form );
+$form ||= $www->form_id( $np->opts->form );
+unless ($form) {
+    $np->nagios_exit(
+        return_code => CRITICAL,
+        message     => "Login form "
+          . $np->opts->form
+          . " is not present on "
+          . $www->uri
+    );
+}
+
+# now submit the form and see what happens
+eval { $www->field( $np->opts->username_field, $np->opts->username ); };
+if ($@) {
+    $np->nagios_exit(
+        return_code => CRITICAL,
+        message     => "No such field name '"
+          . $np->opts->username_field . "'"
+          . " on form '"
+          . $np->opts->form . "'",
+    );
+}
+eval { $www->field( $np->opts->password_field, $np->opts->password ); };
+if ($@) {
+    $np->nagios_exit(
+        return_code => CRITICAL,
+        message     => "No such field name '"
+          . $np->opts->password_field . "'"
+          . " on form '"
+          . $np->opts->form . "'",
+    );
+}
+
+$www->submit();
+
+$form_time = $www->client_elapsed_time;
+
+if ( $np->opts->verbose ) {
+    warn $www->content, $/;
+}
+
+unless ( $www->success ) {
+    $_ = $www->content;
+    s/\n.*//;
+    $np->nagios_exit(
+        return_code => CRITICAL,
+        message     => "Cannot connect to $url: $_"
+    );
+}
+
+unless ( $www->status eq 200 ) {
+    $np->nagios_exit(
+        return_code => CRITICAL,
+        message     => 'Log in failed - got status code: ' . $www->status,
+    );
+}
+
+# Check to see if the account details are correct
+{
+    my $wrong_password = $np->opts->wrong_password;
+    if ( $www->content =~ m/$wrong_password/ ) {
+        $np->nagios_exit(
+            return_code => CRITICAL,
+            message     => "Authentication failure for '"
+              . $np->opts->username
+              . "' on '"
+              . $www->uri . "'",
+        );
+    }
+}
+
+{
+    my $text = $np->opts->text;
+    if ( $www->content !~ m/$text/ ) {
+        $np->nagios_exit(
+            return_code => CRITICAL,
+            message     => "Unable to find '$text' on '" . $www->uri . "'",
+        );
+    }
+}
+
+$np->add_perfdata(
+    label    => "initial",
+    uom      => "s",
+    value    => $initial_time,
+    warning  => $np->opts->warning,
+    critical => $np->opts->critical,
+);
+
+$np->add_perfdata(
+    label    => "login",
+    uom      => "s",
+    value    => $form_time,
+    warning  => $np->opts->warning,
+    critical => $np->opts->critical,
+);
+
+$np->nagios_exit(
+    return_code => 0,
+    message     => "OK",
+);

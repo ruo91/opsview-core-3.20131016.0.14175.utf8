@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.application_wordpress
+VERSION=1.0
+ALIAS=Application - Wordpress
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

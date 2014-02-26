@@ -1,0 +1,92 @@
+#!/usr/bin/perl
+
+#  Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#  W: http://www.opsview.com/
+#
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software
+#  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+use Getopt::Std;
+use IO::Socket;
+
+$script         = "check_runqueue_solaris";
+$script_version = "1.0";
+
+my $runqueue_warning  = 9999;
+my $runqueue_critical = 9999;
+my $runqueue          = 0;
+
+getopts( "hw:c:" );
+if ($opt_h) {
+    usage();
+}
+if ($opt_w) {
+    $runqueue_warning = $opt_w;
+}
+if ($opt_c) {
+    $runqueue_critical = $opt_c;
+}
+
+@vmstat = `vmstat`;
+
+#@vmstat=`./vmstat`;
+
+#kthr      memory            page            disk          faults      cpu
+#r b w   swap  free  re  mf pi po fr de sr m1 m1 m1 m2   in   sy   cs us sy id
+#0 0 0 3587768 1621176 6 16  0  0  0  0  0  0  0  0  0  227  329  187  0  0 99
+
+$count = 1;
+foreach $line (@vmstat) {
+    if ( $count == 3 ) {
+
+        #print "$line\n";
+        my @line = split( / +/, $line );
+        $runqueue = $line[1];
+    }
+    $count++;
+}
+
+if ( $runqueue_critical <= $runqueue ) {
+    printf
+      "CRITICAL! Kernel threads in run queue: %.0f|runqueue=%.0f;%.0f;%.0f\n",
+      $runqueue, $runqueue, $runqueue_warning, $runqueue_critical;
+    exit 2;
+}
+elsif ( $runqueue_warning <= $runqueue ) {
+    printf
+      "WARNING! Kernel threads in run queue: %.0f|runqueue=%.0f;%.0f;%.0f\n",
+      $runqueue, $runqueue, $runqueue_warning, $runqueue_critical;
+    exit 1;
+}
+else {
+    printf "Kernel threads in run queue: %.0f|runqueue=%.0f;%.0f;%.0f\n",
+      $runqueue, $runqueue, $runqueue_warning, $runqueue_critical;
+    exit 0;
+}
+
+sub usage {
+    print << "USAGE";
+
+$script v$script_version
+
+Returns kernel threads in run queue
+
+Usage: $script -w <warning threshold> -c <critical threshold>
+
+Options:	-w 		Warning threshold (integer)
+		-c 		Critical threshold (integer)
+
+USAGE
+    exit 1;
+}

@@ -1,0 +1,13 @@
+#!/bin/bash
+echo "Updating test dbs"
+cd /usr/local/nagios
+./bin/db_opsview -t db_restore < /usr/local/nagios/t/var/opsview.test.db
+./installer/upgradedb_opsview.pl
+./bin/db_opsview -t db_backup > /usr/local/nagios/t/var/opsview.test.db
+echo "Finished test db update"
+echo "Updating initial db"
+./bin/db_opsview db_install
+./installer/upgradedb_opsview.pl
+./bin/db_opsview db_export_initial > import/initial_opsview.sql
+echo "Finished updating initial db"
+echo "Can now update db_opsview"

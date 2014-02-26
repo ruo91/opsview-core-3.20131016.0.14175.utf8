@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.application_apache_http_server
+VERSION=1.0
+ALIAS=Application - Apache HTTP Server
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

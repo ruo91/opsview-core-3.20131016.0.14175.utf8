@@ -1,0 +1,784 @@
+#!/usr/bin/perl
+
+=head1 NAME
+
+check_nagios_disabled.pl - Audit Nagios status file for disabled notifications and checks
+
+=head1 AUTHOR
+
+Steve Huff <shuff@hmdc.harvard.edu>
+
+Maintained by Opsview.
+
+=head1 SYNOPSIS
+
+Usage: check_nagios_disabled [-c] [-n] [-m <email>] [-f <email>] [-M <mailhost>] [-H <Header=Value> ][-v|d] [-h] [-V]
+
+=over
+
+=item  -?, --usage
+
+Print usage information
+
+=item -h, --help
+
+Print detailed help screen
+
+=item -V, --version
+
+Print version information
+
+=item -c, --checks
+
+Report on disabled host and service checks
+
+=item -n, --notifications
+
+Report on disabled host and service notifications
+
+=item -M, --mailhost, --server=STRING
+
+SMTP server to use for sending email
+
+=item -m, --email, --mail=STRING
+
+Address that will receive logcheck output
+
+=item -f, --from=STRING
+
+Address from which to send mail
+
+=item -H, --headers=STRING
+
+Additional mail headers to add to outgoing message (e.g. X-Spam-Checked=Yes)
+
+=item -d, -v, --debug, --verbose
+
+Show debug output, disable email
+
+=item -t, --timeout=INTEGER
+
+Seconds before plugin times out (default: 15)
+
+=back
+
+=head1 REQUIRES
+
+Perl5.004, strict, warnings, Readonly, POSIX, Net::SMTP, Nagios::Plugin, Nagios::Plugin::Getopt 
+
+=head1 EXPORTS
+
+Nothing
+
+=head1 DESCRIPTION
+
+C<check_disabled> queries the Opsview database for hosts and services with disabled notifications or checks and generates a report of any found (sent by email).
+
+If any such hosts and services are found, C<check_disabled> exits WARNING; if C<check_disabled> is unable to query the DB, it exits UNKNOWN; otherwise it exits OK.
+
+=cut
+
+# these need to be outside the BEGIN
+use strict;
+use warnings;
+
+# see this page for an explanation regarding the levels of warnings:
+# http://search.cpan.org/~rgarcia/perl-5.6.2/pod/perllexwarn.pod
+no warnings qw( redefine prototype );
+
+BEGIN {
+
+    # use central libs
+
+    use POSIX qw( strftime );
+    use Net::SMTP;
+
+    # use Opsview libs
+    use lib '/usr/local/nagios/perl/lib';
+
+    use Readonly;
+    use Nagios::Plugin;
+    use Nagios::Plugin::Getopt;
+
+    # reregister die, warn and interrupt
+    $SIG{INT} = \&DoInterrupt;
+
+} ## end BEGIN
+
+########################################################################
+# IMPORTANT VARIABLES
+#
+# command to run logcheck
+Readonly our $STATUSFILE => '/usr/local/nagios/var/status.dat';
+
+# how to send email
+Readonly our $SMTP_SERVER => 'localhost';
+
+# where to send email
+Readonly our $ADMINMAIL => 'root@localhost';
+
+# mail from
+Readonly our $MAIL_FROM => 'opsview@localhost';
+
+# mail subject
+Readonly our $MAIL_SUBJECT => 'Disabled checks or notifications found';
+
+# text snippets for report
+Readonly our $REPORT_HEADER => <<HEADER;
+The following hosts and services have been manually disabled in Opsview.
+
+HEADER
+
+Readonly our $REPORT_FOOTER => <<FOOTER;
+
+Please reenable checks or notifications as necessary.
+FOOTER
+
+# hosts to exclude (FIXME - this list should be auto-populated!)
+Readonly our @EXCLUDE_HOST => (
+    qw(
+      beamish
+      memnoch
+      turacma
+      whorka
+      lirael
+      orannis
+      n025-ws
+      )
+);
+
+# service checks to exclude (FIXME - this list should be auto-populated!)
+Readonly our @EXCLUDE_SERVICE => (
+    qw(
+      nessus
+      netapp-quotaresize
+      )
+);
+
+#
+########################################################################
+
+#
+# MAIN
+#
+
+# instantiate the Nagios::Plugin object
+my ($usagemsg) = <<USAGE;
+Usage: %s [-c] [-n] [-m <email>] [-f <email>] [-M <mailhost>] [-H <Header=Value> ] [-v|d] [-h] [-V]
+
+Will check that there are no disabled checks or disabled notifications in Nagios' status.dat
+USAGE
+my ($plugin) = Nagios::Plugin->new();
+
+my ($plugopts) = Nagios::Plugin::Getopt->new( 'usage' => $usagemsg, );
+
+$plugopts->arg(
+    'spec'    => 'checks|c',
+    'help'    => 'Report on disabled host and service checks',
+    'default' => 0,
+);
+
+$plugopts->arg(
+    'spec'    => 'notifications|n',
+    'help'    => 'Report on disabled host and service notifications',
+    'default' => 0,
+);
+
+$plugopts->arg(
+    'spec'    => 'mailhost|server|M=s',
+    'help'    => 'SMTP server to use for sending email',
+    'default' => $SMTP_SERVER,
+);
+
+$plugopts->arg(
+    'spec'    => 'email|mail|m=s',
+    'help'    => 'Address that will receive logcheck output',
+    'default' => $ADMINMAIL,
+);
+
+$plugopts->arg(
+    'spec'    => 'from|f=s',
+    'help'    => 'Address from which to send mail',
+    'default' => $MAIL_FROM,
+);
+
+$plugopts->arg(
+    'spec' => 'headers|H=s%',
+    'help' =>
+      'Additional mail headers to add to outgoing message (e.g. X-Spam-Checked=Yes',
+);
+
+$plugopts->arg(
+    'spec'    => 'debug|d|verbose|v',
+    'help'    => 'Show debug output, disable email',
+    'default' => 0,
+);
+
+$plugopts->getopts;
+
+my ($DEBUG) = $plugopts->debug;
+
+my ($do_checks)        = $plugopts->checks;
+my ($do_notifications) = $plugopts->notifications;
+
+# if neither option is provided, do both
+unless ( $do_checks || $do_notifications ) {
+
+    ( $do_checks, $do_notifications ) = ( 1, 1 );
+}
+
+# Nagios::Object is broken, parse the damn log myself
+my (%log) = parseLog($STATUSFILE);
+
+# can we read the log?
+unless (%log) {
+
+    # oh no
+    $plugin->nagios_exit( UNKNOWN, "Unable to read status log: $?" );
+}
+
+# keep track of disabled checks and notifications
+my (%disabled);
+
+# figure out which hosts and service checks we should exclude
+
+# iterate over hosts
+foreach my $hostname ( keys(%log) ) {
+
+    my ( $hostflag, $serviceflag );
+
+    if ( include( $hostname, @EXCLUDE_HOST ) ) {
+
+        # are host checks enabled?
+        $disabled{$hostname}->{'checks'} = (
+            $do_checks
+              && (
+                checkEnabled(
+                    'type'     => 'hostcheck',
+                    'hostname' => $hostname,
+                    'log'      => \%log,
+                )
+              )
+        );
+
+        # are host notifications enabled?
+        $disabled{$hostname}->{'notifications'} = (
+            $do_notifications
+              && (
+                checkEnabled(
+                    'type'     => 'hostnotification',
+                    'hostname' => $hostname,
+                    'log'      => \%log,
+                )
+              )
+        );
+
+        # did we get a hit on either?
+        $hostflag = (
+                 $disabled{$hostname}->{'checks'}
+              || $disabled{$hostname}->{'notifications'}
+        );
+
+        # check each service
+        foreach my $servicename ( keys( %{ $log{$hostname}->{'services'} } ) ) {
+
+            if ( include( $servicename, @EXCLUDE_SERVICE ) ) {
+
+                # are service checks enabled?
+                $disabled{$hostname}->{'services'}->{$servicename}->{'checks'} =
+                  (
+                    $do_checks
+                      && (
+                        checkEnabled(
+                            'type'        => 'servicecheck',
+                            'hostname'    => $hostname,
+                            'servicename' => $servicename,
+                            'log'         => \%log,
+                        )
+                      )
+                  );
+
+                # are service notifications enabled?
+                $disabled{$hostname}->{'services'}->{$servicename}
+                  ->{'notifications'} = (
+                    $do_notifications
+                      && (
+                        checkEnabled(
+                            'type'        => 'servicenotification',
+                            'hostname'    => $hostname,
+                            'servicename' => $servicename,
+                            'log'         => \%log,
+                        )
+                      )
+                  );
+
+                # did we get a hit on either?
+                if ( $disabled{$hostname}->{'services'}->{$servicename}
+                    ->{'checks'}
+                    || $disabled{$hostname}->{'services'}->{$servicename}
+                    ->{'notifications'} )
+                {
+
+                    $serviceflag++;
+                }
+            }
+            else {
+
+                # no hits, prune it
+                delete( $disabled{$hostname}->{'services'}->{$servicename} );
+            }
+        }
+
+        # if all is well with this host, prune it from %disabled
+        unless ( $hostflag || $serviceflag ) {
+
+            delete $disabled{$hostname};
+        }
+    }
+}
+
+# generate the report
+my ($report);
+
+# did we get any hits?
+if (%disabled) {
+
+    # ok, we got something
+    $report .= $REPORT_HEADER;
+
+    foreach my $hostname ( sort( keys(%disabled) ) ) {
+
+        $report .= ( '*' x length($hostname) ) . "\n";
+        $report .= "$hostname\n\n";
+        if ( $disabled{$hostname}->{'checks'} ) {
+
+            $report .= "Host checks disabled.\n";
+        }
+        if ( $disabled{$hostname}->{'notifications'} ) {
+
+            $report .= "Host notifications disabled.\n";
+        }
+
+        # now check the services
+        my ( @checks, @notifications );
+        foreach my $servicename (
+            sort( keys( %{ $disabled{$hostname}->{'services'} } ) ) )
+        {
+
+            if (
+                $disabled{$hostname}->{'services'}->{$servicename}->{'checks'} )
+            {
+
+                push( @checks, $servicename );
+            }
+            if ( $disabled{$hostname}->{'services'}->{$servicename}
+                ->{'notifications'} )
+            {
+
+                push( @notifications, $servicename );
+            }
+        }
+
+        if ( scalar(@checks) ) {
+
+            $report .= "Service checks disabled:\n\t";
+            $report .= join( "\n\t", @checks ) . "\n";
+        }
+        if ( scalar(@notifications) ) {
+
+            $report .= "Service notifications disabled:\n\t";
+            $report .= join( "\n\t", @notifications ) . "\n";
+        }
+
+        $report .= "\n";
+    }
+
+    $report .= $REPORT_FOOTER;
+
+    # send the email unless we're debugging
+    my ($emailsubject) = 'Disabled checks or notifications found';
+    if ( $DEBUG < 1 ) {
+
+        defined(
+            sendEmail(
+                'subject'      => $emailsubject,
+                'msg'          => $report,
+                'to'           => [ $plugopts->email ],
+                'from'         => $plugopts->from,
+                'extraheaders' => \$plugopts->headers,
+            )
+        ) or $plugin->nagios_die( "Unable to send output email!" );
+    }
+    else {
+
+        # show what we would have done
+        print "Sending email to " . $plugopts->email . "\n";
+        print "Subject: $emailsubject\n";
+        print "From: " . $plugopts->from . "\n";
+        print "To: " . $plugopts->email . "\n";
+        if ( defined( $plugopts->headers ) ) {
+
+            for my $header ( keys( %{ $plugopts->headers } ) ) {
+
+                print "$header: " . ${ $plugopts->headers }{$header} . "\n";
+            }
+        }
+        print "$report\n";
+    }
+
+    # exit WARNING
+    $plugin->nagios_exit( WARNING, "Disabled checks or notifications found" );
+}
+else {
+
+    # everything is fine!
+    $plugin->nagios_exit( OK, "No disabled checks or notifications found" );
+}
+
+################################################################################
+#                                                                              #
+# parseLog - basic parsing of status.dat for what we want
+#                                                                              #
+################################################################################
+sub parseLog( $ ) {
+
+    my ($logfile) = @_;
+    my (%RETURN);
+
+    my ($BLOCKSTART) = '^(host|service)(status)?\s+{';
+    my ($BLOCKEND)   = '^\s+}';
+
+    my (@desired_keys) = (
+        qw(
+          notifications_enabled
+          active_checks_enabled
+          passive_checks_enabled
+          )
+    );
+
+    if ( -r $logfile ) {
+
+        open( my $LOGFILE, '<', $logfile );
+
+        my ( $inblock, $hostname, $servicename );
+        while (<$LOGFILE>) {
+
+            my ($line) = $_;
+            chomp($line);
+
+            # are we in a block?
+            if ($inblock) {
+
+                # are we exiting a block?
+                if ( $line =~ /$BLOCKEND/ ) {
+
+                    $inblock     = 0;
+                    $hostname    = undef;
+                    $servicename = undef;
+                }
+                else {
+
+                    # do we have data to capture?
+                    my ( $key, $value ) = split( '=', $line );
+                    if ( defined($key) && defined($value) ) {
+
+                        # do we know our hostname?
+                        unless ( defined($hostname) ) {
+
+                            if ( $key =~ /host_name/ ) {
+
+                                $hostname = $value;
+                            }
+                        }
+
+                        # are we in a service?
+                        unless ( defined($servicename) ) {
+
+                            if ( $key =~ /service_description/ ) {
+
+                                $servicename = $value;
+                            }
+                        }
+
+                        # is this one of the values we care about?
+                        foreach my $desired (@desired_keys) {
+
+                            if ( $key =~ /($desired)/ ) {
+
+                                $key = $1;
+
+                                # store the value
+                                if ( defined($servicename) ) {
+
+                                    $RETURN{$hostname}->{'services'}
+                                      ->{$servicename}->{$key} = $value;
+                                }
+                                else {
+
+                                    $RETURN{$hostname}->{$key} = $value;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            else {
+
+                # are we entering a block?
+                if ( $line =~ /$BLOCKSTART/ ) {
+
+                    $inblock = 1;
+                }
+            }
+        }
+
+        close($LOGFILE);
+
+        return ( wantarray ? %RETURN : \%RETURN );
+    }
+    else {
+
+        return (undef);
+    }
+}
+
+################################################################################
+#                                                                              #
+# include - see if we're including this servicecheck
+#                                                                              #
+################################################################################
+sub include() {
+
+    my ( $check, @exclude ) = @_;
+    my ($RETURN);
+
+    # did we get a valid check?
+    if ( defined($check) ) {
+
+        $RETURN = 1;
+
+        # did we get an exclude list?
+        if ( scalar(@exclude) ) {
+
+            # make @exclude unique
+            my (%unique);
+            ( @unique{@exclude} ) = ();
+            (@exclude) = sort( keys(%unique) );
+
+            foreach my $candidate (@exclude) {
+
+                if ( $check =~ /$candidate/ ) {
+
+                    $RETURN = undef;
+                    last;
+                }
+            }
+        }
+    }
+
+    return ($RETURN);
+}
+
+################################################################################
+#                                                                              #
+# checkEnabled - check status of check or notifications
+#                                                                              #
+################################################################################
+sub checkEnabled( % ) {
+
+    my (%params) = @_;
+
+    my ($type) = ( defined( $params{'type'} ) ? $params{'type'} : undef );
+    my ($hostname) =
+      ( defined( $params{'hostname'} ) ? $params{'hostname'} : undef );
+    my ($servicename) =
+      ( defined( $params{'servicename'} ) ? $params{'servicename'} : undef );
+    my (%log) = (
+        ( defined( $params{'log'} ) && ( ref( $params{'log'} ) eq 'HASH' ) )
+        ? %{ $params{'log'} }
+        : undef
+    );
+
+    my ($RETURN) = 0;
+
+    if (   $type
+        && $hostname
+        && %log
+        && ( !( ( $type =~ /^service/ ) xor $servicename ) ) )
+    {
+
+        if ( $type eq 'hostcheck' ) {
+
+            $RETURN = invert(
+                     $log{$hostname}->{'active_checks_enabled'}
+                  || $log{$hostname}->{'passive_checks_enabled'}
+            );
+        }
+        elsif ( $type eq 'hostnotification' ) {
+
+            $RETURN = invert( $log{$hostname}->{'notifications_enabled'} );
+        }
+        elsif ( $type eq 'servicecheck' ) {
+
+            $RETURN = invert(
+                $log{$hostname}->{'services'}->{$servicename}
+                  ->{'active_checks_enabled'}
+                  || $log{$hostname}->{'services'}->{$servicename}
+                  ->{'passive_checks_enabled'}
+            );
+        }
+        elsif ( $type eq 'servicenotification' ) {
+
+            $RETURN = invert(
+                $log{$hostname}->{'services'}->{$servicename}
+                  ->{'notifications_enabled'}
+            );
+        }
+        else {
+
+            warn(
+                "'$type' must be one of the following: hostcheck, hostnotification, servicecheck, servicenotification\n"
+            );
+        }
+    }
+    else {
+
+        warn( "You must provide values for type, name, and log." );
+    }
+
+    return ($RETURN);
+}
+
+################################################################################
+#                                                                              #
+# invert - return 1 for 0 and vice versa
+#                                                                              #
+################################################################################
+sub invert( $ ) {
+
+    my ($input) = @_;
+
+    if ($input) {
+
+        return (0);
+    }
+    else {
+
+        return (1);
+    }
+}
+
+################################################################################
+#                                                                              #
+# sendEmail - send an email
+#                                                                              #
+################################################################################
+sub sendEmail( % ) {
+
+    my (%params) = @_;
+
+    my ($subject) =
+      ( defined( $params{'subject'} ) ? $params{'subject'} : $MAIL_SUBJECT );
+    my ($mailhost) =
+      ( defined( $params{'mailhost'} ) ? $params{'mailhost'} : $SMTP_SERVER );
+    my (@to) = (
+        ( defined( $params{'to'} ) && ( ref( $params{'to'} ) eq 'ARRAY' ) )
+        ? @{ $params{'to'} }
+        : ($ADMINMAIL)
+    );
+    my ($from) = ( defined( $params{'from'} ) ? $params{'from'} : $MAIL_FROM );
+    my ($msg)  = ( defined( $params{'msg'} )  ? $params{'msg'}  : undef );
+    my (%extraheaders) = (
+        (
+            defined( $params{'extraheaders'} )
+              && ref( $params{'extraheaders'} ) eq 'HASH'
+        ) ? %{ $params{'extraheaders'} } : ()
+    );
+
+    unless ( defined($subject)
+        && scalar(@to)
+        && defined($from)
+        && defined($msg) )
+    {
+
+        warn( "Insufficient parameters provided to sendEmail!\n" );
+        return (undef);
+    }
+
+    # do we need to send one message for each recipient???
+    foreach my $toName (@to) {
+
+        # Create a new SMTP object
+        my ($smtp) = Net::SMTP->new( $mailhost, Debug => $DEBUG );
+
+        # If you can't connect, don't proceed with the rest of the script
+        if ( !$smtp ) {
+
+            warn( "Couldn't connect to server '$mailhost': $!" );
+            return (undef);
+        }
+
+        # Start the mail
+        $smtp->mail($from);
+        $smtp->to($toName);
+
+        # Start the message
+        $smtp->data();
+
+        # Send the header
+        # This address will appear in the message body
+        $smtp->datasend( "To: $toName\n" );
+
+        # So will this one
+        $smtp->datasend( "From: $from\n" );
+        $smtp->datasend( "Subject: $subject\n" );
+        $smtp->datasend(
+            "Date: " . strftime( "%a, %d %b %Y %T %z", localtime() ) . "\n"
+        );
+
+        # add any additional headers
+        if ( scalar( keys(%extraheaders) ) ) {
+
+            foreach my $header ( keys(%extraheaders) ) {
+
+                # condense trailing whitespace
+                $header =~ s/\s{2,}$/ /;
+                unless ( $header =~ /:\s$/ ) {
+
+                    $header = $header . ': ';
+                }
+                $smtp->datasend( $header . $extraheaders{$header} );
+            }
+        }
+
+        # done with headers
+        $smtp->datasend( "\n" );
+
+        # Send the body.
+        $smtp->datasend($msg);
+
+        # Send the termination string
+        $smtp->dataend();
+
+        # Close the connection
+        $smtp->quit();
+    }
+}
+
+################################################################################
+#                                                                              #
+# DoInterrupt - handle SIGINT and clean up
+#                                                                              #
+################################################################################
+sub DoInterrupt {
+
+    #print "\nRequest Timed out.\n";
+
+    # if we had a DB connection or something else important:
+    # take this last moment to disconnect or clean
+    #if ( defined( $ldapSearch ) ) {
+    #    $ldapSearch->unbind();
+    #}
+
+    $plugin->nagios_die( "Interrupt received or timeout" );
+}

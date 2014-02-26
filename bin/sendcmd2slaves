@@ -1,0 +1,105 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#	sendcmd2slaves
+#
+# DESCRIPTION:
+#	Broker program, gets called regularly by opsviewd to process any
+#	commands waiting to be sent to slaves.  Does not check for errors
+#	since those should be picked up by check_opsview_slave
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+use FindBin qw($Bin $RealScript);
+use lib "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+use Opsview;
+use Opsview::Monitoringclusternode;
+use File::Copy;
+use POSIX qw(tmpnam);
+use Parallel::Forker;
+
+use Log::Log4perl;
+Log::Log4perl::init( "$Bin/../etc/Log4perl.conf" );
+my $logger = Log::Log4perl->get_logger($RealScript);
+
+my $cache_file = "/usr/local/nagios/var/slave_commands.cache";
+my @commands;
+
+exit 0 unless ( -s $cache_file );
+
+$logger->info( "Sending commands to slaves" );
+
+# move the cache file somewhere we can work on it safely without
+# affecting nagios
+my $filename = tmpnam();
+if ( !move( $cache_file, $filename ) ) {
+    $logger->logdie( "Unable to move $cache_file: $!" );
+}
+
+# should be able to read something in here due to -s test above
+if ( !open( CACHE, "<", $filename ) ) {
+    $logger->logdie( "Unable to read moved file $filename: $!" );
+}
+@commands = <CACHE>;
+close(CACHE);
+
+if ( !unlink($filename) ) {
+    $logger->error( "Unable to remove $filename: $!" );
+    die( "Unable to remove $filename: $!\n" );
+}
+
+my $Fork = Parallel::Forker->new;
+$SIG{CHLD} = sub { $Fork->sig_child() if $Fork };
+$SIG{TERM} = sub {
+    $Fork->kill_tree_all('TERM') if $Fork;
+    $logger->logdie( "TERM signal received" );
+};
+
+foreach my $node ( Opsview::Monitoringclusternode->retrieve_all_activated ) {
+    $logger->debug( "Setting up commands to run to ", $node->name );
+    $Fork->schedule(
+        run_on_start => sub {
+            $logger->debug( "Sending commands to ", $node->name );
+            my $now = time;
+            my $fh  = {};
+            my $cmd = $node->ssh_command(
+                "'cat >> /usr/local/nagios/var/rw/nagios.cmd'"
+            );
+            $logger->debug( $node->name, ": $cmd" );
+            open( $fh->{ $node->id }, "|-", $cmd ) or delete $fh->{ $node->id };
+            foreach my $line (@commands) {
+                $logger->debug( $node->name, " sending: $line" );
+                print { $fh->{ $node->id } } "[$now] $line";
+            }
+            close( $fh->{ $node->id } );
+            $logger->debug( $node->name, ": sent" );
+        },
+        name => $node->name . "_send_command",
+    );
+}
+
+$Fork->ready_all;
+$Fork->wait_all;
+
+$logger->info( "Commands sent to slaves" );

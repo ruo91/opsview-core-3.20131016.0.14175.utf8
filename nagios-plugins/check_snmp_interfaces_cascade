@@ -1,0 +1,1353 @@
+#!/usr/bin/perl
+#
+### BEGIN OPSVIEW INFO
+# Macros: HOSTNAME
+### END OPSVIEW INFO
+#
+# DESCRIPTION:
+#   Polls all interfaces in one go, calculates the rate difference from the last
+#   poll and then submits passive results to Nagios
+#   WARNING: Do not poll too frequently because if SNMP updates on a timed basis
+#   then the rate calculate will be skewed
+#   Writes debug data to /usr/local/nagios/var/plugins/check_snmp_interfaces_cascade
+#   if rate > 100%, which shouldn't happen
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#	Based on check_snmp_linkstatus
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+use FindBin qw($Bin);
+use lib "$Bin/../perl/lib", "$Bin/../lib";
+use Nagios::Plugin;
+use Net::SNMP;
+use Opsview::Utils::SnmpInterfaces;
+use Opsview::Utils::Niceties qw(nice_values);
+use Opsview::Externalcommand;
+use Time::HiRes qw(gettimeofday);
+use File::Copy;
+
+# Needs DBD::SQLite >= 1.25 otherwise can get transaction errors
+use DBI;
+use Data::Dump qw(dump);
+use Math::BigInt;
+use JSON::XS qw(decode_json);
+
+my $start_time       = gettimeofday();
+my $poller_criticals = [];
+my $poller_warnings  = [];
+my $poller_unknowns  = [];
+my $poller_info      = [];
+my $debug_data;
+
+# About us
+my $script     = "check_snmp_interfaces_cascade";
+my $VERSION    = "4.1";
+my $db_version = $VERSION;
+
+my $interfaces = {};
+
+# Hard code hostnames that you want to trace
+my $trace_host = 0;
+my @trace_interface_values;
+my $trace_hostnames = {
+
+    # If you want to add a hostname, as defined in Nagios, for tracing all results, enter here
+    #'hostname' => 1,
+};
+
+# Where to put the .db file
+my $db_home = "/usr/local/nagios/var/plugins/$script";
+
+# make sure db_home area exists
+if ( !-d $db_home ) {
+    if ( !mkdir $db_home ) {
+        print "Cannot create directory '$db_home': $!\n";
+        exit 3;
+    }
+}
+
+# Name of the database file
+# Rename the file when it structurally changes, or the contents are invalid
+# Must be of form qr{_v\d+\.\d+\.db}
+my $db_name_ext = "_v" . $db_version . ".db";
+
+# SNMP variables
+my $oid_sysDescr =
+  ".1.3.6.1.2.1.1.1.0"; # Used to check whether SNMP is actually responding
+
+my $timeout = 10;       # SNMP timeout
+
+my $first_run = 0;
+
+my $np = Nagios::Plugin->new(
+    usage     => "Usage: %s -H hostname",
+    shortname => "INTERFACES",
+    version   => $VERSION,
+    blurb =>
+      "This plugin polls the hostname specified to get all interface information
+    which will be submitted via passive check results
+
+Access to the following OIDs on the device is required:
+    .1.3.6.1.2.1.2.2.1.1.x     - interface ID
+    .1.3.6.1.2.1.2.2.1.2.x     - interface name
+    .1.3.6.1.2.1.2.2.1.5.x     - speed
+    .1.3.6.1.2.1.2.2.1.7.x     - administration status
+    .1.3.6.1.2.1.2.2.1.8.x     - operating status
+    .1.3.6.1.2.1.2.2.1.10.x    - in octets
+    .1.3.6.1.2.1.2.2.1.16.x    - out octets
+    .1.3.6.1.2.1.31.1.1.1.18   - interface alias
+    .1.3.6.1.2.1.31.1.1.1.6.x  - in octets - 64 bit counter (where available)
+    .1.3.6.1.2.1.31.1.1.1.10.x - out octets - 64 bit counter (where available)
+    .1.3.6.1.2.1.2.2.1.14.x    - in errors
+    .1.3.6.1.2.1.2.2.1.20.x    - out errors
+    .1.3.6.1.2.1.2.2.1.13.x    - in discards
+    .1.3.6.1.2.1.2.2.1.19.x    - out discards
+",
+);
+
+$np->add_arg(
+    spec     => "hostname|H=s",
+    help     => "-H, --hostname=STRING  Name of Opsview host to check",
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "ignore_no_throughput|ignore-no-throughput",
+    help => "--ignore-no-throughput\n"
+      . '   If the device has no throughput, disable unknown status and do not display "no throughput" message',
+    required => 0,
+);
+
+$np->add_arg(
+    spec => "ignore_strange_percent_values|ignore-strange-percent-values",
+    help => "--ignore-strange-percent-values\n"
+      . '   If the device exceeds its expected theoretical maximum throughput, do not go to UNKNOWN status and do not return "Strange percent values"',
+    required => 0,
+);
+
+$np->getopts;
+
+my $hostname = $np->opts->hostname;
+my $verbose  = $np->opts->verbose;
+
+###############################
+# Read configuration parameters
+###############################
+my $data;
+{
+    my $fh;
+    unless (
+        open(
+            $fh,
+            '<',
+            "/usr/local/nagios/etc/plugins/check_snmp_interfaces_cascade/$hostname.json"
+        )
+      )
+    {
+        $np->nagios_exit( UNKNOWN,
+            "Cannot read configuration data for $hostname"
+        );
+    }
+    local $/;
+    my $json_text = <$fh>;
+    eval { $data = decode_json($json_text); };
+}
+unless ($data) {
+    $np->nagios_exit( UNKNOWN,
+        "Cannot read host configuration data for $hostname: $@"
+    );
+}
+
+###############################
+# Validate parameters
+###############################
+
+my $hostinfo     = $data->{host};
+my $max_msg_size = $hostinfo->{snmp_max_msg_size};
+if ( $max_msg_size =~ m/\D/ || $max_msg_size < 0 || $max_msg_size > 65535 ) {
+    $np->nagios_exit( UNKNOWN,
+        "Invalid -m (max_msg_size) option: $max_msg_size"
+    );
+}
+
+# SQL statements
+my $sql_create_interfaces = q{
+    CREATE TABLE IF NOT EXISTS interfaces (
+        ifDescr TEXT,ifIndex TEXT,shortinterfacename TEXT,ifAlias TEXT,ifName TEXT,lastUpdate TEXT,
+        lastoctetsIn TEXT,lastoctetsOut TEXT,lasterrorsIn TEXT,lasterrorsOut TEXT,lastdiscardsIn TEXT,lastdiscardsOut TEXT,
+        lastunicastIn TEXT,lastunicastOut TEXT,lastnonunicastIn TEXT,lastnonunicastOut TEXT,
+        lastbroadcastIn TEXT,lastbroadcastOut TEXT,lastmulticastIn TEXT,lastmulticastOut TEXT
+    )
+};
+
+# This DB holds the last data values for all interfaces
+sub db_connect {
+    my ($hostname) = @_;
+
+    my $filename = "$db_home/${hostname}${db_name_ext}";
+    if ( -f $filename && !-w $filename ) {
+        print "Cannot write to existing $filename\n";
+        exit 3;
+    }
+
+    my $exception = sub {
+        my ( $package, $filename, $line ) = caller;
+        my $error = $_[0];
+        print "DB error: '$error' at $filename line $line\n";
+        exit 3;
+    };
+    my $dbh =
+      DBI->connect( "dbi:SQLite:dbname=$filename", "", "",
+        { HandleError => $exception }
+      );
+
+    # Check if the table has been set up and create otherwise
+    my $table_found = $dbh->selectrow_array(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='interfaces'"
+    );
+    unless ($table_found) {
+        $first_run = 1;
+        $dbh->do($sql_create_interfaces);
+    }
+
+    return $dbh;
+}
+
+sub convert_units {
+
+    # Input should be in bytes - we'll convert to something more human readable
+    my ($bits)   = @_;
+    my $gigabits = 1000 * 1000 * 1000;
+    my $megabits = 1000 * 1000;
+    my $kilobits = 1000;
+
+    # Gigabits
+    if ( $bits > $gigabits ) {
+        return nice_values( $bits / $gigabits, 2 ) . " Gbps";
+    }
+    elsif ( $bits > $megabits - 1 ) {
+        return nice_values( $bits / $megabits, 2 ) . " Mbps";
+    }
+    elsif ( $bits > $kilobits - 1 ) {
+        return nice_values( $bits / $kilobits, 2 ) . " Kbps";
+    }
+    else {
+        return $bits . " bps";
+    }
+
+    return;
+}
+
+sub plog {
+    print @_, $/ if $verbose;
+}
+
+#######################################
+# Start connecting
+#######################################
+my $snmp_connection_start = gettimeofday();
+my ( $s, $e );
+if ( $hostinfo->{snmp_version} eq "3" ) {
+    if ( $hostinfo->{snmpv3_privpassword} ) {
+        ( $s, $e ) = Net::SNMP->session(
+            -username     => $hostinfo->{snmpv3_username},
+            -authpassword => $hostinfo->{snmpv3_authpassword},
+            -authprotocol => $hostinfo->{snmpv3_authprotocol},
+            -privpassword => $hostinfo->{snmpv3_privpassword},
+            -privprotocol => $hostinfo->{snmpv3_privprotocol},
+            -hostname     => $hostinfo->{ip},
+            -version      => $hostinfo->{snmp_version},
+            -timeout      => $timeout,
+            -port         => $hostinfo->{snmp_port},
+        );
+    }
+    else {
+        ( $s, $e ) = Net::SNMP->session(
+            -username     => $hostinfo->{snmpv3_username},
+            -authpassword => $hostinfo->{snmpv3_authpassword},
+            -authprotocol => $hostinfo->{snmpv3_authprotocol},
+            -hostname     => $hostinfo->{ip},
+            -version      => $hostinfo->{snmp_version},
+            -timeout      => $timeout,
+            -port         => $hostinfo->{snmp_port},
+        );
+    }
+}
+else {
+    ( $s, $e ) = Net::SNMP->session(
+        -community => $hostinfo->{snmp_community},
+        -hostname  => $hostinfo->{ip},
+        -version   => $hostinfo->{snmp_version},
+        -timeout   => $timeout,
+        -port      => $hostinfo->{snmp_port},
+    );
+}
+if ( !defined $s ) {
+    print "No SNMP session initiated - is $hostinfo->{ip} correct?\n";
+    exit 3;
+}
+
+# Weirdly, $s->get_request seems to take 2 x $timeout to get a response
+if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+
+    # If we couldn't connect as v3 or v1, fail
+    # No point trying v1 again
+    if ( $hostinfo->{snmp_version} eq "3" || $hostinfo->{snmp_version} eq "1" )
+    {
+        print
+          "Agent not responding to SNMP v$hostinfo->{snmp_version} requests with the given credentials\n";
+        exit 3;
+    }
+
+    # If we can't connect using SNMPv2 lets try as SNMPv1.
+    $s->close();
+    ( $s, $e ) = Net::SNMP->session(
+        -community => $hostinfo->{snmp_community},
+        -hostname  => $hostinfo->{ip},
+        -version   => 1,
+        -timeout   => $timeout,
+        -port      => $hostinfo->{snmp_port},
+    );
+    if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+        print "Agent not responding, tried SNMP v1 and v2\n";
+        exit 3;
+    }
+}
+
+my $snmp_connection_time =
+  sprintf( "%.2f", gettimeofday() - $snmp_connection_start );
+
+if ($max_msg_size) {
+    if ( !defined $s->max_msg_size($max_msg_size) ) {
+        print "SNMP Error: ", $s->error, $/;
+        exit 3;
+    }
+}
+
+my $nagios_hostname = $ENV{NAGIOS_HOSTNAME};
+
+# Plugin run from command line
+if ( !defined $nagios_hostname ) {
+    print STDERR
+      "WARNING: Running from command line. This could change statistics for the next run from Nagios\n";
+    $nagios_hostname = $hostname;
+}
+
+if ( $trace_hostnames->{$nagios_hostname} ) {
+    $trace_host = 1;
+}
+
+#############################################
+# Collect data from device for all interfaces
+#############################################
+
+# Use this to catch errors from interface querying
+$SIG{__DIE__} = sub {
+    return if ( $^S == 1 );
+    print "UNKNOWN - Error getting interface information: @_";
+    exit 3;
+};
+
+# We use precise timings to work out how long the polling is
+# but we just use rounded seconds for working out the rate to keep it simple
+my $now_precise    = gettimeofday();
+my $now            = CORE::time();
+my $extended_stats = $data->{host}->{snmp_extended_throughput_data};
+my $response       = Opsview::Utils::SnmpInterfaces->get_interface_information(
+    $s,
+    {
+        tidy_ifdescr_level       => $data->{host}->{tidy_ifdescr_level},
+        extra_stats              => 1,
+        extended_throughput_data => $extended_stats,
+    }
+);
+$interfaces = $response->{interfaces};
+push @$poller_info, @{ $response->{info} };
+my $polling_time = sprintf( "%.2f", gettimeofday() - $now_precise );
+$s->close();
+
+if ( $verbose >= 3 ) {
+    print "Polled data:\n";
+    print Data::Dump::dump($interfaces);
+    print "\n";
+}
+
+# Normalise data for this plugin's purposes
+foreach my $intid ( keys %$interfaces ) {
+    my $interface_display_name = $interfaces->{$intid}->{ifDescr};
+
+    if ( !$interface_display_name ) {
+        if ( $verbose >= 2 ) {
+            print "No ifDescr set for interface ID $intid; ignoring", $/;
+        }
+        delete( $interfaces->{$intid} );
+    }
+
+    # Only show ifAlias if there is a value set
+    if ( my $ifAlias = $interfaces->{$intid}->{ifAlias} ) {
+
+        # Some interfaces return | in the ifalias, which interferes with Nagios perf data
+        ( $_ = $ifAlias ) =~ s/\|/\//g;
+        $interface_display_name .= " ($_)";
+    }
+    $interfaces->{$intid}->{display_name} = $interface_display_name;
+}
+
+=begin Example input data structure
+
+$indexid can be 0 if interfacename is unique
+
+my $data = {
+    host => {
+        snmp_version => ...,
+        snmp_community => ...,
+        snmpv3stuff
+        snmp_max_msg_size => ...,
+        tidy_ifdescr_level => ...,
+    },
+    interfaces => {
+        $interfacename => {
+            $indexid => {
+                shortinterfacename => shortinterfacename,
+                throughput => 0,1,
+                throughput_warning => ...,
+                throughput_critical => ...,
+                errors => 0,1,
+                errors_warning => ...,
+                errors_critical => ...,
+                discards => 0,1,
+                discards_warning => ...,
+                discards_critical => ...,
+                +octetsIn
+                +octetsOut
+                +discardsIn
+                +discardsOut
+                +errorsIn
+                +errorsOut
+                +ifSpeed
+                +ifAlias
+                +ifOperStatus
+                +ifAdminStatus
+            }
+        }
+    },
+};
+
+=cut
+
+###################################
+# Merge polled data into input data
+# Interfaces that are not listed in input are discarded
+###################################
+
+foreach my $intid ( keys %$interfaces ) {
+    my $polled_data   = $interfaces->{$intid};
+    my $interfacename = $polled_data->{ifDescr};
+
+    # Ignore interfaces that are not listed by Opsview
+    next unless $interfacename;
+    next unless $data->{interfaces}->{$interfacename};
+
+    # Find the specific hash in $data for this interface
+    my $intdata;
+    if ( exists $data->{interfaces}->{$interfacename}->{0} ) {
+        $intdata = $data->{interfaces}->{$interfacename}->{0};
+    }
+    elsif ( $data->{interfaces}->{$interfacename}->{$intid} ) {
+        $intdata = $data->{interfaces}->{$interfacename}->{$intid};
+    }
+    else {
+
+        # This non-unique interface is not found at the expected location,
+        # so we are going to ignore it.
+        # An error will be raised in the service as its indexid is different
+        next;
+    }
+
+    $intdata->{found} = 1;
+
+    foreach my $t (
+        qw(
+        octetsIn
+        octetsOut
+        discardsIn
+        discardsOut
+        errorsIn
+        errorsOut
+        ifSpeed
+        ifAlias
+        ifOperStatus
+        ifAdminStatus
+        display_name
+        unicastIn
+        unicastOut
+        nonunicastIn
+        nonunicastOut
+        broadcastIn
+        broadcastOut
+        multicastIn
+        multicastOut
+        )
+      )
+    {
+        $intdata->{$t} = $polled_data->{$t}
+          if exists $polled_data->{$t};
+    }
+}
+
+if ( $verbose >= 3 ) {
+    print "Merged with polled data:\n";
+    print Data::Dump::dump($data);
+    print "\n";
+}
+
+###################################
+# Merge data from database with
+# current data
+###################################
+
+my $sql_read_start = gettimeofday();
+
+# We use the nagios hostname because in future, we will want to search for all interface names
+# and ifalias and link back to a specific nagios host. So the hostname will be encoded as the db cache name - see OPS-250
+my $dbh = db_connect($nagios_hostname);
+
+# Foreach row in db, find interface in hash
+# If not there, ignore (db holds cache for interfaces that no longer exist)
+my $sth = $dbh->prepare( "
+SELECT
+ ifDescr,shortinterfacename,ifIndex,ifAlias,ifName,lastUpdate,
+ lastoctetsIn,lastoctetsOut,lasterrorsIn,lasterrorsOut,lastdiscardsIn,lastdiscardsOut,
+ lastunicastIn,lastunicastOut,lastnonunicastIn,lastnonunicastOut,
+ lastbroadcastIn,lastbroadcastOut,lastmulticastIn,lastmulticastOut
+FROM interfaces
+" );
+$sth->execute();
+while ( my $row = $sth->fetchrow_hashref ) {
+    my $interfacename = $row->{ifDescr};
+    my $intid         = $row->{ifIndex};
+
+    # Ignore if this interface is not even listed in configuration
+    next unless $data->{interfaces}->{$interfacename};
+
+    my $intdata;
+    if ( exists $data->{interfaces}->{$interfacename}->{0} ) {
+        $intdata = $data->{interfaces}->{$interfacename}->{0};
+    }
+    elsif ( $data->{interfaces}->{$interfacename}->{$intid} ) {
+        $intdata = $data->{interfaces}->{$interfacename}->{$intid};
+    }
+    else {
+
+        # Cannot find this previous stored interface in the database
+        # So ignore
+        next;
+    }
+
+    foreach my $val (
+        qw(
+        lastoctetsIn
+        lastoctetsOut
+        lastdiscardsIn
+        lastdiscardsOut
+        lasterrorsIn
+        lasterrorsOut
+        lastunicastIn
+        lastunicastOut
+        lastnonunicastIn
+        lastnonunicastOut
+        lastbroadcastIn
+        lastbroadcastOut
+        lastmulticastIn
+        lastmulticastOut
+        )
+      )
+    {
+
+        # Potentially, value could be "" in the db, meaning that no data was received
+        # for this interface in the last poll. This has been seen occasionally
+        if ( defined $row->{$val} ) {
+            if ( $row->{$val} eq "" ) {
+                $intdata->{$val} = undef;
+            }
+            else {
+                $intdata->{$val} = Math::BigInt->new( $row->{$val} );
+            }
+        }
+        else {
+            $intdata->{$val} = undef;
+        }
+    }
+    $intdata->{lastUpdate} = $row->{lastUpdate};
+}
+$sth->finish();
+
+my $sql_read_time = sprintf( "%.2f", gettimeofday() - $sql_read_start );
+
+if ( $verbose >= 3 ) {
+    print "Merged with saved data:\n";
+    print Data::Dump::dump($data);
+    print "\n";
+}
+
+###################################
+# For each interface in data input
+# Calculate differences, status and perfdata
+###################################
+
+# Returns the rate of change per second
+# Returns undef if duration is invalid
+# Value could be negative
+sub calculate_rate {
+    my ( $oldvalue, $newvalue, $duration ) = @_;
+
+    return undef if $duration <= 0;
+
+    unless ( defined $newvalue && defined $oldvalue ) {
+
+        # This can happen if the values were not correctly gathered from device
+        return undef;
+    }
+
+    # Must ->copy otherwise original value changed
+    my $difference = $newvalue->copy->bsub($oldvalue);
+
+    # Convert to perl scalar to get a float value from the division
+    my $rate = $difference->numify() / $duration;
+
+    return $rate;
+}
+
+###################################
+# For each interface in data input
+# Work out throughput information.
+# Add to results array
+###################################
+
+sub do_throughput_checks {
+    my ( $intdata, $duration, $results ) = @_;
+    my $servicename = "Interface: " . $intdata->{shortinterfacename};
+
+    # Check status
+    if (   $intdata->{ifAdminStatus} eq "up"
+        && $intdata->{ifOperStatus} eq "down" )
+    {
+        push @$results,
+          {
+            servicename => $servicename,
+            state       => 2,
+            output      => "Interface "
+              . $intdata->{display_name}
+              . " is DOWN (admin status is UP)!",
+          };
+        return 0;
+    }
+    elsif ($intdata->{ifAdminStatus} eq "down"
+        && $intdata->{ifOperStatus} eq "up" )
+    {
+        push @$results,
+          {
+            servicename => $servicename,
+            state       => 1,
+            output      => "Interface "
+              . $intdata->{display_name}
+              . " is UP, but admin state is DOWN - misconfiguration of admin state",
+          };
+        return 0;
+    }
+    elsif ($intdata->{ifAdminStatus} eq "down"
+        && $intdata->{ifOperStatus} eq "down" )
+    {
+        push @$results,
+          {
+            servicename => $servicename,
+            state       => 0,
+            output      => "Interface "
+              . $intdata->{display_name}
+              . " is DOWN and admin state is DOWN - interface not used",
+          };
+        return 0;
+    }
+
+    # Some interfaces may have no data. Have a special message for these.
+    # Also, continue processing for errors and discards, but may disable in future
+    # We make this an UNKNOWN state so that it gets recorded, but not alerted
+    unless ( defined $intdata->{octetsIn} && defined $intdata->{octetsOut} ) {
+        my $output = "Interface $intdata->{display_name} is UP";
+        unless ( $np->opts->ignore_no_throughput ) {
+            $output = $output . ". No throughput data available in SNMP";
+        }
+
+        push @$results,
+          {
+            servicename => $servicename,
+            state       => ( $np->opts->ignore_no_throughput ) ? 0 : 3,
+            output      => $output
+          };
+        return 1;
+    }
+
+    # Get rate for throughput, unicast, nonunicast, broadcast, multicast
+    plog( "Throughput" );
+    my $rates = {};
+    unless ( defined $intdata->{lastoctetsIn}
+        && defined $intdata->{lastoctetsOut} )
+    {
+        push @$results,
+          {
+            servicename => $servicename,
+            state       => 0,
+            output      => "Interface "
+              . $intdata->{display_name}
+              . " is UP. No previous value",
+          };
+        return 1;
+    }
+    $rates->{throughputIn} = calculate_rate( $intdata->{lastoctetsIn},
+        $intdata->{octetsIn}, $duration );
+    $rates->{throughputOut} = calculate_rate( $intdata->{lastoctetsOut},
+        $intdata->{octetsOut}, $duration );
+
+    if ($extended_stats) {
+        if ( exists $intdata->{unicastIn} && defined $intdata->{lastunicastIn} )
+        {
+            $rates->{unicastIn} = calculate_rate( $intdata->{lastunicastIn},
+                $intdata->{unicastIn}, $duration );
+            $rates->{unicastOut} = calculate_rate( $intdata->{lastunicastOut},
+                $intdata->{unicastOut}, $duration );
+        }
+        if ( exists $intdata->{nonunicastIn}
+            && defined $intdata->{lastnonunicastIn} )
+        {
+            $rates->{nonunicastIn} =
+              calculate_rate( $intdata->{lastnonunicastIn},
+                $intdata->{nonunicastIn}, $duration );
+            $rates->{nonunicastOut} =
+              calculate_rate( $intdata->{lastnonunicastOut},
+                $intdata->{nonunicastOut}, $duration );
+        }
+        if ( exists $intdata->{broadcastIn}
+            && defined $intdata->{lastbroadcastIn} )
+        {
+            $rates->{broadcastIn} = calculate_rate( $intdata->{lastbroadcastIn},
+                $intdata->{broadcastIn}, $duration );
+            $rates->{broadcastOut} =
+              calculate_rate( $intdata->{lastbroadcastOut},
+                $intdata->{broadcastOut}, $duration );
+        }
+        if ( exists $intdata->{multicastIn}
+            && defined $intdata->{lastmulticastIn} )
+        {
+            $rates->{multicastIn} = calculate_rate( $intdata->{lastmulticastIn},
+                $intdata->{multicastIn}, $duration );
+            $rates->{multicastOut} =
+              calculate_rate( $intdata->{lastmulticastOut},
+                $intdata->{multicastOut}, $duration );
+        }
+    }
+
+    my @undefineds = grep { !defined $rates->{$_} } sort keys %$rates;
+    if (@undefineds) {
+        push @$results,
+          {
+            servicename => $servicename,
+            state       => "3",
+            output      => "Cannot calculate @undefineds",
+          };
+        return 0;
+    }
+
+    my @negatives = grep { $rates->{$_} < 0 } sort keys %$rates;
+    if (@negatives) {
+        push @$results,
+          {
+            servicename => $servicename,
+            state       => "0",
+            output      => "Ignoring result as received negative rates: "
+              . join( ", ", map { "$_=" . $rates->{$_} } @negatives ),
+          };
+
+        # We stop checks for errors and discards from occuring
+        return 0;
+    }
+
+    plog( join( ", ", map { "$_=" . $rates->{$_} } sort keys %$rates ) );
+
+    # Convert from bytes/second to bits/second and round it off
+    my $throughput_in = int( $rates->{throughputIn} * 8 );
+    my $throughput_in_pct;
+    if ( $intdata->{ifSpeed}
+        && ( my $link_speed = $intdata->{ifSpeed}->numify ) > 0 )
+    {
+        $throughput_in_pct =
+          nice_values( ( $rates->{throughputIn} * 8 * 100 ) / $link_speed, 2 );
+    }
+    my $throughput_in_friendly = convert_units($throughput_in);
+
+    # Convert from bytes/second to bits/second and round it off
+    my $throughput_out = int( $rates->{throughputOut} * 8 );
+    my $throughput_out_pct;
+    if ( $intdata->{ifSpeed}
+        && ( my $link_speed = $intdata->{ifSpeed}->numify ) > 0 )
+    {
+        $throughput_out_pct =
+          nice_values( ( $rates->{throughputOut} * 8 * 100 ) / $link_speed, 2 );
+    }
+    my $throughput_out_friendly = convert_units($throughput_out);
+
+    # Sometimes we get a throughput that is greater than 100%
+    # which is impossible. We need to get more information about
+    # why this happens. So we will:
+    #   dump debug information - file rotates automatically
+    #   Do not put any data for this interface (so there is no spike) - disabled for the moment
+    #   Put an error to the poller
+    #   return 0 to ignore extended stats
+    my $debug_threshold = 100;
+    if (
+           defined $throughput_in_pct
+        && defined $throughput_out_pct
+        && (   $throughput_in_pct > $debug_threshold
+            or $throughput_out_pct > $debug_threshold )
+      )
+    {
+        $debug_data .= <<EOF;
+polling_time=$polling_time
+duration=$duration
+throughput_in_pct=$throughput_in_pct
+throughput_out_pct=$throughput_out_pct
+EOF
+        $debug_data .= '$intdata=' . Data::Dump::dump($intdata) . $/;
+        $debug_data .= '$rates' . Data::Dump::dump($rates) . $/;
+        $debug_data .= $/;
+
+        # This is downgraded to be an UNKNOWN state. One scenario is that the device is reporting the wrong speed, and thus the percentage
+        # is too high
+        unless ( $np->opts->ignore_strange_percent_values ) {
+            push @$poller_unknowns,
+              "Got strange percent values for interface $intdata->{display_name} (in:${throughput_in_pct}%, out:${throughput_out_pct}%)";
+        }
+
+        # Disabled for the moment as we shouldn't just discard this result until more data
+        #return 0;
+    }
+
+    if ($trace_host) {
+        push @trace_interface_values, $intdata->{octetsIn},
+          $intdata->{octetsOut};
+    }
+
+    my ( $max_state, $speed_is_zero ) =
+      Opsview::Utils::SnmpInterfaces::throughput_state(
+        $intdata->{throughput_warning},
+        $intdata->{throughput_critical},
+        $throughput_in, $throughput_out,
+        $throughput_in_pct, $throughput_out_pct
+      );
+
+    my $extra_message = "";
+    if ($speed_is_zero) {
+        $extra_message =
+          " but has an interface speed of 0, so cannot check a percentage threshold (critical: "
+          . ( $intdata->{throughput_critical} || "NA" )
+          . ", warning: "
+          . ( $intdata->{throughput_warning} || "NA" ) . ")";
+        $max_state = 1;
+    }
+    else {
+        if ( $max_state == 2 ) {
+            $extra_message = " has exceeded critical threshold!";
+        }
+        elsif ( $max_state == 1 ) {
+            $extra_message = " has exceeded warning threshold!";
+        }
+    }
+
+    my $perfdata =
+      "throughput_in=${throughput_in}bps throughput_out=${throughput_out}bps"
+      . (
+        defined $throughput_in_pct && defined $throughput_out_pct
+        ? " throughput_in_pct=${throughput_in_pct}% throughput_out_pct=${throughput_out_pct}%"
+        : ""
+      );
+
+    if ($extended_stats) {
+        if ( exists $rates->{unicastIn} ) {
+            $perfdata
+              .= " unicast_in="
+              . nice_values( $rates->{unicastIn} )
+              . "pps unicast_out="
+              . nice_values( $rates->{unicastOut} ) . "pps";
+        }
+        if ( exists $rates->{nonunicastIn} ) {
+            $perfdata
+              .= " nonunicast_in="
+              . nice_values( $rates->{nonunicastIn} )
+              . "pps nonunicast_out="
+              . nice_values( $rates->{nonunicastOut} ) . "pps";
+        }
+        if ( exists $rates->{broadcastIn} ) {
+            $perfdata
+              .= " broadcast_in="
+              . nice_values( $rates->{broadcastIn} )
+              . "pps broadcast_out="
+              . nice_values( $rates->{broadcastOut} ) . "pps";
+        }
+        if ( exists $rates->{multicastIn} ) {
+            $perfdata
+              .= " multicast_in="
+              . nice_values( $rates->{multicastIn} )
+              . "pps multicast_out="
+              . nice_values( $rates->{multicastOut} ) . "pps";
+        }
+    }
+
+    push @$results,
+      {
+        servicename => $servicename,
+        state       => $max_state,
+        output      => $intdata->{display_name}
+          . " throughput (in/out) $throughput_in_friendly/$throughput_out_friendly"
+          . (
+            defined $throughput_in_pct && defined $throughput_out_pct
+            ? ", $throughput_in_pct%/$throughput_out_pct%"
+            : ""
+          )
+          . $extra_message,
+        perfdata => $perfdata,
+      };
+    return 1;
+}
+
+sub do_errors_checks {
+    my ( $intdata, $duration, $results ) = @_;
+    my $servicename = "Errors: " . $intdata->{shortinterfacename};
+
+    # Some interfaces may have no data. Have a special message for these.
+    # Also, continue processing for errors and discards, but may disable in future
+    unless ( defined $intdata->{errorsIn} && defined $intdata->{errorsOut} ) {
+        push @$results,
+          {
+            servicename => $servicename,
+            state       => 0,
+            output      => "Interface "
+              . $intdata->{display_name}
+              . " is UP. No error data available in SNMP",
+          };
+        return 1;
+    }
+
+    unless ( defined $intdata->{lasterrorsIn}
+        && defined $intdata->{lasterrorsOut} )
+    {
+        push @$results,
+          {
+            servicename => $servicename,
+            state       => 0,
+            output      => "Interface "
+              . $intdata->{display_name}
+              . " is UP. No previous value",
+          };
+        return 1;
+    }
+
+    # Get rate
+    plog( "Errors" );
+    my $rateIn = calculate_rate( $intdata->{lasterrorsIn},
+        $intdata->{errorsIn}, $duration );
+    my $rateOut = calculate_rate( $intdata->{lasterrorsOut},
+        $intdata->{errorsOut}, $duration );
+
+    if ( !defined $rateIn || !defined $rateOut ) {
+        push @$results,
+          {
+            servicename => $servicename,
+            state       => "2",
+            output      => "Cannot calculate rateIn or rateOut",
+          };
+        return 0;
+    }
+
+    unless ( $rateIn >= 0 && $rateOut >= 0 ) {
+        push @$results,
+          {
+            servicename => $servicename,
+            state       => "0",
+            output =>
+              "At least one rate returned as negative (rateIn=$rateIn, rateOut=$rateOut) - ignoring result",
+          };
+        return 0;
+    }
+
+    plog( "rateIn=$rateIn rateOut=$rateOut" );
+
+    my $errors_in_per_minute  = $rateIn * 60;
+    my $errors_out_per_minute = $rateOut * 60;
+    my $extra_message         = "";
+
+    my $max_state = $np->check_threshold(
+        check    => [ $errors_in_per_minute, $errors_out_per_minute ],
+        warning  => $intdata->{errors_warning},
+        critical => $intdata->{errors_critical},
+    );
+
+    if ( $max_state == 2 ) {
+        $extra_message =
+          " has exceeded critical threshold " . $intdata->{errors_critical};
+    }
+    elsif ( $max_state == 1 ) {
+        $extra_message =
+          " has exceeded warning threshold " . $intdata->{errors_warning};
+    }
+    push @$results,
+      {
+        servicename => $servicename,
+        state       => $max_state,
+        output      => $intdata->{display_name}
+          . " errors (in: "
+          . nice_values($errors_in_per_minute)
+          . " per minute, out: "
+          . nice_values($errors_out_per_minute) . ")"
+          . $extra_message,
+        perfdata =>
+          "errors_in_per_minute=${errors_in_per_minute} errors_out_per_minute=${errors_out_per_minute}",
+      };
+    return 1;
+}
+
+sub do_discard_checks {
+    my ( $intdata, $duration, $results ) = @_;
+    my $servicename = "Discards: " . $intdata->{shortinterfacename};
+
+    # Some interfaces may have no data. Have a special message for these.
+    # Also, continue processing for errors and discards, but may disable in future
+    unless ( defined $intdata->{discardsIn} && defined $intdata->{discardsOut} )
+    {
+        push @$results,
+          {
+            servicename => $servicename,
+            state       => 0,
+            output      => "Interface "
+              . $intdata->{display_name}
+              . " is UP. No discard data available in SNMP",
+          };
+        return 1;
+    }
+
+    unless ( defined $intdata->{lastdiscardsIn}
+        && defined $intdata->{lastdiscardsOut} )
+    {
+        push @$results,
+          {
+            servicename => $servicename,
+            state       => 0,
+            output      => "Interface "
+              . $intdata->{display_name}
+              . " is UP. No previous value",
+          };
+        return 1;
+    }
+
+    # Get rate
+    plog( "Discards" );
+    my $rateIn = calculate_rate( $intdata->{lastdiscardsIn},
+        $intdata->{discardsIn}, $duration );
+    my $rateOut = calculate_rate( $intdata->{lastdiscardsOut},
+        $intdata->{discardsOut}, $duration );
+
+    if ( !defined $rateIn || !defined $rateOut ) {
+        push @$results,
+          {
+            servicename => $servicename,
+            state       => "2",
+            output      => "Cannot calculate rateIn or rateOut",
+          };
+        return 0;
+    }
+
+    unless ( $rateIn >= 0 && $rateOut >= 0 ) {
+        push @$results,
+          {
+            servicename => $servicename,
+            state       => "0",
+            output =>
+              "At least one rate returned as negative (rateIn=$rateIn, rateOut=$rateOut) - ignoring result",
+          };
+        return 0;
+    }
+
+    plog( "rateIn=$rateIn rateOut=$rateOut" );
+
+    my $discards_in_per_minute  = $rateIn * 60;
+    my $discards_out_per_minute = $rateOut * 60;
+    my $extra_message           = "";
+
+    my $max_state = $np->check_threshold(
+        check    => [ $discards_in_per_minute, $discards_out_per_minute ],
+        warning  => $intdata->{discards_warning},
+        critical => $intdata->{discards_critical},
+    );
+
+    if ( $max_state == 2 ) {
+        $extra_message =
+          " has exceeded critical threshold " . $intdata->{discards_critical};
+    }
+    elsif ( $max_state == 1 ) {
+        $extra_message =
+          " has exceeded warning threshold " . $intdata->{discards_warning};
+    }
+    push @$results,
+      {
+        servicename => $servicename,
+        state       => $max_state,
+        output      => $intdata->{display_name}
+          . " discards (in: "
+          . nice_values($discards_in_per_minute)
+          . " per minute, out: "
+          . nice_values($discards_out_per_minute) . ")"
+          . $extra_message,
+        perfdata =>
+          "discards_in_per_minute=${discards_in_per_minute} discards_out_per_minute=${discards_out_per_minute}",
+      };
+    return 1;
+}
+
+my $results = [];
+foreach my $interfacename ( keys %{ $data->{interfaces} } ) {
+    foreach my $intid ( keys %{ $data->{interfaces}->{$interfacename} } ) {
+        my $intdata = $data->{interfaces}->{$interfacename}->{$intid};
+
+        # If no previous data found, don't put any passive results down
+        next unless ( exists $intdata->{lastUpdate} );
+
+        my $duration = $now - $intdata->{lastUpdate};
+
+        my $interface_up = 1;
+        plog( "Interface $interfacename, indexid $intid, duration=$duration" );
+        if ( $intdata->{throughput} ) {
+            $interface_up =
+              do_throughput_checks( $intdata, $duration, $results );
+        }
+
+        # Ignore other checks if major problem with throughput (such as bad interface)
+        next unless $interface_up;
+
+        if ( $intdata->{errors} ) {
+            do_errors_checks( $intdata, $duration, $results );
+        }
+        if ( $intdata->{discards} ) {
+            do_discard_checks( $intdata, $duration, $results );
+        }
+    }
+}
+
+###################################
+# For each interface,
+# Submit passive result to Nagios
+# If interface not found in poll, put passive error
+###################################
+
+if ( $verbose >= 3 ) {
+    print "Results:\n";
+    print Data::Dump::dump($results);
+    print "\n";
+}
+
+my $submit_result_start = gettimeofday();
+foreach my $result (@$results) {
+    my $cmd = Opsview::Externalcommand->new(
+        command => "PROCESS_SERVICE_CHECK_RESULT",
+        args    => join( ";",
+            $hostname, $result->{servicename},
+            $result->{state},
+            $result->{output} . "|" . ( $result->{perfdata} || "" ) )
+    );
+    $cmd->send_to_master;
+}
+my $submit_result_time =
+  sprintf( "%.2f", gettimeofday() - $submit_result_start );
+
+###################################
+# Update database with latest
+# values. We wrap them in BEGIN/END
+# so sqlite treats it as one transaction
+###################################
+
+my $sql_write_start = gettimeofday();
+$dbh->do( "BEGIN" );
+$dbh->do( "DELETE FROM interfaces" );
+my $sth_saved_data = $dbh->prepare( "
+INSERT INTO interfaces
+(ifDescr,ifIndex,shortinterfacename,ifAlias,ifName,lastUpdate,
+ lastoctetsIn,lastoctetsOut,lasterrorsIn,lasterrorsOut,lastdiscardsIn,lastdiscardsOut,
+ lastunicastIn,lastunicastOut,lastnonunicastIn,lastnonunicastOut,
+ lastbroadcastIn,lastbroadcastOut,lastmulticastIn,lastmulticastOut)
+VALUES
+(?,?,?,?,?,?,
+?,?,?,?,?,?,?,?,
+?,?,?,?,?,?)
+" );
+foreach my $interfacename ( keys %{ $data->{interfaces} } ) {
+    foreach my $intid ( keys %{ $data->{interfaces}->{$interfacename} } ) {
+        my $intdata = $data->{interfaces}->{$interfacename}->{$intid};
+
+        my @data = (
+            $interfacename, $intid, $intdata->{shortinterfacename},
+            $intdata->{ifAlias}, $intdata->{ifName}, $now
+        );
+        foreach my $a (
+            qw(octetsIn octetsOut errorsIn errorsOut discardsIn discardsOut unicastIn unicastOut nonunicastIn nonunicastOut broadcastIn broadcastOut multicastIn multicastOut)
+          )
+        {
+            push @data,
+              ( defined $intdata->{$a} ? $intdata->{$a}->bstr() : "" );
+        }
+        $sth_saved_data->execute(@data);
+    }
+}
+$dbh->do( "END" );
+$sth->finish;
+$dbh->disconnect;
+my $sql_write_time = sprintf( "%.2f", gettimeofday() - $sql_write_start );
+
+###################################
+# Final return message
+###################################
+
+my $num_interfaces = keys %{ $data->{interfaces} };
+$np->add_perfdata(
+    label => "connectiontime",
+    value => $snmp_connection_time,
+    uom   => "s",
+);
+$np->add_perfdata(
+    label => "polltime",
+    value => $polling_time,
+    uom   => "s",
+);
+$np->add_perfdata(
+    label => "sqlrtime",
+    value => $sql_read_time,
+    uom   => "s",
+);
+$np->add_perfdata(
+    label => "submittime",
+    value => $submit_result_time,
+    uom   => "s",
+);
+$np->add_perfdata(
+    label => "sqlwtime",
+    value => $sql_write_time,
+    uom   => "s",
+);
+
+# This is downgraded to an UNKNOWN because it is not an error, but needs investigating
+sub check_timings {
+    my ( $value, $max, $message ) = @_;
+    if ( $value > $max ) {
+        $message =~ s/MAX/$max/g;
+        push @$poller_unknowns, $message . " (${value}s)";
+    }
+}
+check_timings(
+    $snmp_connection_time,
+    10,
+    "Plugin has taken > MAX seconds to connect to SNMP - check SNMP version is specified correctly"
+);
+check_timings( $sql_read_time, 10,
+    "Reading previous values from cache has taken > MAX seconds"
+);
+check_timings( $sql_write_time, 10,
+    "Writing current values to cache has taken > MAX seconds"
+);
+check_timings( $submit_result_time, 10,
+    "Submitting results has taken > MAX seconds"
+);
+
+my $message;
+if (@$poller_criticals) {
+    $message .= join( "; ", @$poller_criticals ) . "; ";
+}
+if (@$poller_warnings) {
+    $message .= join( "; ", @$poller_warnings ) . "; ";
+}
+if (@$poller_unknowns) {
+    $message .= join( "; ", @$poller_unknowns ) . "; ";
+}
+if (@$poller_info) {
+    $message .= join( "; ", @$poller_info ) . "; ";
+}
+$message
+  .= "Polled $hostname with results for interfaces: $num_interfaces. Seconds taken to poll: $polling_time";
+if ($first_run) {
+    $message .= ". First run";
+}
+my $rc =
+  @$poller_criticals ? 2 : @$poller_warnings ? 1 : @$poller_unknowns ? 3 : 0;
+if ($debug_data) {
+
+    my $dumpfile = "$db_home/$nagios_hostname.debug";
+
+    # Rotate files first. Last one drops out
+    my $max_file_size = 1000000;
+    if ( ( -e $dumpfile ) && ( -s $dumpfile ) > $max_file_size ) {
+        ( -e "$dumpfile.2" ) && move( "$dumpfile.2", "$dumpfile.3" );
+        ( -e "$dumpfile.1" ) && move( "$dumpfile.1", "$dumpfile.2" );
+        move( $dumpfile, "$dumpfile.1" );
+    }
+
+    open DUMPFILE, ">>", $dumpfile;
+    print DUMPFILE "Start: $start_time ("
+      . ( scalar localtime $start_time ) . ")\n"
+      . $debug_data;
+    close DUMPFILE;
+}
+if (@trace_interface_values) {
+    my $dumpfile = "$db_home/$nagios_hostname.trace";
+
+    # Rotate files first. Last one drops out
+    my $max_file_size = 1000000;
+    if ( ( -e $dumpfile ) && ( -s $dumpfile ) > $max_file_size ) {
+        ( -e "$dumpfile.2" ) && move( "$dumpfile.2", "$dumpfile.3" );
+        ( -e "$dumpfile.1" ) && move( "$dumpfile.1", "$dumpfile.2" );
+        move( $dumpfile, "$dumpfile.1" );
+    }
+
+    open DUMPFILE, ">>", $dumpfile;
+    print DUMPFILE join(
+        ":",
+        int($start_time),
+        (
+            map { defined $_ ? $_->bstr() . "" : "null" }
+              @trace_interface_values
+        )
+      ),
+      "\n";
+    close DUMPFILE;
+}
+
+my $plugin_execution_time = sprintf( "%.2f", gettimeofday() - $start_time );
+$np->add_perfdata(
+    label => "totaltime",
+    value => $plugin_execution_time,
+    uom   => "s",
+);
+$np->nagios_exit( $rc, $message );

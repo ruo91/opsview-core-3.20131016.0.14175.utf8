@@ -1,0 +1,153 @@
+#!/usr/bin/perl
+#
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+
+my $np = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => "check_snmp_sysinfo",
+    version   => "2.1",
+    blurb =>
+      "Checks if SNMP agent is running - returns system info gathered from SNMP",
+    snmp => {
+        "snmp-version"                => "2c",
+        "v1-fallback"                 => 1,
+        "snmp-timeout"                => 2,
+        "snmp-agent-failure-critical" => 1,
+    },
+);
+
+my $oid_sysDescr =
+  ".1.3.6.1.2.1.1.1.0"; # Used to check whether SNMP is actually responding
+my $oid_sysObjectID = ".1.3.6.1.2.1.1.2.0"; #
+my $oid_sysContact  = ".1.3.6.1.2.1.1.4.0"; #
+my $oid_sysName     = ".1.3.6.1.2.1.1.5.0"; #
+my $oid_sysLocation = ".1.3.6.1.2.1.1.6.0";
+
+my $status       = 0;
+my $returnstring = "";
+
+$np->getopts;
+
+my $s = $np->snmp;
+
+main();
+
+# Close the session
+$s->close();
+
+if ( $returnstring eq "" ) {
+    $status = 3;
+}
+
+if ( $status == 0 ) {
+    print "Status is OK - $returnstring\n";
+}
+elsif ( $status == 1 ) {
+    print "Status is a WARNING level - $returnstring\n";
+}
+elsif ( $status == 2 ) {
+    print "Status is CRITICAL - $returnstring\n";
+}
+else {
+    print "Plugin error! SNMP status unknown\n";
+}
+
+exit $status;
+
+sub main {
+    my $validoids = 0;
+    my $variable  = 0;
+
+    if ( !defined( $s->get_request($oid_sysName) ) ) {
+    }
+    else {
+        $validoids++;
+        foreach ( $s->var_bind_names() ) {
+            $variable = $s->var_bind_list()->{$_};
+        }
+        $variable = $variable;
+        $variable = "SYSTEM: " . $variable . " ";
+        append($variable);
+    }
+
+    if ( !defined( $s->get_request($oid_sysContact) ) ) {
+    }
+    else {
+        $validoids++;
+        foreach ( $s->var_bind_names() ) {
+            $variable = $s->var_bind_list()->{$_};
+        }
+        $variable = "CONTACT: " . $variable . " ";
+        append($variable);
+    }
+
+    if ( !defined( $s->get_request($oid_sysLocation) ) ) {
+    }
+    else {
+        $validoids++;
+        foreach ( $s->var_bind_names() ) {
+            $variable = $s->var_bind_list()->{$_};
+        }
+        $variable = "LOCATION: " . $variable . " ";
+        append($variable);
+    }
+
+    if ( !defined( $s->get_request($oid_sysObjectID) ) ) {
+    }
+    else {
+        $validoids++;
+        foreach ( $s->var_bind_names() ) {
+            $variable = $s->var_bind_list()->{$_};
+        }
+        $variable = "SNMP AGENT: " . $variable . " ";
+        append($variable);
+    }
+
+    if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+    }
+    else {
+        $validoids++;
+        foreach ( $s->var_bind_names() ) {
+            $variable = $s->var_bind_list()->{$_};
+        }
+        append($variable);
+    }
+
+    if ( $validoids < 1 ) {
+        $status = 3;
+        append( "SNMP agent not responding" );
+    }
+}
+
+sub append {
+    my $appendstring = $_[0];
+    $returnstring = "$returnstring$appendstring";
+}
+

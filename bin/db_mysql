@@ -1,0 +1,121 @@
+#!/bin/bash
+#
+#
+# SYNTAX:
+#	db_mysql [-t] [-u user] [-p password] [ {opsview | runtime} ... ]
+#	db_mysql -d
+#
+# DESCRIPTION:
+# 	This sets up all the grants for the users defined in
+#	opsview.conf
+#	By default, user is root, password is prompted
+#	Can specify which databases, otherwise will do all
+#	-d will print out the delete syntax
+#	-t will print out the grant syntax, so you can cut and paste onto a different server
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+die() { echo "$1" >&2; exit 1; }
+
+function print_delete_syntax {
+cat <<EOF
+# To delete users:
+REVOKE ALL PRIVILEGES, GRANT OPTION FROM $opsview_user;
+DROP USER $opsview_user;
+REVOKE ALL PRIVILEGES, GRANT OPTION FROM $opsview_user@localhost;
+DROP USER $opsview_user@localhost;
+REVOKE ALL PRIVILEGES, GRANT OPTION FROM $opsview_user@'%';
+DROP USER $opsview_user@'%';
+REVOKE ALL PRIVILEGES, GRANT OPTION FROM $runtime_user;
+DROP USER $runtime_user;
+REVOKE ALL PRIVILEGES, GRANT OPTION FROM $runtime_user@localhost;
+DROP USER $runtime_user@localhost;
+REVOKE ALL PRIVILEGES, GRANT OPTION FROM $runtime_user@'%';
+DROP USER $runtime_user@'%';
+SELECT * FROM mysql.user;
+EOF
+}
+
+topdir=$(cd ${0%/*} 1>/dev/null ; pwd)
+vars=`$topdir/../bin/opsview.sh`
+if [[ $? -ne 0 ]] ; then
+    die "Error with opsview.conf"
+fi
+eval $vars
+opsview_db=$DB
+opsview_user=$DBUSER
+opsview_password=$DBPASSWD
+runtime_db=$RUNTIME_DB
+runtime_user=$RUNTIME_DBUSER
+runtime_password=$RUNTIME_DBPASSWD
+
+user=root
+password=
+ov_host="%"
+test=0
+
+while getopts ":u:p:o:dt" c ; do
+	case $c in
+		u) user=$OPTARG;;
+		p) password=$OPTARG;;
+		o) ov_host=$OPTARG;;
+		t) test=1;;
+		d) print_delete_syntax; exit ;;
+		\*) die "Error: unexpected option $c";;
+	esac
+done
+shift $((OPTIND - 1))
+
+dbs="opsview runtime"
+if [[ -n $1 ]] ; then
+	dbs=$*
+fi
+
+# SQL to setup grants
+# Group by db, as db could exist on different hosts
+# Need to have the IDENTIFIED repeated because if db on different hosts,
+# cannot expect users to have already been created
+sql_opsview="
+CREATE DATABASE IF NOT EXISTS $opsview_db;
+GRANT ALL ON $opsview_db.* TO $opsview_user@localhost IDENTIFIED BY '$opsview_password' WITH GRANT OPTION;
+GRANT ALL ON $opsview_db.* TO $opsview_user@'$ov_host' IDENTIFIED BY '$opsview_password' WITH GRANT OPTION;
+GRANT SELECT ON $opsview_db.* TO $runtime_user@'$ov_host' IDENTIFIED BY '$runtime_password';"
+
+sql_runtime="
+CREATE DATABASE IF NOT EXISTS $runtime_db;
+GRANT ALL ON $runtime_db.* TO $runtime_user@localhost IDENTIFIED BY '$runtime_password' WITH GRANT OPTION;
+GRANT ALL ON $runtime_db.* TO $runtime_user@'$ov_host' IDENTIFIED BY '$runtime_password' WITH GRANT OPTION;
+GRANT SELECT, INSERT, DELETE, UPDATE ON $runtime_db.* TO $opsview_user@localhost IDENTIFIED BY '$opsview_password';
+GRANT SELECT, INSERT, DELETE, UPDATE ON $runtime_db.* TO $opsview_user@'$ov_host' IDENTIFIED BY '$opsview_password';"
+
+# For multiple databases, dbhost is set to the last one in list
+# Post install scripts should do each db individually
+for i in $dbs; do
+	eval 'sql="$sql $sql_'"$i\""
+done
+
+if [[ $test -eq 0 ]] ; then
+	echo "$sql" | mysql --disable-pager -u $user --password="$password" -h localhost || die "Cannot run mysql"
+else
+	echo "$sql"
+fi
+
+exit

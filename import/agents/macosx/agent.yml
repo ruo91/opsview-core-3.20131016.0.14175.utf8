@@ -1,0 +1,9 @@
+name: MacOSX
+command: check_npre -H $HOSTADDRESS$ -c $PLUGINNAME$ -a '$ARGS$'
+plugins:
+ - check_users
+ - check_load
+ - check_disk
+ - check_procs
+ - check_memory
+ - check_tcpconnections

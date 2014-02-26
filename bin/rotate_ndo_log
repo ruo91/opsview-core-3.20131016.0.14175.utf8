@@ -1,0 +1,53 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+#	rotate_ndo_log
+#
+# DESCRIPTION:
+#	Copies ndo.dat into var/ndologs for import_ndologs daemon to asynchronously update db
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+use lib '/usr/local/nagios/perl/lib';
+use lib '/usr/local/nagios/lib';
+use File::Copy;
+use Time::HiRes qw( gettimeofday );
+use Opsview::Config;
+
+my $var         = "/usr/local/nagios/var";
+my $ndologs_dir = "$var/ndologs";
+my $ndo_dat     = Opsview::Config->ndo_dat_file;
+
+my @time = gettimeofday();
+
+my $dest = sprintf( "$ndologs_dir/%d.%06d", $time[0], $time[1] );
+
+# this may copy
+move( $ndo_dat, "$dest.processing" );
+
+# now in same dir this should be a atomic rename
+move( "$dest.processing", $dest );
+
+umask 077;
+open( F, ">", $ndo_dat );
+close F;

@@ -1,0 +1,91 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+#	process-cache-data {file}
+#
+# DESCRIPTION:
+#	Process the stored data left by the performance processing commands
+#
+#	Requires Nagios 2.0+
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+$SIG{PIPE} = 'IGNORE';
+$| = 1;
+
+my $file_base    = "/usr/local/nagios/var/";
+my $host_file    = "cache_host.log";
+my $service_file = "cache_service.log";
+my $status       = "nsca.status";
+
+# if not run interactivly, log everything to file
+unless (-t) {
+    open( STDOUT, ">", $file_base . "cache.log" );
+    open( STDERR, ">&STDOUT" );
+    print 'Last run time: ', scalar( localtime() ), $/;
+}
+
+my @alldata;
+
+# First parameter is the file to read
+my @files = shift @ARGV || die "Must specify file";
+
+# Read in all info to memory
+# We'll truncate when collected
+# We don't need to lock because Nagios is single threaded here
+for my $file (@files) {
+    if ( -s $file_base . $file ) {
+        if ( open( FH, "+<", $file_base . $file ) ) {
+            my @data;
+            @data = <FH>;
+            truncate( FH, 0 );
+            close(FH);
+            push @alldata, @data;
+            print "$file: collected ", scalar(@data), " items\n";
+        }
+        else {
+            warn( "Couldn't open file $file: $!\n" );
+        }
+    }
+}
+
+unless (@alldata) {
+    warn( "No items to send\n" );
+    exit;
+}
+
+# Use 127.0.0.1 so removes dependency on name resolving localhost
+open SEND_NSCA,
+  "| /usr/local/nagios/bin/send_nsca -H 127.0.0.1 -c /usr/local/nagios/etc/send_nsca.cfg"
+  or die( "Couldn't open send_nsca: $!\n" );
+print SEND_NSCA $_ for (@alldata);
+close(SEND_NSCA);
+my $rc = $?;
+open STATUS, ">", $file_base . $status;
+if ( $rc == 0 ) {
+    print STATUS "0";
+}
+else {
+    print STATUS "2";
+}
+close STATUS;

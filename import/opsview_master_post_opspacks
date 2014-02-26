@@ -1,0 +1,37 @@
+#!/usr/bin/perl
+
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+
+use Opsview::Schema;
+use File::Slurp;
+use JSON;
+use Log::Log4perl;
+use Try::Tiny;
+
+my $data_file = $ARGV[0] or die "Must specify a definition file\n";
+
+Log::Log4perl::init( "$Bin/../etc/Log4perl.conf" );
+my $logger = Log::Log4perl->get_logger( "opspacks" );
+$logger->info( "Starting Opsview Initial Configuration Import" );
+
+my $j      = JSON->new;
+my $schema = Opsview::Schema->my_connect;
+
+my $master_conf = read_file($data_file);
+
+my $master_data = $j->decode($master_conf);
+
+try {
+    my $guard = $schema->txn_scope_guard;
+
+    $schema->resultset("Hosts")->synchronise($master_data);
+
+    $guard->commit;
+}
+catch {
+    $logger->logdie( "Failed to sync Opsview Master: $_\n" );
+};
+$logger->info( "Finished Opsview Initial Configuration Import" );

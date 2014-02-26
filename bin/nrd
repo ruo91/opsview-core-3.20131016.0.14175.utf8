@@ -1,0 +1,19 @@
+#!/usr/bin/perl
+# This is a minimal script to invoke NRD - amended from the core nrd script
+
+eval 'exec /usr/bin/perl  -S $0 ${1+"$@"}'
+  if 0; # not running under some shell
+
+use FindBin qw($Bin);
+use lib "$Bin/../perl/lib";
+use NRD::Daemon;
+
+# If no nrd.conf file exists, then ignore startup
+my $nrd_file = '/usr/local/nagios/etc/nrd.conf';
+if ( -e $nrd_file ) {
+
+    # Do not use a hash ref here as the nrd.conf will not get read correctly
+    NRD::Daemon->run( conf_file => $nrd_file );
+}
+
+exit;

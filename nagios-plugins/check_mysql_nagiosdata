@@ -1,0 +1,125 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use lib qw ( /usr/local/nagios/lib );
+use DBI;
+use Getopt::Std;
+
+$username         = "nagios";
+$password         = "nagios";
+$database         = "nagiosdata";
+$eventtable       = "events";
+$performancetable = "performance";
+
+$script         = "check_mysql_nagiosdata";
+$script_version = "1.0";
+$script_description =
+  "Checks nagios event and performance data stored in MySQL";
+
+if ( @ARGV > 0 ) {
+    usage();
+    exit(0);
+}
+getopts( "h" );
+if ($opt_h) {
+    usage();
+    exit(0);
+}
+
+my $dsn = "DBI:mysql:$database:localhost"; # data source name
+
+# Connect to database
+
+if (
+    $dbh = DBI->connect(
+        $dsn,
+        $username,
+        $password,
+        {
+            RaiseError => 0,
+            PrintError => 0
+        }
+    )
+  )
+{
+}
+else {
+    print "Could not connect to database: $DBI::err ($DBI::errstr)\en\n";
+    exit(2);
+}
+
+$eventcount = 0;
+if ( $sth = $dbh->prepare("SELECT COUNT(*) FROM $eventtable") ) {
+}
+else {
+    print "Could not query database: $DBI::err ($DBI::errstr)\en\n";
+    exit(2);
+}
+$result = $sth->execute;
+
+my $table = $sth->fetchall_arrayref
+  or die "$sth->errstr\n";
+my ( $i, $j );
+for $i ( 0 .. $#{$table} ) {
+    for $j ( 0 .. $#{ $table->[$i] } ) {
+        $eventcount = $table->[$i][$j];
+    }
+}
+
+$performancecount = 0;
+if ( $sth = $dbh->prepare("SELECT COUNT(*) FROM $performancetable") ) {
+}
+else {
+    print "Could not query database: $DBI::err ($DBI::errstr)\en\n";
+    exit(2);
+}
+$result = $sth->execute;
+
+my $table = $sth->fetchall_arrayref
+  or die "$sth->errstr\n";
+my ( $i, $j );
+for $i ( 0 .. $#{$table} ) {
+    for $j ( 0 .. $#{ $table->[$i] } ) {
+        $performancecount = $table->[$i][$j];
+    }
+}
+
+print
+  "event data: $eventcount rows, performance data: $performancecount rows\n";
+
+$dbh->disconnect();
+exit(0);
+
+sub usage {
+    print << "USAGE";
+
+$script v$script_version
+
+$script_description
+
+Usage: $script
+
+There are no arguments for this script...
+
+USAGE
+    exit 1;
+}

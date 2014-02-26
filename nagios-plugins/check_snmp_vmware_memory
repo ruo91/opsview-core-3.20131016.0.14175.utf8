@@ -1,0 +1,333 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#	Written by Neil Ferguson
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+use strict;
+use warnings;
+
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+
+use Storable qw(lock_store lock_retrieve);
+
+my $np = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => "check_snmp_vmware_memory",
+    version   => "0.5",
+    blurb     => "Checks the memory usage of a VMware ESX host",
+    snmp      => {
+        "snmp-version" => "2c",
+        "snmp-timeout" => 10,
+        "v1-fallback"  => 1,
+    },
+);
+
+my $oid_sysDescr = ".1.3.6.1.2.1.1.1.0";
+my $oid_namebase = ".1.3.6.1.4.1.6876.2.1.1.2";
+my $oid_vmidbase = ".1.3.6.1.4.1.6876.2.1.1.7.";
+my $oid_vmbase   = ".1.3.6.1.4.1.6876.";
+my $oid_host_mem = "3.2.1.0";
+my $oid_sc_mem   = "3.2.2.0";
+my $oid_vm_mem   = "3.2.4.1.4.";
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w, --warning=INTEGER
+    Warning threshold for free memory (MB)},
+    default => 0,
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c, --critical=INTEGER
+    Critical threshold for free memory (MB)},
+    default => 0,
+);
+
+$np->add_arg(
+    spec => "memoryallocation|a",
+    help => qq{-a, --memoryallocation=INTEGER
+    Report the total VM memory allocation, rather
+    than actual memory utilization as reported by},
+);
+
+$np->add_arg(
+    spec => "vm|v=s",
+    help => qq{-v, --vm=INTEGER
+    Report memory usage of this VM only (Overrides verbose flag)},
+);
+
+$np->add_arg(
+    spec => "percent|P",
+    help => qq{-P, --percent
+    Return performance data in percent},
+);
+
+$np->getopts;
+
+my $warning           = $np->opts->warning;
+my $critical          = $np->opts->critical;
+my $vm_name           = "";
+my @hostnames         = split( ',', $np->opts->hostname );
+my $perf_data_percent = 0;
+
+my $hint_file = "/usr/local/nagios/var/plugins/vmware/";
+my $vmid      = "";
+my $mem_total;
+my $sc_mem       = 0;
+my $mem_used     = 0;
+my $perfdata     = "";
+my $percent_used = 0;
+my $result_text  = 0;
+
+if ( $np->opts->vm ) {
+    $vm_name   = $np->opts->vm;
+    $hint_file = "${hint_file}esx_hint-${vm_name}.dat";
+}
+else {
+    if ( @hostnames > 1 ) {
+        print "Cannot specify more than one hostname unless you use -v\n";
+        exit 3;
+    }
+}
+
+if ( $np->opts->memoryallocation ) {
+    $oid_vm_mem = "3.2.4.1.3.";
+}
+
+if ( $np->opts->percent ) {
+    $perf_data_percent = 1;
+}
+
+my $s;
+
+# Sensible units.
+sub two_dp {
+    my $val = shift(@_);
+    return int( $val * 100 ) / 100;
+}
+
+# Call this when you know you'll get a single value back
+sub get_oid_value {
+    our ( $oid, $result, $status, $returnstring );
+
+    $oid = shift(@_);
+
+    if ( !defined( $s->get_request($oid) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            print "SNMP agent not responding\n";
+            exit 3;
+        }
+        else {
+
+            #print "SNMP OID does not exist\n";
+            return "";
+        }
+    }
+
+    foreach ( $s->var_bind_names() ) {
+        $result = $s->var_bind_list()->{$_};
+    }
+
+    if ( $result eq "noSuchObject" || $result eq "noSuchInstance" ) {
+        return "";
+    }
+
+    return $result;
+}
+
+sub get_vm_id {
+    my $name = lc(shift);
+    my $i    = 0;
+    our ( $result, $store, $vm_data, $response, $hostname );
+    my $hint_host = "";
+
+    # Use a hint if we have one
+    if ( -f $hint_file ) {
+        $store     = lock_retrieve($hint_file);
+        $hint_host = $store->{$name};
+    }
+
+    # Move the hint host to the top of the list, if it's
+    # an option
+    if ( grep( /^${hint_host}$/, @hostnames ) ) {
+        my $item;
+        while ( $hostnames[0] ne $hint_host ) {
+            $item = shift(@hostnames);
+            push( @hostnames, $item );
+        }
+    }
+
+    foreach $hostname (@hostnames) {
+        next if ( create_snmp_session($hostname) > 0 );
+
+        $response = $s->get_table($oid_namebase);
+        next if !defined($response);
+
+        %$response = reverse %$response;
+        my ($vmname) = grep( /^$name$/i, keys(%$response) );
+        if ($vmname) {
+
+            # Found the VM, write a hint for next time
+            $store->{$name} = $hostname;
+            lock_store( $store, $hint_file );
+
+            my $i = $response->{$vmname};
+            $i =~ s/.*\.//;
+            $result = get_oid_value( $oid_vmidbase . $i );
+            return $result;
+        }
+    }
+
+    print 'VM not found; available VMs are: ',
+      join( ", ", sort( keys(%$response) ) ), $/;
+    exit 3;
+}
+
+sub get_vm_mem_used {
+    my $i      = 0;
+    my $result = 0;
+    my $vm_id  = shift(@_);
+    if ($vm_id) {
+        return get_oid_value( $oid_vmbase . $oid_vm_mem . $vm_id );
+    }
+    else {
+##################
+        our ( $key, $response );
+
+        $response = $s->get_table( $oid_vmbase . $oid_vm_mem );
+        return undef if !defined($response);
+
+        foreach $key ( keys %{$response} ) {
+            $result = $result + $response->{$key};
+        }
+    }
+##################
+
+    return $result;
+}
+
+sub create_snmp_session {
+    my $snmp_host = shift(@_);
+
+    $s = $np->snmp(
+        {
+            hostname         => $snmp_host,
+            undef_on_failure => 1
+        }
+    );
+
+    if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+        print "Agent not responding";
+        return 1;
+    }
+
+    return 0;
+}
+
+# If we're checking all VMs, we need to start an SNMP session, otherwise
+# get_vm_id() will take care of this
+if ( !$np->opts->vm ) {
+    create_snmp_session( $hostnames[0] );
+
+    # Check for an SNMP error...
+    if ( $s->error ) {
+        print "UNKNOWN - " . $s->error . "|\n";
+        exit 3;
+    }
+}
+else {
+    $vmid = get_vm_id($vm_name);
+    if ( !defined($vmid) ) {
+        print "Could not find VM $vm_name\n";
+        exit 3;
+    }
+}
+
+# Get all the mem info
+$mem_total = get_oid_value( $oid_vmbase . $oid_host_mem );
+$sc_mem    = get_oid_value( $oid_vmbase . $oid_sc_mem );
+
+if ( $mem_total <= 0 ) {
+    print "UNKNOWN - Could not retrieve host data from specified ESX host\n";
+    exit 3;
+}
+
+# We cannot assume that the service console will be using memory,
+# since this won't be the case under VMware 3i.  Avoiding div by zero.
+if ( $sc_mem > 0 ) {
+    $sc_mem = int( $sc_mem / 1024 );
+}
+$mem_total = int( $mem_total / 1024 );
+my $mem = get_vm_mem_used($vmid);
+if ( !defined($mem) ) {
+    print "Error retrieving memory data from SNMP\n";
+    exit 3;
+}
+
+# if doing all VM's $mem = memory available (free) not used, so reverse it
+if ( !$vmid ) {
+    $mem = ( $mem_total * 1024 ) - $mem;
+}
+
+# We used to include sc_mem in the total...
+#$mem_used = int($mem/1024) + $sc_mem;
+
+# Now we don't...
+$mem_used = int( $mem / 1024 );
+
+$percent_used = int( 1000 * $mem_used / $mem_total ) / 10;
+
+# Performance data as numbers or %?
+if ($perf_data_percent) {
+    $perfdata =
+        "vm_mem_used="
+      . two_dp( $mem_used / $mem_total * 100 )
+      . "%;$warning;$critical;; console_mem="
+      . two_dp( $sc_mem / $mem_total * 100 )
+      . "%;;;; total_mem_used="
+      . two_dp( ( $mem_used + $sc_mem ) / $mem_total * 100 )
+      . "%;;;; total=$mem_total;;;;";
+}
+else {
+    $perfdata =
+      "vm_mem_used=$mem_used;$warning;$critical;; console_mem=$sc_mem;;;; total_mem_used="
+      . ( $mem_used + $sc_mem )
+      . ";;;; total=$mem_total;;;;";
+}
+
+$result_text =
+  "$mem_used MB used out of $mem_total MB total ($percent_used% used) | $perfdata";
+
+# The results are in...
+if ( $mem_used > $critical && $critical > 0 ) {
+    print "CRITICAL - $result_text\n";
+    exit 2;
+}
+elsif ( $mem_used > $warning && $warning > 0 ) {
+    print "WARNING - $result_text\n";
+    exit 1;
+}
+
+print "OK - $result_text\n";
+exit 0

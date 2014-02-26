@@ -1,0 +1,19 @@
+{
+      "hosts" : [
+         {
+            "ref" : "/rest/config/host/16",
+            "name" : "singlehostgroup"
+         }
+      ],
+      "parent" : {
+         "ref" : "/rest/config/hostgroup/1",
+         "name" : "Opsview"
+      },
+      "name" : "singlehost",
+      "id" : "7",
+      "children" : [],
+      "uncommitted" : "0",
+      "matpath" : "Opsview,singlehost,",
+      "is_leaf" : 1
+   }
+

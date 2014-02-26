@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+<head>
+  <title>Opsview</title>
+  <link rel="stylesheet" type="text/css" href="/stylesheets/opsview2.css" />
+  <!--[if IE 6]>
+  <link rel="stylesheet" type="text/css" href="/stylesheets/opsview2_ie6.css">
+  <![endif]-->
+  <link rel="stylesheet" type="text/css" href="/stylesheets/sidenav.css" />
+  <script src="/javascript/prototype.js" type="text/javascript"></script>
+  <script src="/javascript/scriptaculous.js" type="text/javascript"></script>
+  <script src="/javascript/opsview_sidenav.js" type="text/javascript"></script>
+  <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1" />
+</head>
+<body>
+<div style="width:170px">
+<center><img src="/images/OpsviewEnterpriseIcon.png" id="logo" alt="Opsview Logo" /></center>
+<table width="100%" class="sidenav">
+  <tr class="sidenav">
+    <td class="sidenav">
+
+      <h2 class="sidenav">
+      <a class="sidenav" href="#" onclick="toggle_menu('section-status'); return false">Status</a>
+      </h2>
+      <div id="section-status" style="">
+        <ul class="sidenav">
+
+          <li class="sidenav">
+            <a class="sidenav" target="main" href="/cgi-bin/status.cgi?hostgroup=all&amp;style=summary">Status Summary</a>
+          </li>
+
+          <li class="sidenav">
+            <a class="sidenav" target="main" href="/cgi-bin/statusmap.cgi?host=all">Network Map</a>
+          </li>
+
+          <li class="sidenav">
+            <a class="sidenav" target="main" href="/cgi-bin/status.cgi?host=all">Service Detail</a>
+          </li>
+
+          <li class="sidenav">
+            <a class="sidenav" target="main" href="/cgi-bin/status.cgi?hostgroup=all&amp;style=hostdetail">Host Detail</a>
+          </li>
+
+        </ul>
+      </div>
+
+      <h2 class="sidenav">
+      <a class="sidenav" href="#" onclick="toggle_menu('section-alerts'); return false">Alerts</a>
+      </h2>
+      <div id="section-alerts" style="display: none">
+        <ul class="sidenav">
+
+          <li class="sidenav">
+            <a class="sidenav" target="main" href="/cgi-bin/status.cgi?hostgroup=all&amp;style=hostdetail&amp;hoststatustypes=12">All Host Alerts</a>
+          </li>
+
+          <li class="sidenav">
+            <a class="sidenav" target="main" href="/cgi-bin/status.cgi?host=all&amp;servicestatustypes=28">All Service Alerts</a>
+          </li>
+
+          <li class="sidenav">
+            <a class="sidenav" target="main" href="/cgi-bin/status.cgi?host=all&amp;style=summary&amp;servicestatustypes=28&amp;serviceprops=10250">Unacknowledged</a>
+          </li>
+
+          <li class="sidenav">
+            <a class="sidenav" target="main" href="/cgi-bin/outages.cgi">Network Outages</a>
+          </li>
+
+          <li class="sidenav">
+            <a class="sidenav" target="main" href="/cgi-bin/extinfo.cgi?type=3">Comments</a>
+          </li>
+
+          <li class="sidenav">
+            <a class="sidenav" target="main" href="/cgi-bin/extinfo.cgi?type=6">Scheduled Downtime</a>
+          </li>
+
+        </ul>
+      </div>
+
+      <h2 class="sidenav">
+      <a class="sidenav" href="#" onclick="toggle_menu('section-reporting'); return false">Reporting</a>
+      </h2>
+      <div id="section-reporting" style="display: none">
+        <ul class="sidenav">
+          <li class="sidenav">
+            <a class="sidenav" target="main" href="/cgi-bin/trends.cgi">Trends</a>
+          </li>
+
+          <li class="sidenav">
+            <a class="sidenav" target="main" href="/cgi-bin/avail.cgi">Availability</a>
+          </li>
+
+          <li class="sidenav">
+            <a class="sidenav" target="main" href="/cgi-bin/histogram.cgi">Alert Histogram</a>
+          </li>
+
+          <li class="sidenav">
+            <a class="sidenav" target="main" href="/cgi-bin/history.cgi?host=all">Alert History</a>
+          </li>
+
+          <li class="sidenav">
+            <a class="sidenav" target="main" href="/cgi-bin/summary.cgi">Alert Summary</a>
+          </li>
+
+        </ul>
+      </div>
+
+    <p class="sidenav">Version: %VERSION%</p>
+    </td>
+  </tr>
+</table>
+
+</div>
+</body>
+</html>
+

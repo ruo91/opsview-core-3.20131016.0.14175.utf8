@@ -1,0 +1,274 @@
+#!/usr/bin/perl
+#
+# $Id$
+#
+
+# NOTES:
+#
+# "perldoc perlpod" for more info on using POD
+# "perldoc Getopt::Long" for more info on using command line options
+#   and imposing limits on what can be used with which switches
+# Any $<text>$ is a CVS/SVN keyword - do not alter!
+# When script is complete, use "perltidy -b -i=2 <script>" to format correctly
+
+# all "use" statements
+use strict; # ALWAYS USE! Helps to catch bugs and problems much faster
+
+#use warnings;    # ALWAYS USE! Helps to catch bugs and problems much faster
+
+# find the path to the script directory and the script name
+use Cwd;
+my ( $script, $scriptname, $scriptdir );
+( $scriptname = $0 ) =~ s!^.*/!!;
+( $scriptdir = Cwd::abs_path($0) ) =~ s!/[^/]+$!!;
+$script = "$scriptdir/$scriptname";
+
+use lib "/usr/local/nagios/perl/lib";
+use lib "/usr/local/nagios/lib";
+use Opsview::Config;
+
+# Pull in functions to use inline POD as output for help options
+use Pod::Usage;
+
+# Pull in functions to parse the command line options
+# Configure command line options to be case sensitive, and allow
+# -v -a -x as -vax (different to --vax).  Long options must also use --'s
+# Also stop long options being abreviated to uniqueness
+use Getopt::Long qw(:config no_ignore_case bundling no_auto_abbrev);
+
+# update our path
+$ENV{PATH} = "$ENV{PATH}:/usr/local/nagios/perl/bin";
+
+# Version information, as from CVS
+my $_VERS = sprintf( "%d.%d", q$Revision: 0.01 $ =~ m!(\d+)\.(\d+)! );
+my $_DATE = sprintf( "%s %s",
+    q$Date: 2000/01/01 00:00:00 $ =~ m!(\d.../\d./\d.) (\d.:\d.:\d.)! );
+
+my $VERSION = "$_VERS $_DATE"; # Combined for script version (-V output)
+
+# Start of POD (Perl Online Documentation)
+#   Use "perldoc <script>" or "<script> --help" to read POD
+
+=head1 NAME
+
+  generate_schema
+
+=head1 SYNOPSIS
+
+  generate_schema [-?hV] <database>
+
+=head1 DESCRIPTION
+
+Script to generate a schema diagram of a given database.
+
+Must be run as nagios user.
+
+=head1 OPTIONS
+
+=over
+
+=cut
+
+#### Set up default options available for all scripts,
+# i.e. "<script> --version" or "<script> --help"
+# All command line options are stored within a hash for easy access
+# This initialises hash and defines some entries in one go
+# See "perldoc perldata" for more info
+my %options = (
+    'help|h|?'  => 0,
+    'man'       => 0,
+    'version|V' => 0,
+    'debug:+'   => 0,
+);
+
+#### Document default options
+
+=item --help, -?, -h
+
+Display basic help 
+
+=item --man
+
+Display man page
+
+=item --debug [0-9], --debug [--debug [...]]
+
+Enable debugging mode (using more than once increases verbosity, or specify
+a level explicitly to a maximum of level 8) 
+
+=item --version, -V
+
+Show version information
+
+=cut
+
+#### Addition options, documented as necessary
+#$options{'additional|a'} = "";
+#
+#=item --additional, -a
+#
+#Additional option
+#
+#=cut
+
+#### End of options
+
+=back
+
+=head1 ARGUMENTS
+
+=over
+
+=item <5 char string>
+
+The first argument must be a string exactly 5 characters in length
+
+=item [ARG2]
+
+Further options arguments
+
+=back
+
+=cut
+
+#### start of perl code ####
+
+# Getopt::Long can limit/expand on how switches are used.  This step
+# normalises the options hash to remove optional specifiers used by
+# Getopts::Long.  Show usage (from the inline POD) if any options unrecognised
+GetOptions( \%options, keys(%options) ) || pod2usage( -verbose => 1 );
+
+# output version and exit
+# i.e. "<script> --version" or "<script> -v"
+die("Version: $VERSION\n") if ( $options{version} );
+
+# output basic help text when -?, --help or -h used
+pod2usage( -verbose => 1 ) if ( $options{'?'} || $options{help} );
+
+#output complete help text when -m|--man|-H|--HELP used
+pod2usage( -verbose => 2 ) if ( $options{HELP} || $options{man} );
+
+#### global variables ####
+# Initialise debug variable correctly if not already set by --debug
+$options{debug} ||= 0;
+
+# Set an arbitrary max level of 8 for debug
+$options{debug} = 8 if ( $options{debug} > 8 );
+
+#### all sub-routines ####
+
+# description:
+#   given a level and a message, if level <= debug level, output message
+#   Allows for progressivly more output the higher the debug level, as
+#   given by the use of --debug. Saves on "expensive" 3rd party module
+# parameters:
+#   $1 = level --> level (to match debug level)
+#   $2 .. $n   --> list to pass to print
+# returns:
+#   nothing
+sub logmsg($@) {
+    print @_, $/ if ( shift() <= $options{debug} );
+}
+
+#### main ####
+
+# example command line check for validity of arguments
+if ( !$ARGV[0] ) {
+    pod2usage(
+        {
+            -exitval => 2,
+            -msg     => "No database provided",
+        }
+    );
+}
+
+my $database = $ARGV[0];
+
+my ( $user, $pass, $driver ) = "";
+
+SWITCH: {
+    foreach ($database) {
+        /^odw$/ && do {
+            $user   = Opsview::Config->odw_dbuser;
+            $pass   = Opsview::Config->odw_dbpasswd;
+            $driver = Opsview::Config->odw_dbi;
+            last SWITCH;
+        };
+        /^runtime$/ && do {
+            $user   = Opsview::Config->runtime_dbuser;
+            $pass   = Opsview::Config->runtime_dbpasswd;
+            $driver = Opsview::Config->runtime_dbi;
+            last SWITCH;
+        };
+        /^opsview$/ && do {
+            $user   = Opsview::Config->dbuser;
+            $pass   = Opsview::Config->dbpasswd;
+            $driver = Opsview::Config->dbi;
+            last SWITCH;
+        };
+        do {
+            die( "Cannot handle database '$database'\n" );
+            last SWITCH;
+        };
+    }
+}
+
+my $output_sql = "${database}_schema.sql";
+my $output_png = "${database}_schema.png";
+
+if ( -f $output_sql ) {
+    unlink($output_sql) or die( "Couldnt remove $output_sql: $!\n" );
+}
+if ( -f $output_png ) {
+    unlink($output_png) or die( "Couldnt remove $output_png: $!\n" );
+}
+
+# extract sql schema
+system(
+    "sqlt -f DBI --dsn $driver:$database --db-user $user --db-password $pass -t MySQL > $output_sql"
+  ) == 0
+  or die( "Failed: $!" );
+
+system(
+    "sqlt-graph -d MySQL -o ./$output_png -t png -c --natural-join --show-datatypes --show-sizes $output_sql"
+  ) == 0
+  or die( "Failed: $!" );
+
+__END__
+# Remaining POD for man page/help text
+
+=head1 NOTES
+
+Requires C<graphviz> and C<SQL::Translator> to be installed
+
+=head1 FILES
+
+Any (optional?) files referenced or used by the script
+
+=head1 AUTHOR AND COPYRIGHT
+
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This software is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Opsview; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+=head1 KNOWN BUGS
+
+Any known issues
+
+=head1 SEE ALSO
+
+L<perl>, L<SQL::Translator>,L<graphiz>
+
+=cut

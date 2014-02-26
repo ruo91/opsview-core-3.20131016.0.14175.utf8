@@ -1,0 +1,72 @@
+#!/usr/bin/perl -w
+#
+# SYNTAX:
+# 	check_nagios_check_spread
+#
+# DESCRIPTION:
+# 	Returns specific perf data re: Nagios service checks run in last 60 seconds
+#   Should be run as an active check with an interval of 1 minute
+#
+# AUTHORS:
+#    Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use strict;
+use warnings;
+use FindBin qw($Bin);
+use lib "$Bin/../perl/lib";
+
+use Nagios::Plugin;
+
+my $np = Nagios::Plugin->new(
+    usage     => "Usage: %s\n   Returns Nagios service check spread data",
+    shortname => "NAGIOSTATS",
+    version   => "1.0",
+);
+
+$np->getopts;
+
+my @vars   = qw(NUMSVCACTCHK1M NUMSVCPSVCHK1M);
+my $labels = {
+    NUMSVCACTCHK1M => "numsvcactchk1m",
+    NUMSVCPSVCHK1M => "numsvcpsvchk1m"
+};
+
+my $command = "/usr/local/nagios/bin/nagiostats -m -d " . join( ",", @vars );
+
+my $output;
+open COMMAND, "$command |"
+  or $np->nagios_die( CRITICAL, "Cannot call nagiostats" );
+{ local $/ = undef; $output = <COMMAND>; }
+close COMMAND or $np->nagios_die( UNKNOWN, "Cannot get nagiostats output" );
+
+my @values = split( "\n", $output );
+my $values = {};
+foreach my $var (@vars) {
+    my $v = shift @values;
+    $values->{$var} = $v;
+}
+
+foreach my $var (@vars) {
+    my %args = ( label => $labels->{$var} );
+    $_ = $values->{$var};
+    $args{value} = $_;
+    $np->add_perfdata(%args);
+}
+
+$np->nagios_exit( OK, "" );

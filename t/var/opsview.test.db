@@ -1,0 +1,2817 @@
+/*!40103 SET @OLD_TIME_ZONE=@@TIME_ZONE */;
+/*!40103 SET TIME_ZONE='+00:00' */;
+/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;
+/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;
+/*!40101 SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='NO_AUTO_VALUE_ON_ZERO,MYSQL40' */;
+/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
+
+
+CREATE DATABASE /*!32312 IF NOT EXISTS*/ `opsview` /*!40100 DEFAULT CHARACTER SET latin1 */;
+
+USE `opsview`;
+
+
+DROP TABLE IF EXISTS `access`;
+CREATE TABLE `access` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `access` WRITE;
+/*!40000 ALTER TABLE `access` DISABLE KEYS */;
+INSERT INTO `access` VALUES (3,'ACTIONALL');
+INSERT INTO `access` VALUES (4,'ACTIONSOME');
+INSERT INTO `access` VALUES (9,'ADMINACCESS');
+INSERT INTO `access` VALUES (28,'CONFIGURECONTACTS');
+INSERT INTO `access` VALUES (29,'CONFIGUREHOSTGROUPS');
+INSERT INTO `access` VALUES (7,'CONFIGUREHOSTS');
+INSERT INTO `access` VALUES (15,'CONFIGUREKEYWORDS');
+INSERT INTO `access` VALUES (23,'CONFIGUREPROFILES');
+INSERT INTO `access` VALUES (27,'CONFIGUREROLES');
+INSERT INTO `access` VALUES (13,'CONFIGURESAVE');
+INSERT INTO `access` VALUES (12,'CONFIGUREVIEW');
+INSERT INTO `access` VALUES (16,'DOWNTIMEALL');
+INSERT INTO `access` VALUES (17,'DOWNTIMESOME');
+INSERT INTO `access` VALUES (30,'NAGVIS');
+INSERT INTO `access` VALUES (6,'NOTIFYSOME');
+INSERT INTO `access` VALUES (14,'PASSWORDSAVE');
+INSERT INTO `access` VALUES (8,'RELOADACCESS');
+INSERT INTO `access` VALUES (18,'REPORTADMIN');
+INSERT INTO `access` VALUES (19,'REPORTUSER');
+INSERT INTO `access` VALUES (11,'RRDGRAPHS');
+INSERT INTO `access` VALUES (21,'TESTALL');
+INSERT INTO `access` VALUES (20,'TESTCHANGE');
+INSERT INTO `access` VALUES (22,'TESTSOME');
+INSERT INTO `access` VALUES (1,'VIEWALL');
+INSERT INTO `access` VALUES (10,'VIEWPORTACCESS');
+INSERT INTO `access` VALUES (2,'VIEWSOME');
+/*!40000 ALTER TABLE `access` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `agentplugins`;
+CREATE TABLE `agentplugins` (
+  `agentid` int(11) NOT NULL DEFAULT '0',
+  `pluginname` varchar(128) NOT NULL DEFAULT '',
+  PRIMARY KEY (`agentid`,`pluginname`),
+  KEY `agentid` (`agentid`),
+  KEY `pluginname` (`pluginname`),
+  CONSTRAINT `agentplugins_agentid_fk` FOREIGN KEY (`agentid`) REFERENCES `agents` (`id`),
+  CONSTRAINT `agentplugins_pluginname_fk` FOREIGN KEY (`pluginname`) REFERENCES `plugins` (`name`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `agentplugins` WRITE;
+/*!40000 ALTER TABLE `agentplugins` DISABLE KEYS */;
+/*!40000 ALTER TABLE `agentplugins` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `agents`;
+CREATE TABLE `agents` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `parent` int(11) DEFAULT NULL,
+  `name` varchar(128) NOT NULL DEFAULT '',
+  `priority` int(11) DEFAULT NULL,
+  `command` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`),
+  KEY `agents_parent_fk` (`parent`),
+  CONSTRAINT `agents_parent_fk` FOREIGN KEY (`parent`) REFERENCES `agents` (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `agents` WRITE;
+/*!40000 ALTER TABLE `agents` DISABLE KEYS */;
+/*!40000 ALTER TABLE `agents` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `api_auditlogs`;
+CREATE TABLE `api_auditlogs` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `datetime` datetime NOT NULL,
+  `username` varchar(128) NOT NULL,
+  `text` text NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `datetime` (`datetime`)
+) ENGINE=InnoDB COMMENT='API2 audit logs';
+
+
+LOCK TABLES `api_auditlogs` WRITE;
+/*!40000 ALTER TABLE `api_auditlogs` DISABLE KEYS */;
+/*!40000 ALTER TABLE `api_auditlogs` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `api_sessions`;
+CREATE TABLE `api_sessions` (
+  `token` char(72) NOT NULL,
+  `expires_at` int(10) NOT NULL,
+  `accessed_at` int(10) NOT NULL,
+  `username` varchar(128) NOT NULL,
+  `ip` varchar(128) NOT NULL,
+  `one_time_token` tinyint(1) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`token`),
+  KEY `expires_at` (`expires_at`)
+) ENGINE=InnoDB COMMENT='Opsview API2 session information';
+
+
+LOCK TABLES `api_sessions` WRITE;
+/*!40000 ALTER TABLE `api_sessions` DISABLE KEYS */;
+/*!40000 ALTER TABLE `api_sessions` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `application_plugins`;
+CREATE TABLE `application_plugins` (
+  `name` varchar(128) NOT NULL DEFAULT '',
+  `menu` varchar(128) DEFAULT NULL,
+  `link` varchar(128) DEFAULT NULL,
+  `version` varchar(16) DEFAULT NULL,
+  `created` int(11) DEFAULT NULL,
+  `updated` int(11) DEFAULT NULL,
+  PRIMARY KEY (`name`)
+) ENGINE=InnoDB COMMENT='List of Opsview application plugins';
+
+
+LOCK TABLES `application_plugins` WRITE;
+/*!40000 ALTER TABLE `application_plugins` DISABLE KEYS */;
+/*!40000 ALTER TABLE `application_plugins` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `attributes`;
+CREATE TABLE `attributes` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(64) NOT NULL,
+  `internally_generated` tinyint(4) NOT NULL DEFAULT '0',
+  `label1` varchar(16) NOT NULL DEFAULT '',
+  `label2` varchar(16) NOT NULL DEFAULT '',
+  `label3` varchar(16) NOT NULL DEFAULT '',
+  `label4` varchar(16) NOT NULL DEFAULT '',
+  `label5` varchar(16) NOT NULL DEFAULT '',
+  `label6` varchar(16) NOT NULL DEFAULT '',
+  `label7` varchar(16) NOT NULL DEFAULT '',
+  `label8` varchar(16) NOT NULL DEFAULT '',
+  `label9` varchar(16) NOT NULL DEFAULT '',
+  `uncommitted` tinyint(4) NOT NULL DEFAULT '0',
+  `value` varchar(64) NOT NULL DEFAULT '',
+  `arg1` text NOT NULL,
+  `arg2` text NOT NULL,
+  `arg3` text NOT NULL,
+  `arg4` text NOT NULL,
+  `arg5` text NOT NULL,
+  `arg6` text NOT NULL,
+  `arg7` text NOT NULL,
+  `arg8` text NOT NULL,
+  `arg9` text NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `attributes` WRITE;
+/*!40000 ALTER TABLE `attributes` DISABLE KEYS */;
+INSERT INTO `attributes` VALUES (1,'SLAVENODE',1,'','','','','','','','','',0,'','','','','','','','','','');
+INSERT INTO `attributes` VALUES (2,'INTERFACE',1,'','','','','','','','','',0,'','','','','','','','','','');
+INSERT INTO `attributes` VALUES (3,'CLUSTERNODE',1,'','','','','','','','','',0,'','','','','','','','','','');
+INSERT INTO `attributes` VALUES (4,'DISK',0,'','','','','','','','','',0,'','-w 7% -c 1%','','--to-inherit3','','','','','','');
+INSERT INTO `attributes` VALUES (5,'URL',0,'','','','','','','','','',0,'','','','','','','','','','');
+INSERT INTO `attributes` VALUES (6,'PROCESS',0,'','','','','','','','','',0,'','','','','','','','','','');
+INSERT INTO `attributes` VALUES (7,'NRPE_PORT',0,'','','','','','','','','',0,'','','','','','','','','','');
+INSERT INTO `attributes` VALUES (8,'WITHDEFAULT',0,'','','','','','','','','',0,'someverylongdefaultvalueforblankattribute','withdefaultarg1','','','','','','','','');
+INSERT INTO `attributes` VALUES (9,'MYSQL_CREDENTIALS',0,'','','','','','','','','',0,'default','mysqluser','mysqlpasswordwithfunny%^chars','','','','','','','');
+INSERT INTO `attributes` VALUES (10,'BLANK',0,'','','','','','','','','',0,'','','','','','','','','','');
+INSERT INTO `attributes` VALUES (11,'WITH123NUMBERS',0,'','','','','','','','','',0,'','','','','','','','','','');
+/*!40000 ALTER TABLE `attributes` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `auditlogs`;
+CREATE TABLE `auditlogs` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `datetime` datetime NOT NULL DEFAULT '0000-00-00 00:00:00',
+  `username` varchar(128) NOT NULL DEFAULT '',
+  `reloadid` int(11) DEFAULT NULL,
+  `notice` tinyint(4) NOT NULL DEFAULT '0',
+  `text` text NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `datetime` (`datetime`),
+  KEY `notice` (`notice`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `auditlogs` WRITE;
+/*!40000 ALTER TABLE `auditlogs` DISABLE KEYS */;
+/*!40000 ALTER TABLE `auditlogs` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `checktypes`;
+CREATE TABLE `checktypes` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) NOT NULL DEFAULT '',
+  `priority` int(11) DEFAULT '1',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `checktypes` WRITE;
+/*!40000 ALTER TABLE `checktypes` DISABLE KEYS */;
+INSERT INTO `checktypes` VALUES (1,'Active Plugin',1);
+INSERT INTO `checktypes` VALUES (2,'Passive',3);
+INSERT INTO `checktypes` VALUES (3,'SNMPtrap',0);
+INSERT INTO `checktypes` VALUES (4,'SNMP trap',4);
+INSERT INTO `checktypes` VALUES (5,'SNMP Polling',2);
+/*!40000 ALTER TABLE `checktypes` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `contact_sharednotificationprofile`;
+CREATE TABLE `contact_sharednotificationprofile` (
+  `contactid` int(11) NOT NULL,
+  `sharednotificationprofileid` int(11) NOT NULL,
+  `priority` int(11) NOT NULL DEFAULT '1000',
+  PRIMARY KEY (`contactid`,`sharednotificationprofileid`),
+  KEY `sharednotificationprofile` (`sharednotificationprofileid`),
+  CONSTRAINT `contact` FOREIGN KEY (`contactid`) REFERENCES `contacts` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `sharednotificationprofile` FOREIGN KEY (`sharednotificationprofileid`) REFERENCES `sharednotificationprofiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='Links contacts to shared notification profiles';
+
+
+LOCK TABLES `contact_sharednotificationprofile` WRITE;
+/*!40000 ALTER TABLE `contact_sharednotificationprofile` DISABLE KEYS */;
+INSERT INTO `contact_sharednotificationprofile` VALUES (1,1,1000);
+INSERT INTO `contact_sharednotificationprofile` VALUES (2,6,1000);
+INSERT INTO `contact_sharednotificationprofile` VALUES (2,7,1000);
+/*!40000 ALTER TABLE `contact_sharednotificationprofile` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `contact_variables`;
+CREATE TABLE `contact_variables` (
+  `contactid` int(11) NOT NULL,
+  `name` varchar(128) NOT NULL,
+  `value` text NOT NULL,
+  PRIMARY KEY (`contactid`,`name`),
+  KEY `contactid` (`contactid`),
+  CONSTRAINT `contact_variables_contactid_fk` FOREIGN KEY (`contactid`) REFERENCES `contacts` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `contact_variables` WRITE;
+/*!40000 ALTER TABLE `contact_variables` DISABLE KEYS */;
+INSERT INTO `contact_variables` VALUES (1,'RSS_COLLAPSED','1');
+INSERT INTO `contact_variables` VALUES (1,'RSS_MAXIMUM_AGE','1440');
+INSERT INTO `contact_variables` VALUES (1,'RSS_MAXIMUM_ITEMS','30');
+INSERT INTO `contact_variables` VALUES (2,'RSS_COLLAPSED','1');
+INSERT INTO `contact_variables` VALUES (2,'RSS_MAXIMUM_AGE','1440');
+INSERT INTO `contact_variables` VALUES (2,'RSS_MAXIMUM_ITEMS','30');
+INSERT INTO `contact_variables` VALUES (3,'EMAIL','test@dummy.com');
+INSERT INTO `contact_variables` VALUES (3,'PAGER','1234');
+INSERT INTO `contact_variables` VALUES (3,'RSS_COLLAPSED','1');
+INSERT INTO `contact_variables` VALUES (3,'RSS_MAXIMUM_AGE','1440');
+INSERT INTO `contact_variables` VALUES (3,'RSS_MAXIMUM_ITEMS','30');
+INSERT INTO `contact_variables` VALUES (4,'RSS_COLLAPSED','1');
+INSERT INTO `contact_variables` VALUES (4,'RSS_MAXIMUM_AGE','1440');
+INSERT INTO `contact_variables` VALUES (4,'RSS_MAXIMUM_ITEMS','30');
+INSERT INTO `contact_variables` VALUES (5,'EMAIL','');
+INSERT INTO `contact_variables` VALUES (5,'PAGER','');
+INSERT INTO `contact_variables` VALUES (5,'RSS_COLLAPSED','1');
+INSERT INTO `contact_variables` VALUES (5,'RSS_MAXIMUM_AGE','1440');
+INSERT INTO `contact_variables` VALUES (5,'RSS_MAXIMUM_ITEMS','30');
+INSERT INTO `contact_variables` VALUES (6,'RSS_COLLAPSED','1');
+INSERT INTO `contact_variables` VALUES (6,'RSS_MAXIMUM_AGE','1440');
+INSERT INTO `contact_variables` VALUES (6,'RSS_MAXIMUM_ITEMS','30');
+INSERT INTO `contact_variables` VALUES (7,'RSS_COLLAPSED','1');
+INSERT INTO `contact_variables` VALUES (7,'RSS_MAXIMUM_AGE','1440');
+INSERT INTO `contact_variables` VALUES (7,'RSS_MAXIMUM_ITEMS','30');
+INSERT INTO `contact_variables` VALUES (8,'PAGER','010101');
+INSERT INTO `contact_variables` VALUES (8,'RSS_COLLAPSED','0');
+INSERT INTO `contact_variables` VALUES (8,'RSS_MAXIMUM_AGE','1440');
+INSERT INTO `contact_variables` VALUES (8,'RSS_MAXIMUM_ITEMS','30');
+INSERT INTO `contact_variables` VALUES (9,'PAGER','010101');
+INSERT INTO `contact_variables` VALUES (9,'RSS_COLLAPSED','0');
+INSERT INTO `contact_variables` VALUES (9,'RSS_MAXIMUM_AGE','1440');
+INSERT INTO `contact_variables` VALUES (9,'RSS_MAXIMUM_ITEMS','30');
+INSERT INTO `contact_variables` VALUES (10,'EMAIL','');
+INSERT INTO `contact_variables` VALUES (10,'PAGER','000');
+INSERT INTO `contact_variables` VALUES (10,'RSS_COLLAPSED','1');
+INSERT INTO `contact_variables` VALUES (10,'RSS_MAXIMUM_AGE','1440');
+INSERT INTO `contact_variables` VALUES (10,'RSS_MAXIMUM_ITEMS','30');
+INSERT INTO `contact_variables` VALUES (11,'RSS_COLLAPSED','1');
+INSERT INTO `contact_variables` VALUES (11,'RSS_MAXIMUM_AGE','1440');
+INSERT INTO `contact_variables` VALUES (11,'RSS_MAXIMUM_ITEMS','30');
+INSERT INTO `contact_variables` VALUES (12,'EMAIL','');
+INSERT INTO `contact_variables` VALUES (12,'PAGER','');
+INSERT INTO `contact_variables` VALUES (12,'RSS_COLLAPSED','1');
+INSERT INTO `contact_variables` VALUES (12,'RSS_MAXIMUM_AGE','1440');
+INSERT INTO `contact_variables` VALUES (12,'RSS_MAXIMUM_ITEMS','30');
+INSERT INTO `contact_variables` VALUES (14,'EMAIL','');
+INSERT INTO `contact_variables` VALUES (14,'PAGER','');
+INSERT INTO `contact_variables` VALUES (14,'RSS_COLLAPSED','1');
+INSERT INTO `contact_variables` VALUES (14,'RSS_MAXIMUM_AGE','1440');
+INSERT INTO `contact_variables` VALUES (14,'RSS_MAXIMUM_ITEMS','30');
+/*!40000 ALTER TABLE `contact_variables` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `contacts`;
+CREATE TABLE `contacts` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `fullname` varchar(128) NOT NULL DEFAULT '',
+  `name` varchar(128) NOT NULL DEFAULT '',
+  `realm` varchar(255) DEFAULT 'local',
+  `encrypted_password` varchar(128) DEFAULT NULL,
+  `language` varchar(10) NOT NULL DEFAULT '',
+  `description` varchar(255) NOT NULL DEFAULT '',
+  `role` int(11) NOT NULL DEFAULT '1',
+  `show_welcome_page` tinyint(4) NOT NULL DEFAULT '1',
+  `uncommitted` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`),
+  KEY `contacts_role_fk` (`role`),
+  CONSTRAINT `contacts_role_fk` FOREIGN KEY (`role`) REFERENCES `roles` (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `contacts` WRITE;
+/*!40000 ALTER TABLE `contacts` DISABLE KEYS */;
+INSERT INTO `contacts` VALUES (1,'admin','admin','local','$apr1$dEX5UaQz$D6fCyI197d33YcQQqe1Yj.','','Initial admin user',10,0,0);
+INSERT INTO `contacts` VALUES (2,'nonadmin','nonadmin','local','$apr1$sjQmAUwg$MKL5g06fAMJsQc/6vmKhd.','','',12,0,0);
+INSERT INTO `contacts` VALUES (3,'readonly','readonly','local','$apr1$rrVnIEqx$fv.F4q5HiK0/lYoehJkT91','','',13,0,0);
+INSERT INTO `contacts` VALUES (4,'somehosts','somehosts','local','$apr1$VX96Uj5w$O7xXtkw5tgJZ/53LwE43k/','','',18,0,0);
+INSERT INTO `contacts` VALUES (5,'only unknowns','onlyunknowns','local','$apr1$zLeGo7Gf$lYHGY81q.z5hz2mANHO2e0','','Bug with unknowns',12,0,0);
+INSERT INTO `contacts` VALUES (6,'testviewallchangesome','testviewallchangesome','local','$apr1$jgDTqjMN$hKRD.viHQWEsSuYYlCAsm1','','',11,0,0);
+INSERT INTO `contacts` VALUES (7,'testviewallchangenone','testviewallchangenone','local','$apr1$jgDTqjMN$Dp0d8rgdNnYh4c/8h6SRh/','','',13,0,0);
+INSERT INTO `contacts` VALUES (8,'viewsomechangenone','viewsomechangenone','local','$apr1$sl/0emkm$fjzOHtbtGH4R1b3V0wods1','','View some, change none',19,0,0);
+INSERT INTO `contacts` VALUES (9,'viewsomechangenonewonotify','viewsomechangenonewonotify','local','$apr1$1ufwvf1D$VuEKTJ4E/tdT/tZUZrpJJ.','','View some, change none, with no notifications',20,0,0);
+INSERT INTO `contacts` VALUES (10,'viewkeywords','viewkeywords','local','$apr1$pzi1P/PU$IBOnKtlFHXrAiK8OwBBTz/','','Only some keywords are visible',14,0,0);
+INSERT INTO `contacts` VALUES (11,'viewkeywords2','viewkeywords2','local','$apr1$otXfbv0b$Ox5IkcI8aIixJSGOmkwzp.','','',15,0,0);
+INSERT INTO `contacts` VALUES (12,'Adminnoc with , comma','adminnoc','local','$apr1$vvOfBAls$0F3u3IV9uoU/g/DIeeexZ.','','',16,0,0);
+INSERT INTO `contacts` VALUES (13,'demo','demo','local','$apr1$6ssf2Y35$Wh55s2CN.QF.dcztyYa9s/','','',17,0,0);
+INSERT INTO `contacts` VALUES (14,'keywordonly','keywordonly','local','$apr1$gESLwirI$Q6YOER8g6im8XmiWmkbT71','','',21,0,0);
+/*!40000 ALTER TABLE `contacts` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `host_attributes`;
+CREATE TABLE `host_attributes` (
+  `host` int(11) NOT NULL,
+  `attribute` int(11) NOT NULL,
+  `value` varchar(64) NOT NULL,
+  `arg1` text,
+  `arg2` text,
+  `arg3` text,
+  `arg4` text,
+  `arg5` text,
+  `arg6` text,
+  `arg7` text,
+  `arg8` text,
+  `arg9` text,
+  PRIMARY KEY (`host`,`attribute`,`value`),
+  KEY `host` (`host`),
+  KEY `attribute` (`attribute`),
+  CONSTRAINT `host_attributes_attribute_fk` FOREIGN KEY (`attribute`) REFERENCES `attributes` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `host_attributes_host_fk` FOREIGN KEY (`host`) REFERENCES `hosts` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `host_attributes` WRITE;
+/*!40000 ALTER TABLE `host_attributes` DISABLE KEYS */;
+INSERT INTO `host_attributes` VALUES (1,4,'/tmp','','','','',NULL,NULL,NULL,NULL,NULL);
+INSERT INTO `host_attributes` VALUES (1,4,'/u01','','','','',NULL,NULL,NULL,NULL,NULL);
+INSERT INTO `host_attributes` VALUES (1,4,'/var','','','','',NULL,NULL,NULL,NULL,NULL);
+INSERT INTO `host_attributes` VALUES (1,5,'/about','','','','',NULL,NULL,NULL,NULL,NULL);
+INSERT INTO `host_attributes` VALUES (1,6,'apache','-w 4:4 -C httpd','','','',NULL,NULL,NULL,NULL,NULL);
+INSERT INTO `host_attributes` VALUES (1,6,'cron','-c 1:1 -c cron','','','',NULL,NULL,NULL,NULL,NULL);
+INSERT INTO `host_attributes` VALUES (1,7,'5666','','','','',NULL,NULL,NULL,NULL,NULL);
+INSERT INTO `host_attributes` VALUES (2,4,'/boot','','','','',NULL,NULL,NULL,NULL,NULL);
+INSERT INTO `host_attributes` VALUES (3,6,'Another proc','',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
+INSERT INTO `host_attributes` VALUES (3,6,'With another','',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
+INSERT INTO `host_attributes` VALUES (4,4,'/remote',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
+INSERT INTO `host_attributes` VALUES (4,6,'opsviewd',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
+INSERT INTO `host_attributes` VALUES (5,9,'otherdb','slavemysqlusername','slavemysqlpassword','','',NULL,NULL,NULL,NULL,NULL);
+INSERT INTO `host_attributes` VALUES (6,7,'5666','','','','',NULL,NULL,NULL,NULL,NULL);
+INSERT INTO `host_attributes` VALUES (18,4,'/boot',NULL,'-K 15% -C 25%',NULL,'--arg4',NULL,NULL,NULL,NULL,NULL);
+INSERT INTO `host_attributes` VALUES (18,4,'/tmp','','-K 7% -C 9%','',NULL,NULL,NULL,NULL,NULL,NULL);
+INSERT INTO `host_attributes` VALUES (18,5,'/frogger','','',NULL,NULL,NULL,NULL,NULL,NULL,NULL);
+INSERT INTO `host_attributes` VALUES (22,4,'/remote',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
+INSERT INTO `host_attributes` VALUES (22,6,'opsviewd',NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL);
+/*!40000 ALTER TABLE `host_attributes` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `host_variables`;
+CREATE TABLE `host_variables` (
+  `hostid` int(11) NOT NULL,
+  `name` varchar(64) NOT NULL,
+  `value` varchar(64) NOT NULL,
+  `args` text,
+  PRIMARY KEY (`hostid`,`name`,`value`),
+  KEY `hostid` (`hostid`),
+  CONSTRAINT `host_variables_hostid_fk` FOREIGN KEY (`hostid`) REFERENCES `hosts` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `host_variables` WRITE;
+/*!40000 ALTER TABLE `host_variables` DISABLE KEYS */;
+INSERT INTO `host_variables` VALUES (2,'DISK','/opt/app/oracle','-p /opt/app/oracle');
+INSERT INTO `host_variables` VALUES (2,'DISK','/opt/u02','-w 50% -c 70% -p /opt/u02');
+INSERT INTO `host_variables` VALUES (2,'DISK','/u01','-p /u01');
+INSERT INTO `host_variables` VALUES (4,'DISK','/single','-p /single');
+/*!40000 ALTER TABLE `host_variables` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `hostcheckcommands`;
+CREATE TABLE `hostcheckcommands` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) NOT NULL DEFAULT '',
+  `plugin` varchar(128) DEFAULT NULL,
+  `args` text NOT NULL,
+  `priority` int(11) DEFAULT '1',
+  `uncommitted` tinyint(4) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`),
+  KEY `plugin` (`plugin`),
+  CONSTRAINT `hostcheckcommands_plugins_fk` FOREIGN KEY (`plugin`) REFERENCES `plugins` (`name`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `hostcheckcommands` WRITE;
+/*!40000 ALTER TABLE `hostcheckcommands` DISABLE KEYS */;
+INSERT INTO `hostcheckcommands` VALUES (1,'slow ping','check_ping','-H $HOSTADDRESS$ -w 3000.0,80% -c 5000.0,100% -p 1',14,0);
+INSERT INTO `hostcheckcommands` VALUES (2,'tcp port 80 (HTTP)','check_tcp','-H $HOSTADDRESS$ -p 80 -w 9 -c 9 -t 15',7,0);
+INSERT INTO `hostcheckcommands` VALUES (3,'tcp port 22 (SSH)','check_ssh','-H $HOSTADDRESS$ -t 15',4,0);
+INSERT INTO `hostcheckcommands` VALUES (4,'tcp port 23 (Telnet)','check_tcp','-H $HOSTADDRESS$ -p 23 -w 9 -c 9 -t 15',5,0);
+INSERT INTO `hostcheckcommands` VALUES (5,'tcp port 443 (HTTP/SSL)','check_tcp','-H $HOSTADDRESS$ -p 443 -w 9 -c 9 -t 15',9,0);
+INSERT INTO `hostcheckcommands` VALUES (7,'NRPE (on port 5666)','check_nrpe','-H $HOSTADDRESS$',11,0);
+INSERT INTO `hostcheckcommands` VALUES (8,'tcp port 135 (MS RPC)','check_tcp','-H $HOSTADDRESS$ -p 135 -w 9 -c 9 -t 15',8,0);
+INSERT INTO `hostcheckcommands` VALUES (10,'tcp port 5900 (VNC)','check_tcp','-H $HOSTADDRESS$ -p 5900 -w 9 -c 9 -t 15',10,0);
+INSERT INTO `hostcheckcommands` VALUES (11,'NRPE (on port 5666 - non-SSL)','check_nrpe','-n -H $HOSTADDRESS$',12,0);
+INSERT INTO `hostcheckcommands` VALUES (12,'tcp port 25 (SMTP)','check_tcp','-H $HOSTADDRESS$ -p 25 -w 9 -c 9 -t 15',6,0);
+INSERT INTO `hostcheckcommands` VALUES (13,'tcp port 21 (FTP)','check_tcp','-H $HOSTADDRESS$ -p 21 -w 9 -c 9 -t 15',3,0);
+INSERT INTO `hostcheckcommands` VALUES (14,'tcp port 161 (SNMP)','check_tcp','-H $HOSTADDRESS$ -p 161 -w 9 -c 9 -t 15',13,0);
+INSERT INTO `hostcheckcommands` VALUES (15,'ping','check_icmp','-H $HOSTADDRESS$ -t 3 -w 500.0,80% -c 1000.0,100%',1,0);
+INSERT INTO `hostcheckcommands` VALUES (16,'tolerant ping','check_ping','-H $HOSTADDRESS$ -n 5 -i 5s',15,0);
+INSERT INTO `hostcheckcommands` VALUES (17,'ping address1','check_icmp','-H $ADDRESS1$ -t 3 -w 500.0,80% -c 1000.0,100%',2,0);
+INSERT INTO `hostcheckcommands` VALUES (18,'host attributes','check_nrpe','-H %DISK% -3 %DISK:3% --creds %MYSQL_CREDENTIALS%',16,0);
+/*!40000 ALTER TABLE `hostcheckcommands` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `hostgroupinfo`;
+CREATE TABLE `hostgroupinfo` (
+  `id` int(11) NOT NULL DEFAULT '0',
+  `information` text,
+  PRIMARY KEY (`id`),
+  CONSTRAINT `hostgroupinfo_hostgroups_fk` FOREIGN KEY (`id`) REFERENCES `hostgroups` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `hostgroupinfo` WRITE;
+/*!40000 ALTER TABLE `hostgroupinfo` DISABLE KEYS */;
+INSERT INTO `hostgroupinfo` VALUES (9,'= Host group info =\r\nLeisure &gt; Business');
+/*!40000 ALTER TABLE `hostgroupinfo` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `hostgroups`;
+CREATE TABLE `hostgroups` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `parentid` int(11) DEFAULT '1',
+  `name` varchar(128) NOT NULL DEFAULT '',
+  `uncommitted` int(11) NOT NULL DEFAULT '0',
+  `lft` int(11) DEFAULT NULL,
+  `rgt` int(11) DEFAULT NULL,
+  `matpath` text NOT NULL,
+  `matpathid` text NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `parentid` (`parentid`),
+  CONSTRAINT `hostgroups_parentid_fk` FOREIGN KEY (`parentid`) REFERENCES `hostgroups` (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `hostgroups` WRITE;
+/*!40000 ALTER TABLE `hostgroups` DISABLE KEYS */;
+INSERT INTO `hostgroups` VALUES (1,NULL,'Opsview',0,1,20,'Opsview,','1,');
+INSERT INTO `hostgroups` VALUES (2,3,'Monitoring Servers',0,11,12,'Opsview,UK,Monitoring Servers,','1,3,2,');
+INSERT INTO `hostgroups` VALUES (3,1,'UK',0,8,13,'Opsview,UK,','1,3,');
+INSERT INTO `hostgroups` VALUES (4,3,'Leaf',0,9,10,'Opsview,UK,Leaf,','1,3,4,');
+INSERT INTO `hostgroups` VALUES (5,6,'Leaf2',0,15,16,'Opsview,UK2,Leaf2,','1,6,5,');
+INSERT INTO `hostgroups` VALUES (6,1,'UK2',0,14,19,'Opsview,UK2,','1,6,');
+INSERT INTO `hostgroups` VALUES (7,1,'singlehost',0,6,7,'Opsview,singlehost,','1,7,');
+INSERT INTO `hostgroups` VALUES (8,6,'middling',0,17,18,'Opsview,UK2,middling,','1,6,8,');
+INSERT INTO `hostgroups` VALUES (9,1,'alphaearly',0,2,3,'Opsview,alphaearly,','1,9,');
+INSERT INTO `hostgroups` VALUES (10,1,'Passive Monitoring',0,4,5,'Opsview,Passive Monitoring,','1,10,');
+/*!40000 ALTER TABLE `hostgroups` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `hosthosttemplates`;
+CREATE TABLE `hosthosttemplates` (
+  `hostid` int(11) NOT NULL DEFAULT '0',
+  `hosttemplateid` int(11) NOT NULL DEFAULT '0',
+  `priority` int(11) NOT NULL DEFAULT '1000',
+  PRIMARY KEY (`hostid`,`hosttemplateid`),
+  KEY `hostid` (`hostid`),
+  KEY `hosttemplateid` (`hosttemplateid`),
+  CONSTRAINT `hosthosttemplates_hostid_fk` FOREIGN KEY (`hostid`) REFERENCES `hosts` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `hosthosttemplates_hosttemplateid_fk` FOREIGN KEY (`hosttemplateid`) REFERENCES `hosttemplates` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `hosthosttemplates` WRITE;
+/*!40000 ALTER TABLE `hosthosttemplates` DISABLE KEYS */;
+INSERT INTO `hosthosttemplates` VALUES (1,4,1);
+INSERT INTO `hosthosttemplates` VALUES (2,7,1);
+INSERT INTO `hosthosttemplates` VALUES (4,1,1);
+INSERT INTO `hosthosttemplates` VALUES (4,4,2);
+INSERT INTO `hosthosttemplates` VALUES (5,1,1);
+INSERT INTO `hosthosttemplates` VALUES (6,1,1);
+INSERT INTO `hosthosttemplates` VALUES (6,3,4);
+INSERT INTO `hosthosttemplates` VALUES (6,5,2);
+INSERT INTO `hosthosttemplates` VALUES (6,6,3);
+INSERT INTO `hosthosttemplates` VALUES (7,3,1);
+INSERT INTO `hosthosttemplates` VALUES (10,4,1);
+INSERT INTO `hosthosttemplates` VALUES (12,1,1);
+INSERT INTO `hosthosttemplates` VALUES (12,2,2);
+INSERT INTO `hosthosttemplates` VALUES (19,1,1);
+INSERT INTO `hosthosttemplates` VALUES (20,1,1);
+INSERT INTO `hosthosttemplates` VALUES (21,1,1);
+INSERT INTO `hosthosttemplates` VALUES (22,1,1);
+INSERT INTO `hosthosttemplates` VALUES (22,4,2);
+INSERT INTO `hosthosttemplates` VALUES (24,1,1);
+/*!40000 ALTER TABLE `hosthosttemplates` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `hostinfo`;
+CREATE TABLE `hostinfo` (
+  `id` int(11) NOT NULL DEFAULT '0',
+  `information` text,
+  PRIMARY KEY (`id`),
+  CONSTRAINT `hostinfo_hosts_fk` FOREIGN KEY (`id`) REFERENCES `hosts` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `hostinfo` WRITE;
+/*!40000 ALTER TABLE `hostinfo` DISABLE KEYS */;
+INSERT INTO `hostinfo` VALUES (10,'Some information in wiki');
+/*!40000 ALTER TABLE `hostinfo` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `hostperformancemonitors`;
+CREATE TABLE `hostperformancemonitors` (
+  `hostid` int(11) NOT NULL DEFAULT '0',
+  `performancemonitorid` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`hostid`,`performancemonitorid`),
+  KEY `hostid` (`hostid`),
+  KEY `performancemonitorid` (`performancemonitorid`),
+  CONSTRAINT `hostperformancemonitors_hostid_fk` FOREIGN KEY (`hostid`) REFERENCES `hosts` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `hostperformancemonitors_performancemonitorid_fk` FOREIGN KEY (`performancemonitorid`) REFERENCES `performancemonitors` (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `hostperformancemonitors` WRITE;
+/*!40000 ALTER TABLE `hostperformancemonitors` DISABLE KEYS */;
+INSERT INTO `hostperformancemonitors` VALUES (2,7);
+INSERT INTO `hostperformancemonitors` VALUES (18,7);
+/*!40000 ALTER TABLE `hostperformancemonitors` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `hosts`;
+CREATE TABLE `hosts` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(64) NOT NULL DEFAULT '',
+  `ip` varchar(255) NOT NULL DEFAULT '',
+  `alias` varchar(255) NOT NULL DEFAULT '',
+  `notification_interval` int(11) NOT NULL DEFAULT '60',
+  `hostgroup` int(11) DEFAULT NULL,
+  `check_period` int(11) DEFAULT NULL,
+  `check_interval` varchar(16) DEFAULT '5',
+  `retry_check_interval` varchar(16) DEFAULT '1',
+  `check_attempts` varchar(16) DEFAULT '2',
+  `icon` varchar(128) DEFAULT NULL,
+  `enable_snmp` tinyint(4) NOT NULL DEFAULT '0',
+  `snmp_community` varchar(255) NOT NULL DEFAULT '',
+  `notification_options` varchar(16) DEFAULT NULL,
+  `notification_period` int(11) NOT NULL DEFAULT '1',
+  `check_command` int(11) DEFAULT NULL,
+  `http_admin_url` varchar(128) DEFAULT NULL,
+  `http_admin_port` varchar(16) DEFAULT NULL,
+  `monitored_by` int(11) NOT NULL DEFAULT '1',
+  `uncommitted` int(11) NOT NULL DEFAULT '0',
+  `other_addresses` varchar(255) NOT NULL DEFAULT '',
+  `snmp_version` enum('2c','3','1') DEFAULT '2c',
+  `snmp_port` int(11) DEFAULT '161',
+  `snmpv3_username` varchar(128) NOT NULL DEFAULT '',
+  `snmpv3_authprotocol` enum('md5','sha') DEFAULT NULL,
+  `snmpv3_authpassword` varchar(128) NOT NULL DEFAULT '',
+  `snmpv3_privprotocol` enum('des','aes','aes128') DEFAULT NULL,
+  `snmpv3_privpassword` varchar(128) NOT NULL DEFAULT '',
+  `snmptrap_tracing` int(11) DEFAULT '0',
+  `flap_detection_enabled` int(11) DEFAULT '1',
+  `use_rancid` int(11) DEFAULT '0',
+  `rancid_vendor` int(11) DEFAULT NULL,
+  `rancid_username` varchar(128) DEFAULT NULL,
+  `rancid_password` varchar(255) DEFAULT NULL,
+  `rancid_connection_type` enum('ssh','telnet') DEFAULT 'ssh',
+  `rancid_autoenable` int(11) DEFAULT '0',
+  `use_nmis` int(11) DEFAULT '0',
+  `nmis_node_type` enum('router','switch','server') DEFAULT 'router',
+  `use_mrtg` tinyint(4) NOT NULL DEFAULT '0',
+  `tidy_ifdescr_level` tinyint(4) NOT NULL DEFAULT '0',
+  `snmp_max_msg_size` smallint(6) unsigned NOT NULL DEFAULT '0',
+  `snmp_extended_throughput_data` tinyint(4) NOT NULL DEFAULT '0',
+  `event_handler` varchar(255) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`),
+  KEY `hostgroup` (`hostgroup`),
+  KEY `icon` (`icon`),
+  KEY `notification_period` (`notification_period`),
+  KEY `check_command` (`check_command`),
+  KEY `monitored_by` (`monitored_by`),
+  KEY `rancid_vendor` (`rancid_vendor`),
+  KEY `hosts_check_period_fk` (`check_period`),
+  KEY `ip_name` (`ip`,`name`),
+  CONSTRAINT `hosts_check_command_fk` FOREIGN KEY (`check_command`) REFERENCES `hostcheckcommands` (`id`),
+  CONSTRAINT `hosts_check_period_fk` FOREIGN KEY (`check_period`) REFERENCES `timeperiods` (`id`),
+  CONSTRAINT `hosts_hostgroup_fk` FOREIGN KEY (`hostgroup`) REFERENCES `hostgroups` (`id`),
+  CONSTRAINT `hosts_icon_fk` FOREIGN KEY (`icon`) REFERENCES `icons` (`name`),
+  CONSTRAINT `hosts_monitored_by_fk` FOREIGN KEY (`monitored_by`) REFERENCES `monitoringservers` (`id`),
+  CONSTRAINT `hosts_notification_period_fk` FOREIGN KEY (`notification_period`) REFERENCES `timeperiods` (`id`),
+  CONSTRAINT `hosts_rancid_vendor_fk` FOREIGN KEY (`rancid_vendor`) REFERENCES `rancid_vendors` (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `hosts` WRITE;
+/*!40000 ALTER TABLE `hosts` DISABLE KEYS */;
+INSERT INTO `hosts` VALUES (1,'opsview','opsviewdev46','Opsview Master Server',60,2,1,'0','1','2','LOGO - Opsview',0,'','u,d,r',1,1,NULL,NULL,1,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,0,'router',0,0,0,0,'');
+INSERT INTO `hosts` VALUES (2,'opsviewdev1','opsviewdev1.der.altinity','',60,2,1,'0','1','2','SYMBOL - Wireless network',1,'','u,d,r',1,1,NULL,NULL,1,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,0,'router',1,0,0,0,'');
+INSERT INTO `hosts` VALUES (3,'host_locally_monitored','hostname1','',60,4,2,'3','2','3','SYMBOL - Router',1,'public','u,d,r',1,NULL,NULL,NULL,1,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,0,'router',0,0,0,0,'');
+INSERT INTO `hosts` VALUES (4,'monitored_by_slave','monitored_by_slave','Host to be monitored by slave',60,5,3,'5','4','5','SYMBOL - Wireless network',1,'slave','u,d,r',1,7,NULL,NULL,2,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,1,'server',1,0,0,0,'');
+INSERT INTO `hosts` VALUES (5,'opslave','opslave','Slave',60,2,1,'0','1','2','LOGO - Opsview',0,'','u,d,r',1,3,NULL,NULL,2,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,0,'router',0,0,0,0,'');
+INSERT INTO `hosts` VALUES (6,'resolved_services','resolved_services','Host with services based on templates, exceptions and timed exceptions',60,5,1,'0','1','2','SYMBOL - Switch',0,'','u,d,r',1,7,NULL,NULL,1,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,0,'router',0,0,0,0,'');
+INSERT INTO `hosts` VALUES (7,'cisco','192.168.10.20','',0,4,1,'0','1','2','SYMBOL - Environment Monitor',0,'shouldnotcreate','u,d,r',1,1,NULL,NULL,1,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,0,'router',0,0,0,0,'');
+INSERT INTO `hosts` VALUES (8,'cisco1','192.168.10.23','',60,4,1,'0','1','2','SYMBOL - *DSL',0,'','u,d,r',1,1,NULL,NULL,1,0,'10.20.20.20,docs.opsview.org,nonexistant','2c',161,'',NULL,'',NULL,'',1,1,0,NULL,NULL,NULL,'ssh',0,0,'router',0,0,0,0,'');
+INSERT INTO `hosts` VALUES (9,'cisco2','192.168.10.22','',60,4,1,'0','1','2','SYMBOL - Firewall',0,'','u,d,r',1,1,NULL,NULL,5,0,'','2c',161,'',NULL,'',NULL,'',1,1,0,NULL,NULL,NULL,'ssh',0,0,'router',0,0,0,0,'');
+INSERT INTO `hosts` VALUES (10,'cisco3','192.168.10.22','',60,4,1,'0','1','2','LOGO - NetBSD',0,'','',1,1,NULL,NULL,2,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,0,'router',0,0,0,0,'');
+INSERT INTO `hosts` VALUES (11,'cisco4','not_a_real_host','',60,4,1,'0','1','2','SYMBOL - Network',1,'public','u,d,r',1,1,NULL,NULL,1,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,1,'switch',0,0,0,0,'');
+INSERT INTO `hosts` VALUES (12,'toclone','toclone','Host to clone, testing API',60,5,1,'0','1','2','SYMBOL - Proxy',1,'$tr!ng@','u,d',3,4,NULL,NULL,1,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,0,'router',0,0,0,0,'');
+INSERT INTO `hosts` VALUES (13,'host_locally_monitored_v3','hostname1','',60,4,1,'0','1','2','SYMBOL - Application',1,'','u,d,r',1,NULL,NULL,NULL,1,0,'','3',161,'u$ernam3','md5','p3ssw0rdmd5','aes128','aes128aes128',0,1,0,NULL,NULL,NULL,'ssh',0,0,'router',0,0,0,0,'');
+INSERT INTO `hosts` VALUES (14,'doesnt_exist_1','192.168.50.10','problem host - Handled',60,4,1,'0','1','2','SYMBOL - Hub',0,'','u,d,r,f',1,15,NULL,NULL,1,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,0,'router',0,0,0,0,'');
+INSERT INTO `hosts` VALUES (15,'doesnt_exist_2','192.168.50.11','problem host - Unhandled',60,4,1,'0','1','2','SYMBOL - Proxy',0,'','u,d,r,f',1,15,NULL,NULL,1,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,0,'router',0,0,0,0,'');
+INSERT INTO `hosts` VALUES (16,'singlehostgroup','nonexistent','',60,7,1,'0','1','2','LOGO - OpenBSD',0,'','u,d,r,f',1,15,NULL,NULL,1,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,0,'router',0,0,0,0,'');
+INSERT INTO `hosts` VALUES (17,'fake_ipv6','2001:0db8:0:0::1428:57ab','Test host for IPv6 addresses',60,4,1,'0','1','2','LOGO - Opsview',0,'','u,d,r,f',1,17,NULL,NULL,1,0,'2001:0db8::1428:57ab','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,0,'router',0,0,0,0,'');
+INSERT INTO `hosts` VALUES (18,'opsviewdev46','192.168.101.46','',60,2,1,'0','1','2','SYMBOL - VPN',1,'public','u,d,r',1,18,NULL,NULL,1,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,0,'router',1,0,0,0,'');
+INSERT INTO `hosts` VALUES (19,'opslaveclusterA','opslaveclusterAip','Slave',60,2,1,'0','1','2','LOGO - Opsview',0,'','u,d,r',1,3,NULL,NULL,3,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,0,'router',0,0,0,0,'');
+INSERT INTO `hosts` VALUES (20,'opslaveclusterB','opslaveclusterBip','Slave',60,2,1,'0','1','2','LOGO - Opsview',0,'','u,d,r',1,3,NULL,NULL,3,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,0,'router',0,0,0,0,'');
+INSERT INTO `hosts` VALUES (21,'opslaveclusterC','opslaveclusterCip','Slave',60,2,1,'0','1','2','LOGO - Opsview',0,'','u,d,r',1,3,NULL,NULL,3,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,0,'router',0,0,0,0,'');
+INSERT INTO `hosts` VALUES (22,'monitored_by_cluster','monitored_by_clusterip','Host to be monitored by slave',60,5,3,'5','4','5','SYMBOL - Wireless network',1,'slave','u,d,r',1,7,NULL,NULL,3,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,1,'server',1,0,0,0,'');
+INSERT INTO `hosts` VALUES (23,'PassiveSlave','192.168.105.15','',60,2,1,'0','1','2','LOGO - Opsview',0,'','u,d,r,f',1,15,NULL,NULL,4,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,0,'router',0,0,0,0,'');
+INSERT INTO `hosts` VALUES (24,'PassiveNode','192.168.105.20','',60,10,1,'0','1','2','LOGO - Debian Linux',0,'','u,d,r,f',1,15,NULL,NULL,4,0,'','2c',161,'',NULL,'',NULL,'',0,1,0,NULL,NULL,NULL,'ssh',0,0,'router',0,0,0,0,'');
+/*!40000 ALTER TABLE `hosts` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `hostservicechecks`;
+CREATE TABLE `hostservicechecks` (
+  `hostid` int(11) NOT NULL DEFAULT '0',
+  `servicecheckid` int(11) NOT NULL DEFAULT '0',
+  `remove_servicecheck` tinyint(4) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`hostid`,`servicecheckid`),
+  KEY `hostid` (`hostid`),
+  KEY `servicecheckid` (`servicecheckid`),
+  CONSTRAINT `hostservicechecks_hostid_fk` FOREIGN KEY (`hostid`) REFERENCES `hosts` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `hostservicechecks_servicecheckid_fk` FOREIGN KEY (`servicecheckid`) REFERENCES `servicechecks` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `hostservicechecks` WRITE;
+/*!40000 ALTER TABLE `hostservicechecks` DISABLE KEYS */;
+INSERT INTO `hostservicechecks` VALUES (1,14,0);
+INSERT INTO `hostservicechecks` VALUES (1,29,0);
+INSERT INTO `hostservicechecks` VALUES (1,54,0);
+INSERT INTO `hostservicechecks` VALUES (1,55,0);
+INSERT INTO `hostservicechecks` VALUES (1,92,0);
+INSERT INTO `hostservicechecks` VALUES (1,94,0);
+INSERT INTO `hostservicechecks` VALUES (2,6,0);
+INSERT INTO `hostservicechecks` VALUES (2,22,0);
+INSERT INTO `hostservicechecks` VALUES (2,29,0);
+INSERT INTO `hostservicechecks` VALUES (2,91,0);
+INSERT INTO `hostservicechecks` VALUES (2,103,0);
+INSERT INTO `hostservicechecks` VALUES (3,29,0);
+INSERT INTO `hostservicechecks` VALUES (3,95,0);
+INSERT INTO `hostservicechecks` VALUES (3,97,0);
+INSERT INTO `hostservicechecks` VALUES (3,99,0);
+INSERT INTO `hostservicechecks` VALUES (3,102,0);
+INSERT INTO `hostservicechecks` VALUES (3,107,0);
+INSERT INTO `hostservicechecks` VALUES (4,29,0);
+INSERT INTO `hostservicechecks` VALUES (4,44,0);
+INSERT INTO `hostservicechecks` VALUES (4,45,0);
+INSERT INTO `hostservicechecks` VALUES (4,91,0);
+INSERT INTO `hostservicechecks` VALUES (4,107,0);
+INSERT INTO `hostservicechecks` VALUES (5,14,0);
+INSERT INTO `hostservicechecks` VALUES (5,84,0);
+INSERT INTO `hostservicechecks` VALUES (5,96,0);
+INSERT INTO `hostservicechecks` VALUES (6,1,0);
+INSERT INTO `hostservicechecks` VALUES (6,14,1);
+INSERT INTO `hostservicechecks` VALUES (6,29,0);
+INSERT INTO `hostservicechecks` VALUES (6,34,1);
+INSERT INTO `hostservicechecks` VALUES (6,44,0);
+INSERT INTO `hostservicechecks` VALUES (6,45,0);
+INSERT INTO `hostservicechecks` VALUES (6,60,0);
+INSERT INTO `hostservicechecks` VALUES (6,61,0);
+INSERT INTO `hostservicechecks` VALUES (6,62,1);
+INSERT INTO `hostservicechecks` VALUES (7,79,0);
+INSERT INTO `hostservicechecks` VALUES (7,81,0);
+INSERT INTO `hostservicechecks` VALUES (7,82,0);
+INSERT INTO `hostservicechecks` VALUES (7,83,0);
+INSERT INTO `hostservicechecks` VALUES (7,95,0);
+INSERT INTO `hostservicechecks` VALUES (7,107,0);
+INSERT INTO `hostservicechecks` VALUES (8,79,0);
+INSERT INTO `hostservicechecks` VALUES (8,81,0);
+INSERT INTO `hostservicechecks` VALUES (8,82,0);
+INSERT INTO `hostservicechecks` VALUES (8,85,0);
+INSERT INTO `hostservicechecks` VALUES (8,86,0);
+INSERT INTO `hostservicechecks` VALUES (8,87,0);
+INSERT INTO `hostservicechecks` VALUES (8,88,0);
+INSERT INTO `hostservicechecks` VALUES (8,89,0);
+INSERT INTO `hostservicechecks` VALUES (8,90,0);
+INSERT INTO `hostservicechecks` VALUES (9,79,0);
+INSERT INTO `hostservicechecks` VALUES (9,81,0);
+INSERT INTO `hostservicechecks` VALUES (9,82,0);
+INSERT INTO `hostservicechecks` VALUES (10,44,1);
+INSERT INTO `hostservicechecks` VALUES (10,79,0);
+INSERT INTO `hostservicechecks` VALUES (10,81,0);
+INSERT INTO `hostservicechecks` VALUES (10,82,0);
+INSERT INTO `hostservicechecks` VALUES (10,85,0);
+INSERT INTO `hostservicechecks` VALUES (10,86,0);
+INSERT INTO `hostservicechecks` VALUES (10,87,0);
+INSERT INTO `hostservicechecks` VALUES (10,88,0);
+INSERT INTO `hostservicechecks` VALUES (10,89,0);
+INSERT INTO `hostservicechecks` VALUES (10,90,0);
+INSERT INTO `hostservicechecks` VALUES (11,79,0);
+INSERT INTO `hostservicechecks` VALUES (11,81,0);
+INSERT INTO `hostservicechecks` VALUES (11,82,0);
+INSERT INTO `hostservicechecks` VALUES (11,95,0);
+INSERT INTO `hostservicechecks` VALUES (11,100,0);
+INSERT INTO `hostservicechecks` VALUES (11,101,0);
+INSERT INTO `hostservicechecks` VALUES (11,107,0);
+INSERT INTO `hostservicechecks` VALUES (12,4,0);
+INSERT INTO `hostservicechecks` VALUES (12,6,0);
+INSERT INTO `hostservicechecks` VALUES (12,29,0);
+INSERT INTO `hostservicechecks` VALUES (12,45,1);
+INSERT INTO `hostservicechecks` VALUES (12,71,1);
+INSERT INTO `hostservicechecks` VALUES (12,83,0);
+INSERT INTO `hostservicechecks` VALUES (13,29,0);
+INSERT INTO `hostservicechecks` VALUES (13,83,0);
+INSERT INTO `hostservicechecks` VALUES (13,95,0);
+INSERT INTO `hostservicechecks` VALUES (13,107,0);
+INSERT INTO `hostservicechecks` VALUES (14,29,0);
+INSERT INTO `hostservicechecks` VALUES (15,29,0);
+INSERT INTO `hostservicechecks` VALUES (17,29,0);
+INSERT INTO `hostservicechecks` VALUES (18,6,0);
+INSERT INTO `hostservicechecks` VALUES (18,22,0);
+INSERT INTO `hostservicechecks` VALUES (18,29,0);
+INSERT INTO `hostservicechecks` VALUES (18,91,0);
+INSERT INTO `hostservicechecks` VALUES (18,103,0);
+INSERT INTO `hostservicechecks` VALUES (18,104,0);
+INSERT INTO `hostservicechecks` VALUES (18,105,0);
+INSERT INTO `hostservicechecks` VALUES (19,84,0);
+INSERT INTO `hostservicechecks` VALUES (19,96,0);
+INSERT INTO `hostservicechecks` VALUES (20,84,0);
+INSERT INTO `hostservicechecks` VALUES (20,96,0);
+INSERT INTO `hostservicechecks` VALUES (21,84,0);
+INSERT INTO `hostservicechecks` VALUES (21,96,0);
+INSERT INTO `hostservicechecks` VALUES (22,29,0);
+INSERT INTO `hostservicechecks` VALUES (22,44,0);
+INSERT INTO `hostservicechecks` VALUES (22,45,0);
+INSERT INTO `hostservicechecks` VALUES (22,91,0);
+INSERT INTO `hostservicechecks` VALUES (23,106,0);
+/*!40000 ALTER TABLE `hostservicechecks` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `hostserviceeventhandlers`;
+CREATE TABLE `hostserviceeventhandlers` (
+  `hostid` int(11) NOT NULL DEFAULT '0',
+  `servicecheckid` int(11) NOT NULL DEFAULT '0',
+  `event_handler` varchar(255) NOT NULL DEFAULT '',
+  PRIMARY KEY (`hostid`,`servicecheckid`),
+  KEY `servicecheckid` (`servicecheckid`),
+  KEY `hostid` (`hostid`),
+  CONSTRAINT `hostserviceeventhandlers_hostid_fk` FOREIGN KEY (`hostid`) REFERENCES `hosts` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `hostserviceeventhandlers_servicecheckid_fk` FOREIGN KEY (`servicecheckid`) REFERENCES `servicechecks` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='Nagios event handlers for services on a per-host basis';
+
+
+LOCK TABLES `hostserviceeventhandlers` WRITE;
+/*!40000 ALTER TABLE `hostserviceeventhandlers` DISABLE KEYS */;
+INSERT INTO `hostserviceeventhandlers` VALUES (1,94,'slave_node_event_handler');
+INSERT INTO `hostserviceeventhandlers` VALUES (4,29,'event_handler_for_tcpip_on_slave');
+INSERT INTO `hostserviceeventhandlers` VALUES (6,1,'done-for-afs');
+INSERT INTO `hostserviceeventhandlers` VALUES (6,29,'run_for_tcpip');
+/*!40000 ALTER TABLE `hostserviceeventhandlers` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `hostsnmpinterfaces`;
+CREATE TABLE `hostsnmpinterfaces` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `hostid` int(11) NOT NULL DEFAULT '0',
+  `interfacename` varchar(255) NOT NULL DEFAULT '',
+  `active` int(11) DEFAULT '0',
+  `throughput_warning` varchar(255) DEFAULT NULL,
+  `throughput_critical` varchar(255) DEFAULT NULL,
+  `errors_warning` varchar(30) DEFAULT NULL,
+  `errors_critical` varchar(30) DEFAULT NULL,
+  `discards_warning` varchar(30) DEFAULT NULL,
+  `discards_critical` varchar(30) DEFAULT NULL,
+  `indexid` int(11) DEFAULT '0',
+  `shortinterfacename` varchar(52) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `hostsnmpinterfaces_hostid_interfacename` (`hostid`,`interfacename`),
+  KEY `hostid` (`hostid`),
+  CONSTRAINT `hostsnmpinterfaces_hostid_fk` FOREIGN KEY (`hostid`) REFERENCES `hosts` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `hostsnmpinterfaces` WRITE;
+/*!40000 ALTER TABLE `hostsnmpinterfaces` DISABLE KEYS */;
+INSERT INTO `hostsnmpinterfaces` VALUES (1,3,'ADSL',1,'','',NULL,NULL,NULL,NULL,0,'ADSL');
+INSERT INTO `hostsnmpinterfaces` VALUES (2,3,'Ethernet0',1,'','',NULL,NULL,NULL,NULL,0,'Ethernet0');
+INSERT INTO `hostsnmpinterfaces` VALUES (3,3,'Interface with \'quotes\' in',1,'20%','30%',NULL,NULL,NULL,NULL,0,'Interface with quotes in');
+INSERT INTO `hostsnmpinterfaces` VALUES (4,13,'ADSL',1,'','',NULL,NULL,NULL,NULL,0,'ADSL');
+INSERT INTO `hostsnmpinterfaces` VALUES (5,13,'Ethernet0',1,'','',NULL,NULL,NULL,NULL,0,'Ethernet0');
+INSERT INTO `hostsnmpinterfaces` VALUES (6,13,'Interface with \'quotes\' in',1,'20%','30%',NULL,NULL,NULL,NULL,0,'Interface with quotes in');
+INSERT INTO `hostsnmpinterfaces` VALUES (7,11,'ADSL',0,'','','','','','',0,'ADSL');
+INSERT INTO `hostsnmpinterfaces` VALUES (8,11,'Ethernet0-01',1,'','2%','','10','4','',1,'Ethernet0-01');
+INSERT INTO `hostsnmpinterfaces` VALUES (9,11,'Ethernet0-02',0,'','','3','','','',2,'Ethernet0-02');
+INSERT INTO `hostsnmpinterfaces` VALUES (10,11,'Ethernet0-12',1,'12%','24%','4','11','2','',12,'Ethernet0-12');
+INSERT INTO `hostsnmpinterfaces` VALUES (11,11,'Ethernet0-13',0,'','','','12','','',13,'Ethernet0-13');
+INSERT INTO `hostsnmpinterfaces` VALUES (12,11,'Ethernet0-20',1,'20%','','','13','',NULL,20,'Ethernet0-20');
+INSERT INTO `hostsnmpinterfaces` VALUES (13,11,'Ethernet0-23',0,'','','','','','',23,'Ethernet0-23');
+INSERT INTO `hostsnmpinterfaces` VALUES (14,11,'EthernetWithAVeryLongAndSillyNameForPeopleToDiscussAboutUntilARipeOldAgeOf75AndAHalf0-03',0,'','','','','','',3,'EthernetWithAVeryLongAndSillyNameForPeopleToDiscu 1');
+INSERT INTO `hostsnmpinterfaces` VALUES (15,11,'EthernetWithAVeryLongAndSillyNameForPeopleToDiscussAboutUntilARipeOldAgeOf75AndAHalf0-06',1,'6%','','','','1','',6,'EthernetWithAVeryLongAndSillyNameForPeopleToDiscu 2');
+INSERT INTO `hostsnmpinterfaces` VALUES (16,7,'shouldnotbecreated',1,'','',NULL,NULL,NULL,NULL,0,'shouldnotbecreated');
+INSERT INTO `hostsnmpinterfaces` VALUES (17,3,'',0,NULL,NULL,NULL,NULL,NULL,NULL,0,'');
+INSERT INTO `hostsnmpinterfaces` VALUES (18,7,'',0,NULL,NULL,NULL,NULL,NULL,NULL,0,'');
+INSERT INTO `hostsnmpinterfaces` VALUES (19,11,'',0,'',NULL,'5','',NULL,'7',0,'');
+INSERT INTO `hostsnmpinterfaces` VALUES (20,13,'',0,NULL,NULL,NULL,NULL,NULL,NULL,0,'');
+INSERT INTO `hostsnmpinterfaces` VALUES (21,4,'Not selected',0,NULL,NULL,NULL,NULL,NULL,NULL,0,'Not selected');
+/*!40000 ALTER TABLE `hostsnmpinterfaces` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `hosttemplatemanagementurls`;
+CREATE TABLE `hosttemplatemanagementurls` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `hosttemplateid` int(11) NOT NULL,
+  `name` varchar(255) NOT NULL,
+  `url` text,
+  `priority` int(11) NOT NULL DEFAULT '1',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `hosttemplatemanagementurls_name_hosttemplateid` (`name`,`hosttemplateid`),
+  KEY `hosttemplateid` (`hosttemplateid`),
+  CONSTRAINT `hosttemplatemanagementurls_hosttemplateid_fk` FOREIGN KEY (`hosttemplateid`) REFERENCES `hosttemplates` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='Management URLs based on this hosttemplate';
+
+
+LOCK TABLES `hosttemplatemanagementurls` WRITE;
+/*!40000 ALTER TABLE `hosttemplatemanagementurls` DISABLE KEYS */;
+INSERT INTO `hosttemplatemanagementurls` VALUES (1,1,'SSH','ssh://$HOSTADDRESS$',1);
+INSERT INTO `hosttemplatemanagementurls` VALUES (2,1,'Telnet','telnet://$HOSTADDRESS$',2);
+INSERT INTO `hosttemplatemanagementurls` VALUES (3,2,'Web admin','http://$HOSTADDRESS$:8080',1);
+INSERT INTO `hosttemplatemanagementurls` VALUES (4,3,'SSH','ssh://$HOSTADDRESS$',1);
+INSERT INTO `hosttemplatemanagementurls` VALUES (5,3,'Telnet','telnet://$HOSTADDRESS$',2);
+/*!40000 ALTER TABLE `hosttemplatemanagementurls` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `hosttemplateperformancemonitors`;
+CREATE TABLE `hosttemplateperformancemonitors` (
+  `hosttemplateid` int(11) NOT NULL DEFAULT '0',
+  `performancemonitorid` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`hosttemplateid`,`performancemonitorid`),
+  KEY `hosttemplateid` (`hosttemplateid`),
+  KEY `performancemonitorid` (`performancemonitorid`),
+  CONSTRAINT `hosttemplateperformancemonitors_hosttemplateid_fk` FOREIGN KEY (`hosttemplateid`) REFERENCES `hosttemplates` (`id`),
+  CONSTRAINT `hosttemplateperformancemonitors_performancemonitorid_fk` FOREIGN KEY (`performancemonitorid`) REFERENCES `performancemonitors` (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `hosttemplateperformancemonitors` WRITE;
+/*!40000 ALTER TABLE `hosttemplateperformancemonitors` DISABLE KEYS */;
+/*!40000 ALTER TABLE `hosttemplateperformancemonitors` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `hosttemplates`;
+CREATE TABLE `hosttemplates` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) NOT NULL DEFAULT '',
+  `description` varchar(255) DEFAULT NULL,
+  `uncommitted` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `hosttemplates` WRITE;
+/*!40000 ALTER TABLE `hosttemplates` DISABLE KEYS */;
+INSERT INTO `hosttemplates` VALUES (1,'Base Unix','For testing',0);
+INSERT INTO `hosttemplates` VALUES (2,'Network - Base','For testing',0);
+INSERT INTO `hosttemplates` VALUES (3,'Cisco Mgt','Cisco device Management URLs',0);
+INSERT INTO `hosttemplates` VALUES (4,'Blank','Blank, for testing hostnames ordering',0);
+INSERT INTO `hosttemplates` VALUES (5,'Template to get removed 1st','',0);
+INSERT INTO `hosttemplates` VALUES (6,'Template to get removed 2nd','',0);
+INSERT INTO `hosttemplates` VALUES (7,'Agent only','',0);
+INSERT INTO `hosttemplates` VALUES (8,'Monitorpack creation','',0);
+/*!40000 ALTER TABLE `hosttemplates` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `hosttemplateservicechecks`;
+CREATE TABLE `hosttemplateservicechecks` (
+  `hosttemplateid` int(11) NOT NULL DEFAULT '0',
+  `servicecheckid` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`hosttemplateid`,`servicecheckid`),
+  KEY `hosttemplateid` (`hosttemplateid`),
+  KEY `servicecheckid` (`servicecheckid`),
+  CONSTRAINT `hosttemplateservicechecks_hosttemplateid_fk` FOREIGN KEY (`hosttemplateid`) REFERENCES `hosttemplates` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `hosttemplateservicechecks_servicecheckid_fk` FOREIGN KEY (`servicecheckid`) REFERENCES `servicechecks` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `hosttemplateservicechecks` WRITE;
+/*!40000 ALTER TABLE `hosttemplateservicechecks` DISABLE KEYS */;
+INSERT INTO `hosttemplateservicechecks` VALUES (1,22);
+INSERT INTO `hosttemplateservicechecks` VALUES (1,27);
+INSERT INTO `hosttemplateservicechecks` VALUES (1,44);
+INSERT INTO `hosttemplateservicechecks` VALUES (1,45);
+INSERT INTO `hosttemplateservicechecks` VALUES (1,47);
+INSERT INTO `hosttemplateservicechecks` VALUES (2,29);
+INSERT INTO `hosttemplateservicechecks` VALUES (2,74);
+INSERT INTO `hosttemplateservicechecks` VALUES (2,95);
+INSERT INTO `hosttemplateservicechecks` VALUES (2,107);
+INSERT INTO `hosttemplateservicechecks` VALUES (3,44);
+INSERT INTO `hosttemplateservicechecks` VALUES (5,34);
+INSERT INTO `hosttemplateservicechecks` VALUES (6,34);
+INSERT INTO `hosttemplateservicechecks` VALUES (7,60);
+INSERT INTO `hosttemplateservicechecks` VALUES (8,14);
+/*!40000 ALTER TABLE `hosttemplateservicechecks` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `icons`;
+CREATE TABLE `icons` (
+  `name` varchar(128) NOT NULL DEFAULT '',
+  `filename` varchar(128) NOT NULL DEFAULT '',
+  PRIMARY KEY (`name`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `icons` WRITE;
+/*!40000 ALTER TABLE `icons` DISABLE KEYS */;
+INSERT INTO `icons` VALUES ('LOGO - 3com','3com');
+INSERT INTO `icons` VALUES ('LOGO - APC','apc');
+INSERT INTO `icons` VALUES ('LOGO - Apple','apple');
+INSERT INTO `icons` VALUES ('LOGO - Apple Mac OS','macos');
+INSERT INTO `icons` VALUES ('LOGO - Apple OS X','osx');
+INSERT INTO `icons` VALUES ('LOGO - Asterisk','asterisk');
+INSERT INTO `icons` VALUES ('LOGO - Axis','axis');
+INSERT INTO `icons` VALUES ('LOGO - BEA','bea');
+INSERT INTO `icons` VALUES ('LOGO - BEOS','beos');
+INSERT INTO `icons` VALUES ('LOGO - BSD','bsd');
+INSERT INTO `icons` VALUES ('LOGO - Caldera Linux','caldera');
+INSERT INTO `icons` VALUES ('LOGO - Canon','canon');
+INSERT INTO `icons` VALUES ('LOGO - Centos','centos');
+INSERT INTO `icons` VALUES ('LOGO - Checkpoint','checkpoint');
+INSERT INTO `icons` VALUES ('LOGO - Cisco','cisco');
+INSERT INTO `icons` VALUES ('LOGO - Citrix','citrix');
+INSERT INTO `icons` VALUES ('LOGO - Compaq','compaq');
+INSERT INTO `icons` VALUES ('LOGO - Cyclades','cyclades');
+INSERT INTO `icons` VALUES ('LOGO - Debian Linux','debian');
+INSERT INTO `icons` VALUES ('LOGO - DragonFly BSD','dragonflybsd');
+INSERT INTO `icons` VALUES ('LOGO - Foundry','foundry');
+INSERT INTO `icons` VALUES ('LOGO - FreeBSD','freebsd');
+INSERT INTO `icons` VALUES ('LOGO - Gentoo Linux','gentoo');
+INSERT INTO `icons` VALUES ('LOGO - GNU Hurd','gnuhurd');
+INSERT INTO `icons` VALUES ('LOGO - Google','google');
+INSERT INTO `icons` VALUES ('LOGO - HAL','hal9000');
+INSERT INTO `icons` VALUES ('LOGO - HP','hp');
+INSERT INTO `icons` VALUES ('LOGO - HP HP-UX','hpux');
+INSERT INTO `icons` VALUES ('LOGO - HP JetDirect','hpprinter');
+INSERT INTO `icons` VALUES ('LOGO - IBM','ibm');
+INSERT INTO `icons` VALUES ('LOGO - IBM AIX','aix');
+INSERT INTO `icons` VALUES ('LOGO - IBM i5/OS','ibm_i5os');
+INSERT INTO `icons` VALUES ('LOGO - IBM OS/400','os400');
+INSERT INTO `icons` VALUES ('LOGO - IBM z/OS','zos');
+INSERT INTO `icons` VALUES ('LOGO - Inferno','inferno');
+INSERT INTO `icons` VALUES ('LOGO - Ingres','ingres');
+INSERT INTO `icons` VALUES ('LOGO - Intel','intel');
+INSERT INTO `icons` VALUES ('LOGO - JBoss','jboss');
+INSERT INTO `icons` VALUES ('LOGO - Juniper','juniper');
+INSERT INTO `icons` VALUES ('LOGO - Linux Penguin','linux');
+INSERT INTO `icons` VALUES ('LOGO - Lotus','lotusnotes2');
+INSERT INTO `icons` VALUES ('LOGO - Lucent','lucent');
+INSERT INTO `icons` VALUES ('LOGO - Mandrake Linux','mandrake');
+INSERT INTO `icons` VALUES ('LOGO - Minix','minix');
+INSERT INTO `icons` VALUES ('LOGO - MS Windows','windows');
+INSERT INTO `icons` VALUES ('LOGO - MS Windows Server','windows_server');
+INSERT INTO `icons` VALUES ('LOGO - MS Windows Vista','vista');
+INSERT INTO `icons` VALUES ('LOGO - Netbotz','netbotz');
+INSERT INTO `icons` VALUES ('LOGO - NetBSD','netbsd');
+INSERT INTO `icons` VALUES ('LOGO - Netscreen','netscreen');
+INSERT INTO `icons` VALUES ('LOGO - Network Appliance','netapp');
+INSERT INTO `icons` VALUES ('LOGO - NeXT Step','next');
+INSERT INTO `icons` VALUES ('LOGO - Nokia','nokia');
+INSERT INTO `icons` VALUES ('LOGO - Novell','novell');
+INSERT INTO `icons` VALUES ('LOGO - Omnis App','omnis');
+INSERT INTO `icons` VALUES ('LOGO - OpenBSD','openbsd');
+INSERT INTO `icons` VALUES ('LOGO - Opsview','opsview');
+INSERT INTO `icons` VALUES ('LOGO - Oracle','oracle');
+INSERT INTO `icons` VALUES ('LOGO - Parallels','parallels');
+INSERT INTO `icons` VALUES ('LOGO - Plan9','plan9');
+INSERT INTO `icons` VALUES ('LOGO - ReactOS','reactos');
+INSERT INTO `icons` VALUES ('LOGO - RedHat Linux','redhat');
+INSERT INTO `icons` VALUES ('LOGO - RISC OS 3','riscos3');
+INSERT INTO `icons` VALUES ('LOGO - RISC OS 4','riscos4');
+INSERT INTO `icons` VALUES ('LOGO - SCO','sco');
+INSERT INTO `icons` VALUES ('LOGO - SGI','sgi');
+INSERT INTO `icons` VALUES ('LOGO - SGI IRIX','irix');
+INSERT INTO `icons` VALUES ('LOGO - Slackware linux','slackware');
+INSERT INTO `icons` VALUES ('LOGO - Snort','snort');
+INSERT INTO `icons` VALUES ('LOGO - Sony PS2 Linux','ps2');
+INSERT INTO `icons` VALUES ('LOGO - Sourcefire','sourcefire');
+INSERT INTO `icons` VALUES ('LOGO - Storm Linux','storm');
+INSERT INTO `icons` VALUES ('LOGO - Sun','sun');
+INSERT INTO `icons` VALUES ('LOGO - Sun Solaris','solaris');
+INSERT INTO `icons` VALUES ('LOGO - Surf Control','surfcontrol');
+INSERT INTO `icons` VALUES ('LOGO - SUSE linux','suse');
+INSERT INTO `icons` VALUES ('LOGO - Turbolinux','turbolinux');
+INSERT INTO `icons` VALUES ('LOGO - Ubuntu Linux','ubuntu');
+INSERT INTO `icons` VALUES ('LOGO - VMS','vms');
+INSERT INTO `icons` VALUES ('LOGO - VMware','vmware');
+INSERT INTO `icons` VALUES ('LOGO - Xen','xen');
+INSERT INTO `icons` VALUES ('LOGO - Xterminal','xwindows');
+INSERT INTO `icons` VALUES ('LOGO - Yellowdog Linux','yellowdog');
+INSERT INTO `icons` VALUES ('LOGO - Zeta','zeta');
+INSERT INTO `icons` VALUES ('SYMBOL - *DSL','dsl');
+INSERT INTO `icons` VALUES ('SYMBOL - Application','application');
+INSERT INTO `icons` VALUES ('SYMBOL - Bridge','bridge');
+INSERT INTO `icons` VALUES ('SYMBOL - Cloud','cloud');
+INSERT INTO `icons` VALUES ('SYMBOL - Environment Monitor','meter');
+INSERT INTO `icons` VALUES ('SYMBOL - Equipment Rack','cabinet');
+INSERT INTO `icons` VALUES ('SYMBOL - Firewall','firewall');
+INSERT INTO `icons` VALUES ('SYMBOL - Hub','hub');
+INSERT INTO `icons` VALUES ('SYMBOL - IP Phone','IPphone');
+INSERT INTO `icons` VALUES ('SYMBOL - Load Balancer','loadbalancer');
+INSERT INTO `icons` VALUES ('SYMBOL - Network','network');
+INSERT INTO `icons` VALUES ('SYMBOL - Printer','printer');
+INSERT INTO `icons` VALUES ('SYMBOL - Proxy','proxy');
+INSERT INTO `icons` VALUES ('SYMBOL - Router','router');
+INSERT INTO `icons` VALUES ('SYMBOL - Switch','switch');
+INSERT INTO `icons` VALUES ('SYMBOL - Video Camera','camera');
+INSERT INTO `icons` VALUES ('SYMBOL - Video Server','camera_svr');
+INSERT INTO `icons` VALUES ('SYMBOL - VLAN','vlan');
+INSERT INTO `icons` VALUES ('SYMBOL - VPN','vpn');
+INSERT INTO `icons` VALUES ('SYMBOL - Web site','website');
+INSERT INTO `icons` VALUES ('SYMBOL - Wireless network','wireless');
+INSERT INTO `icons` VALUES ('SYMBOL - WWW','www');
+/*!40000 ALTER TABLE `icons` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `keywordhostgroups`;
+CREATE TABLE `keywordhostgroups` (
+  `keywordid` int(11) NOT NULL DEFAULT '0',
+  `hostgroupid` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`keywordid`,`hostgroupid`),
+  KEY `keywordid` (`keywordid`),
+  KEY `hostgroupid` (`hostgroupid`),
+  CONSTRAINT `keywordhostgroups_hostgroupsid_fk` FOREIGN KEY (`hostgroupid`) REFERENCES `hostgroups` (`id`),
+  CONSTRAINT `keywordhostgroups_keywordid_fk` FOREIGN KEY (`keywordid`) REFERENCES `keywords` (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `keywordhostgroups` WRITE;
+/*!40000 ALTER TABLE `keywordhostgroups` DISABLE KEYS */;
+/*!40000 ALTER TABLE `keywordhostgroups` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `keywordhosts`;
+CREATE TABLE `keywordhosts` (
+  `keywordid` int(11) NOT NULL DEFAULT '0',
+  `hostid` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`keywordid`,`hostid`),
+  KEY `keywordid` (`keywordid`),
+  KEY `hostid` (`hostid`),
+  CONSTRAINT `keywordhosts_hostid_fk` FOREIGN KEY (`hostid`) REFERENCES `hosts` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `keywordhosts_keywordid_fk` FOREIGN KEY (`keywordid`) REFERENCES `keywords` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `keywordhosts` WRITE;
+/*!40000 ALTER TABLE `keywordhosts` DISABLE KEYS */;
+INSERT INTO `keywordhosts` VALUES (1,12);
+INSERT INTO `keywordhosts` VALUES (2,7);
+INSERT INTO `keywordhosts` VALUES (2,8);
+INSERT INTO `keywordhosts` VALUES (2,9);
+INSERT INTO `keywordhosts` VALUES (2,10);
+INSERT INTO `keywordhosts` VALUES (2,11);
+INSERT INTO `keywordhosts` VALUES (3,7);
+INSERT INTO `keywordhosts` VALUES (3,8);
+INSERT INTO `keywordhosts` VALUES (3,9);
+INSERT INTO `keywordhosts` VALUES (4,9);
+INSERT INTO `keywordhosts` VALUES (4,10);
+INSERT INTO `keywordhosts` VALUES (4,11);
+INSERT INTO `keywordhosts` VALUES (5,5);
+INSERT INTO `keywordhosts` VALUES (5,19);
+INSERT INTO `keywordhosts` VALUES (5,20);
+INSERT INTO `keywordhosts` VALUES (5,21);
+INSERT INTO `keywordhosts` VALUES (6,7);
+INSERT INTO `keywordhosts` VALUES (8,1);
+INSERT INTO `keywordhosts` VALUES (8,3);
+INSERT INTO `keywordhosts` VALUES (8,5);
+INSERT INTO `keywordhosts` VALUES (8,19);
+INSERT INTO `keywordhosts` VALUES (8,20);
+INSERT INTO `keywordhosts` VALUES (8,21);
+INSERT INTO `keywordhosts` VALUES (9,15);
+/*!40000 ALTER TABLE `keywordhosts` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `keywordhosttemplates`;
+CREATE TABLE `keywordhosttemplates` (
+  `keywordid` int(11) NOT NULL DEFAULT '0',
+  `hosttemplateid` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`keywordid`,`hosttemplateid`),
+  KEY `keywordid` (`keywordid`),
+  KEY `hosttemplateid` (`hosttemplateid`),
+  CONSTRAINT `keywordhosttemplates_hosttemplateid_fk` FOREIGN KEY (`hosttemplateid`) REFERENCES `hosttemplates` (`id`),
+  CONSTRAINT `keywordhosttemplates_keywordid_fk` FOREIGN KEY (`keywordid`) REFERENCES `keywords` (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `keywordhosttemplates` WRITE;
+/*!40000 ALTER TABLE `keywordhosttemplates` DISABLE KEYS */;
+/*!40000 ALTER TABLE `keywordhosttemplates` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `keywords`;
+CREATE TABLE `keywords` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) NOT NULL DEFAULT '',
+  `description` varchar(255) DEFAULT NULL,
+  `enabled` tinyint(1) NOT NULL DEFAULT '0',
+  `style` varchar(128) DEFAULT NULL,
+  `all_hosts` tinyint(1) NOT NULL DEFAULT '0',
+  `all_servicechecks` tinyint(1) NOT NULL DEFAULT '0',
+  `public` tinyint(1) NOT NULL DEFAULT '0',
+  `show_contextual_menus` tinyint(1) NOT NULL DEFAULT '1',
+  `uncommitted` tinyint(1) NOT NULL DEFAULT '0',
+  `exclude_handled` tinyint(1) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`),
+  KEY `enabled_id_public` (`enabled`,`id`,`public`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `keywords` WRITE;
+/*!40000 ALTER TABLE `keywords` DISABLE KEYS */;
+INSERT INTO `keywords` VALUES (1,'cloneable','cloneable devices',0,'group_by_host',0,0,1,0,0,0);
+INSERT INTO `keywords` VALUES (2,'cisco','cisco devices',1,'group_by_host',0,0,1,0,0,0);
+INSERT INTO `keywords` VALUES (3,'cisco_gp1','cisco devices, group 1',1,'group_by_host',0,0,1,1,0,0);
+INSERT INTO `keywords` VALUES (4,'cisco_gp2','Not public keyword',1,'group_by_host',0,0,0,0,0,0);
+INSERT INTO `keywords` VALUES (5,'disabled',NULL,0,NULL,0,0,1,0,0,0);
+INSERT INTO `keywords` VALUES (6,'alphaearly','Should not display in list of keywords on viewport summary',1,'group_by_host',0,0,1,0,0,0);
+INSERT INTO `keywords` VALUES (7,'allhosts',NULL,0,NULL,1,0,1,0,0,0);
+INSERT INTO `keywords` VALUES (8,'allservicechecks',NULL,0,NULL,0,1,1,0,0,0);
+INSERT INTO `keywords` VALUES (9,'allhandled','All services handled',1,'errors_and_host_cells',0,0,1,0,0,0);
+/*!40000 ALTER TABLE `keywords` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `keywordservicechecks`;
+CREATE TABLE `keywordservicechecks` (
+  `keywordid` int(11) NOT NULL DEFAULT '0',
+  `servicecheckid` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`keywordid`,`servicecheckid`),
+  KEY `keywordid` (`keywordid`),
+  KEY `servicecheckid` (`servicecheckid`),
+  CONSTRAINT `keywordservicechecks_keywordid_fk` FOREIGN KEY (`keywordid`) REFERENCES `keywords` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `keywordservicechecks_servicecheckid_fk` FOREIGN KEY (`servicecheckid`) REFERENCES `servicechecks` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `keywordservicechecks` WRITE;
+/*!40000 ALTER TABLE `keywordservicechecks` DISABLE KEYS */;
+INSERT INTO `keywordservicechecks` VALUES (2,79);
+INSERT INTO `keywordservicechecks` VALUES (2,81);
+INSERT INTO `keywordservicechecks` VALUES (2,82);
+INSERT INTO `keywordservicechecks` VALUES (2,95);
+INSERT INTO `keywordservicechecks` VALUES (3,79);
+INSERT INTO `keywordservicechecks` VALUES (3,81);
+INSERT INTO `keywordservicechecks` VALUES (3,82);
+INSERT INTO `keywordservicechecks` VALUES (4,79);
+INSERT INTO `keywordservicechecks` VALUES (4,81);
+INSERT INTO `keywordservicechecks` VALUES (4,82);
+INSERT INTO `keywordservicechecks` VALUES (5,47);
+INSERT INTO `keywordservicechecks` VALUES (7,47);
+INSERT INTO `keywordservicechecks` VALUES (7,95);
+INSERT INTO `keywordservicechecks` VALUES (9,29);
+/*!40000 ALTER TABLE `keywordservicechecks` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `keywordservicegroups`;
+CREATE TABLE `keywordservicegroups` (
+  `keywordid` int(11) NOT NULL DEFAULT '0',
+  `servicegroupid` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`keywordid`,`servicegroupid`),
+  KEY `keywordid` (`keywordid`),
+  KEY `servicegroupid` (`servicegroupid`),
+  CONSTRAINT `keywordservicegroups_keywordid_fk` FOREIGN KEY (`keywordid`) REFERENCES `keywords` (`id`),
+  CONSTRAINT `keywordservicegroups_servicegroupid_fk` FOREIGN KEY (`servicegroupid`) REFERENCES `servicegroups` (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `keywordservicegroups` WRITE;
+/*!40000 ALTER TABLE `keywordservicegroups` DISABLE KEYS */;
+/*!40000 ALTER TABLE `keywordservicegroups` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `metadata`;
+CREATE TABLE `metadata` (
+  `name` varchar(128) NOT NULL DEFAULT '',
+  `value` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`name`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `metadata` WRITE;
+/*!40000 ALTER TABLE `metadata` DISABLE KEYS */;
+INSERT INTO `metadata` VALUES ('housekeeping_duration','0');
+INSERT INTO `metadata` VALUES ('last_housekeeping_time','1373463448');
+INSERT INTO `metadata` VALUES ('uncommitted','0');
+INSERT INTO `metadata` VALUES ('version','2.8.19');
+/*!40000 ALTER TABLE `metadata` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `modules`;
+CREATE TABLE `modules` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) NOT NULL,
+  `url` varchar(255) NOT NULL,
+  `description` varchar(255) NOT NULL,
+  `access` varchar(128) NOT NULL,
+  `enabled` tinyint(4) DEFAULT '0',
+  `priority` int(11) NOT NULL DEFAULT '1',
+  `version` varchar(16) NOT NULL DEFAULT '',
+  `namespace` varchar(255) NOT NULL DEFAULT '',
+  `installed` tinyint(1) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `namespace` (`namespace`)
+) ENGINE=InnoDB COMMENT='Opsview modules';
+
+
+LOCK TABLES `modules` WRITE;
+/*!40000 ALTER TABLE `modules` DISABLE KEYS */;
+INSERT INTO `modules` VALUES (1,'Nagvis','/modules/nagvis','Nagios Visualisation','NAGVIS',1,1,'','com.opsview.modules.nagvis',1);
+INSERT INTO `modules` VALUES (2,'MRTG','/status/network_traffic','Multi Router Traffic Grapher','',1,2,'','com.opsview.modules.mrtg',1);
+INSERT INTO `modules` VALUES (3,'NMIS','/cgi-nmis/nmiscgi.pl','Network Management Information System','ADMINACCESS',1,3,'','com.opsview.modules.nmis',1);
+INSERT INTO `modules` VALUES (4,'Reports','http://www.opsview.com/products/enterprise-modules/reports','Opsview Reports Module','REPORTUSER',1,500,'','com.opsview.modules.reports',0);
+INSERT INTO `modules` VALUES (5,'Service Desk Connector','http://www.opsview.com/products/enterprise-modules/service-desk-connector','Opsview Service Desk Connector','ADMINACCESS',1,501,'','com.opsview.modules.servicedesk',0);
+INSERT INTO `modules` VALUES (6,'SMS Messaging','http://www.opsview.com/products/enterprise-modules/sms-messaging','Opsview SMS Messaging','ADMINACCESS',1,502,'','com.opsview.modules.smsmessaging',0);
+INSERT INTO `modules` VALUES (7,'Netaudit','http://www.opsview.com/products/enterprise-modules/rancid','Opsview Netaudit','ADMINACCESS',1,503,'','com.opsview.modules.rancid',0);
+/*!40000 ALTER TABLE `modules` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `monitor_packs`;
+CREATE TABLE `monitor_packs` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) NOT NULL,
+  `alias` varchar(255) NOT NULL,
+  `version` varchar(16) NOT NULL,
+  `status` enum('OK','NOTICE','FAILURE','INSTALLING') NOT NULL DEFAULT 'INSTALLING',
+  `message` text NOT NULL,
+  `dependencies` text NOT NULL,
+  `created` int(11) NOT NULL,
+  `updated` int(11) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB COMMENT='Opsview Monitor Packs';
+
+
+LOCK TABLES `monitor_packs` WRITE;
+/*!40000 ALTER TABLE `monitor_packs` DISABLE KEYS */;
+/*!40000 ALTER TABLE `monitor_packs` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `monitoringclusternodes`;
+CREATE TABLE `monitoringclusternodes` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `monitoringcluster` int(11) NOT NULL DEFAULT '0',
+  `host` int(11) NOT NULL DEFAULT '0',
+  `activated` int(11) NOT NULL DEFAULT '1',
+  `passive` int(11) NOT NULL DEFAULT '0',
+  `uncommitted` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `monitoringcluster` (`monitoringcluster`,`host`),
+  KEY `monitoringcluster_2` (`monitoringcluster`),
+  KEY `host` (`host`),
+  CONSTRAINT `monitoringclusternodes_host_fk` FOREIGN KEY (`host`) REFERENCES `hosts` (`id`),
+  CONSTRAINT `monitoringclusternodes_monitoringcluster_fk` FOREIGN KEY (`monitoringcluster`) REFERENCES `monitoringservers` (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `monitoringclusternodes` WRITE;
+/*!40000 ALTER TABLE `monitoringclusternodes` DISABLE KEYS */;
+INSERT INTO `monitoringclusternodes` VALUES (1,2,5,1,0,0);
+INSERT INTO `monitoringclusternodes` VALUES (2,3,19,1,0,0);
+INSERT INTO `monitoringclusternodes` VALUES (3,3,20,1,0,0);
+INSERT INTO `monitoringclusternodes` VALUES (4,3,21,1,0,0);
+INSERT INTO `monitoringclusternodes` VALUES (5,4,23,1,0,0);
+INSERT INTO `monitoringclusternodes` VALUES (6,5,9,1,0,0);
+/*!40000 ALTER TABLE `monitoringclusternodes` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `monitoringservers`;
+CREATE TABLE `monitoringservers` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(64) NOT NULL DEFAULT '',
+  `host` int(11) DEFAULT NULL,
+  `role` enum('Master','Slave') DEFAULT 'Slave',
+  `activated` int(11) NOT NULL DEFAULT '1',
+  `passive` int(11) NOT NULL DEFAULT '0',
+  `uncommitted` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`),
+  KEY `monitoringservers_host_fk` (`host`),
+  CONSTRAINT `monitoringservers_host_fk` FOREIGN KEY (`host`) REFERENCES `hosts` (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `monitoringservers` WRITE;
+/*!40000 ALTER TABLE `monitoringservers` DISABLE KEYS */;
+INSERT INTO `monitoringservers` VALUES (1,'Master Monitoring Server',1,'Master',1,0,0);
+INSERT INTO `monitoringservers` VALUES (2,'ClusterA',NULL,'Slave',1,0,0);
+INSERT INTO `monitoringservers` VALUES (3,'Cluster',NULL,'Slave',1,0,0);
+INSERT INTO `monitoringservers` VALUES (4,'PassiveSlave',NULL,'Slave',1,1,0);
+INSERT INTO `monitoringservers` VALUES (5,'Deactivated',NULL,'Slave',0,0,0);
+/*!40000 ALTER TABLE `monitoringservers` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `notificationmethod_variables`;
+CREATE TABLE `notificationmethod_variables` (
+  `notificationmethodid` int(11) NOT NULL,
+  `name` varchar(128) NOT NULL,
+  `value` text,
+  PRIMARY KEY (`notificationmethodid`,`name`),
+  KEY `notificationmethodid` (`notificationmethodid`),
+  CONSTRAINT `notificationmethod_variables_notificationmethodid_fk` FOREIGN KEY (`notificationmethodid`) REFERENCES `notificationmethods` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `notificationmethod_variables` WRITE;
+/*!40000 ALTER TABLE `notificationmethod_variables` DISABLE KEYS */;
+INSERT INTO `notificationmethod_variables` VALUES (1,'AQL_PASSWORD','aqlpass');
+INSERT INTO `notificationmethod_variables` VALUES (1,'AQL_PROXY_SERVER','http://proxy.example.com');
+INSERT INTO `notificationmethod_variables` VALUES (1,'AQL_USERNAME','aqluser');
+/*!40000 ALTER TABLE `notificationmethod_variables` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `notificationmethods`;
+CREATE TABLE `notificationmethods` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `active` tinyint(1) NOT NULL DEFAULT '1',
+  `name` varchar(64) NOT NULL DEFAULT '',
+  `namespace` varchar(255) NOT NULL,
+  `master` tinyint(1) NOT NULL DEFAULT '1',
+  `command` text,
+  `priority` int(11) NOT NULL DEFAULT '1',
+  `uncommitted` tinyint(1) NOT NULL DEFAULT '0',
+  `contact_variables` text,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `notificationmethods` WRITE;
+/*!40000 ALTER TABLE `notificationmethods` DISABLE KEYS */;
+INSERT INTO `notificationmethods` VALUES (1,1,'AQL','com.opsview.notificationmethods.aql',0,'submit_sms_aql -u \'\' -p \'\' -P \'\'',2,0,'PAGER');
+INSERT INTO `notificationmethods` VALUES (2,0,'SMS Notification Module','com.opsview.notificationmethods.smsgateway',0,'submit_sms_script',3,0,'PAGER');
+INSERT INTO `notificationmethods` VALUES (3,1,'Email','com.opsview.notificationmethods.email',0,'notify_by_email',1,0,'EMAIL');
+INSERT INTO `notificationmethods` VALUES (4,1,'RSS','com.opsview.notificationmethods.rss',1,'notify_by_rss',2000,0,'RSS_MAXIMUM_ITEMS,RSS_MAXIMUM_AGE,RSS_COLLAPSED');
+INSERT INTO `notificationmethods` VALUES (5,0,'unused','unused',1,'unused',1,0,'');
+INSERT INTO `notificationmethods` VALUES (6,1,'Push Notifications For iOS Mobile','com.opsview.notificationmethods.iospush',1,'notify_by_ios_push',1,0,NULL);
+/*!40000 ALTER TABLE `notificationmethods` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `notificationprofile_hostgroups`;
+CREATE TABLE `notificationprofile_hostgroups` (
+  `notificationprofileid` int(11) NOT NULL,
+  `hostgroupid` int(11) NOT NULL,
+  PRIMARY KEY (`notificationprofileid`,`hostgroupid`),
+  KEY `notificationprofileid` (`notificationprofileid`),
+  KEY `hostgroupid` (`hostgroupid`),
+  CONSTRAINT `notificationprofile_hostgroups_hostgroupid_fk` FOREIGN KEY (`hostgroupid`) REFERENCES `hostgroups` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `notificationprofile_hostgroups_notificationprofileid_fk` FOREIGN KEY (`notificationprofileid`) REFERENCES `notificationprofiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `notificationprofile_hostgroups` WRITE;
+/*!40000 ALTER TABLE `notificationprofile_hostgroups` DISABLE KEYS */;
+INSERT INTO `notificationprofile_hostgroups` VALUES (4,5);
+INSERT INTO `notificationprofile_hostgroups` VALUES (8,4);
+INSERT INTO `notificationprofile_hostgroups` VALUES (8,5);
+INSERT INTO `notificationprofile_hostgroups` VALUES (9,4);
+INSERT INTO `notificationprofile_hostgroups` VALUES (9,5);
+INSERT INTO `notificationprofile_hostgroups` VALUES (12,5);
+/*!40000 ALTER TABLE `notificationprofile_hostgroups` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `notificationprofile_keywords`;
+CREATE TABLE `notificationprofile_keywords` (
+  `notificationprofileid` int(11) NOT NULL,
+  `keywordid` int(11) NOT NULL,
+  PRIMARY KEY (`notificationprofileid`,`keywordid`),
+  KEY `notificationprofileid` (`notificationprofileid`),
+  KEY `keywordid` (`keywordid`),
+  CONSTRAINT `notificationprofile_keywords_keywordid_fk` FOREIGN KEY (`keywordid`) REFERENCES `keywords` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `notificationprofile_keywords_notificationprofileid_fk` FOREIGN KEY (`notificationprofileid`) REFERENCES `notificationprofiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `notificationprofile_keywords` WRITE;
+/*!40000 ALTER TABLE `notificationprofile_keywords` DISABLE KEYS */;
+INSERT INTO `notificationprofile_keywords` VALUES (8,6);
+INSERT INTO `notificationprofile_keywords` VALUES (11,1);
+INSERT INTO `notificationprofile_keywords` VALUES (11,2);
+INSERT INTO `notificationprofile_keywords` VALUES (11,4);
+INSERT INTO `notificationprofile_keywords` VALUES (11,5);
+INSERT INTO `notificationprofile_keywords` VALUES (13,2);
+/*!40000 ALTER TABLE `notificationprofile_keywords` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `notificationprofile_notificationmethods`;
+CREATE TABLE `notificationprofile_notificationmethods` (
+  `notificationprofileid` int(11) NOT NULL,
+  `notificationmethodid` int(11) NOT NULL,
+  PRIMARY KEY (`notificationprofileid`,`notificationmethodid`),
+  KEY `notificationprofileid` (`notificationprofileid`),
+  KEY `notificationmethodid` (`notificationmethodid`),
+  CONSTRAINT `notificationprofile_notificationmethods_notificationmethodid_fk` FOREIGN KEY (`notificationmethodid`) REFERENCES `notificationmethods` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `notificationprofile_notificationmethods_notificationprofileid_fk` FOREIGN KEY (`notificationprofileid`) REFERENCES `notificationprofiles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='Notification profile with multiple notification methods';
+
+
+LOCK TABLES `notificationprofile_notificationmethods` WRITE;
+/*!40000 ALTER TABLE `notificationprofile_notificationmethods` DISABLE KEYS */;
+INSERT INTO `notificationprofile_notificationmethods` VALUES (2,4);
+INSERT INTO `notificationprofile_notificationmethods` VALUES (2,5);
+INSERT INTO `notificationprofile_notificationmethods` VALUES (3,1);
+INSERT INTO `notificationprofile_notificationmethods` VALUES (3,3);
+INSERT INTO `notificationprofile_notificationmethods` VALUES (3,4);
+INSERT INTO `notificationprofile_notificationmethods` VALUES (4,4);
+INSERT INTO `notificationprofile_notificationmethods` VALUES (6,4);
+INSERT INTO `notificationprofile_notificationmethods` VALUES (7,4);
+INSERT INTO `notificationprofile_notificationmethods` VALUES (8,1);
+INSERT INTO `notificationprofile_notificationmethods` VALUES (8,4);
+INSERT INTO `notificationprofile_notificationmethods` VALUES (9,1);
+INSERT INTO `notificationprofile_notificationmethods` VALUES (9,4);
+INSERT INTO `notificationprofile_notificationmethods` VALUES (10,4);
+INSERT INTO `notificationprofile_notificationmethods` VALUES (11,4);
+INSERT INTO `notificationprofile_notificationmethods` VALUES (12,1);
+INSERT INTO `notificationprofile_notificationmethods` VALUES (13,1);
+/*!40000 ALTER TABLE `notificationprofile_notificationmethods` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `notificationprofile_servicegroups`;
+CREATE TABLE `notificationprofile_servicegroups` (
+  `notificationprofileid` int(11) NOT NULL,
+  `servicegroupid` int(11) NOT NULL,
+  PRIMARY KEY (`notificationprofileid`,`servicegroupid`),
+  KEY `notificationprofileid` (`notificationprofileid`),
+  KEY `servicegroupid` (`servicegroupid`),
+  CONSTRAINT `notificationprofile_servicegroups_notificationprofileid_fk` FOREIGN KEY (`notificationprofileid`) REFERENCES `notificationprofiles` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `notificationprofile_servicegroups_servicegroupid_fk` FOREIGN KEY (`servicegroupid`) REFERENCES `servicegroups` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `notificationprofile_servicegroups` WRITE;
+/*!40000 ALTER TABLE `notificationprofile_servicegroups` DISABLE KEYS */;
+INSERT INTO `notificationprofile_servicegroups` VALUES (8,1);
+INSERT INTO `notificationprofile_servicegroups` VALUES (9,1);
+INSERT INTO `notificationprofile_servicegroups` VALUES (12,1);
+/*!40000 ALTER TABLE `notificationprofile_servicegroups` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `notificationprofiles`;
+CREATE TABLE `notificationprofiles` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) NOT NULL,
+  `contactid` int(11) NOT NULL,
+  `host_notification_options` varchar(16) DEFAULT NULL,
+  `service_notification_options` varchar(16) DEFAULT NULL,
+  `notification_period` int(11) NOT NULL DEFAULT '1',
+  `all_hostgroups` int(11) NOT NULL DEFAULT '1',
+  `all_servicegroups` int(11) NOT NULL DEFAULT '1',
+  `all_keywords` tinyint(1) NOT NULL DEFAULT '1',
+  `notification_level` int(11) NOT NULL DEFAULT '1',
+  `priority` int(11) DEFAULT '1000',
+  `uncommitted` int(11) NOT NULL DEFAULT '0',
+  `notification_level_stop` smallint(6) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `notificationprofiles_name_contactid` (`name`,`contactid`),
+  KEY `notification_period` (`notification_period`),
+  KEY `contactid` (`contactid`),
+  CONSTRAINT `notificationprofiles_contactid_fk` FOREIGN KEY (`contactid`) REFERENCES `contacts` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `notificationprofiles_notification_period_fk` FOREIGN KEY (`notification_period`) REFERENCES `timeperiods` (`id`)
+) ENGINE=InnoDB COMMENT='Notification profiles';
+
+
+LOCK TABLES `notificationprofiles` WRITE;
+/*!40000 ALTER TABLE `notificationprofiles` DISABLE KEYS */;
+INSERT INTO `notificationprofiles` VALUES (2,'Default',2,'u,d,r','w,c,r,u',1,1,1,0,1,1,0,0);
+INSERT INTO `notificationprofiles` VALUES (3,'Default',3,'u,d,r,f','w,c,r,u,f',1,1,1,0,1,1,0,0);
+INSERT INTO `notificationprofiles` VALUES (4,'Default',4,'u,d,r,f','w,c,r,u,f',1,0,1,0,1,2,0,0);
+INSERT INTO `notificationprofiles` VALUES (6,'Default',6,'u,d,r','w,c,r,u',1,1,1,0,1,1,0,0);
+INSERT INTO `notificationprofiles` VALUES (7,'Default',7,'u,d,r','w,c,r,u',1,1,1,0,1,1,0,7);
+INSERT INTO `notificationprofiles` VALUES (8,'Default',8,'u','w',1,0,0,0,1,1,0,0);
+INSERT INTO `notificationprofiles` VALUES (9,'Default',9,'u','w',1,0,0,0,1,1,0,0);
+INSERT INTO `notificationprofiles` VALUES (10,'Default',10,'u,d,r,f','w,c,r,u,f',1,0,0,1,1,2,0,0);
+INSERT INTO `notificationprofiles` VALUES (11,'Default',11,'u,d,r,f','w,c,r,u,f',1,0,0,0,1,1,0,0);
+INSERT INTO `notificationprofiles` VALUES (12,'Non work hours sms',4,'d','c',3,0,0,0,1,1,0,0);
+INSERT INTO `notificationprofiles` VALUES (13,'High priority',10,'d','c,r',3,0,0,0,1,1,0,0);
+/*!40000 ALTER TABLE `notificationprofiles` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `parents`;
+CREATE TABLE `parents` (
+  `hostid` int(11) NOT NULL DEFAULT '0',
+  `parentid` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`hostid`,`parentid`),
+  KEY `hostid` (`hostid`),
+  KEY `parentid` (`parentid`),
+  CONSTRAINT `parents_hostid_fk` FOREIGN KEY (`hostid`) REFERENCES `hosts` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `parents_parentid_fk` FOREIGN KEY (`parentid`) REFERENCES `hosts` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `parents` WRITE;
+/*!40000 ALTER TABLE `parents` DISABLE KEYS */;
+INSERT INTO `parents` VALUES (4,7);
+INSERT INTO `parents` VALUES (4,10);
+INSERT INTO `parents` VALUES (11,7);
+INSERT INTO `parents` VALUES (17,9);
+INSERT INTO `parents` VALUES (17,11);
+INSERT INTO `parents` VALUES (20,7);
+/*!40000 ALTER TABLE `parents` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `performancemonitors`;
+CREATE TABLE `performancemonitors` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) DEFAULT NULL,
+  `description` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `performancemonitors` WRITE;
+/*!40000 ALTER TABLE `performancemonitors` DISABLE KEYS */;
+INSERT INTO `performancemonitors` VALUES (7,'MRTG Graphs','Generates MRTG traffic graphs for host');
+/*!40000 ALTER TABLE `performancemonitors` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `plugins`;
+CREATE TABLE `plugins` (
+  `name` varchar(128) NOT NULL DEFAULT '',
+  `onserver` int(11) DEFAULT '1',
+  `help` text,
+  `envvars` text NOT NULL,
+  PRIMARY KEY (`name`),
+  KEY `onserver` (`onserver`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `plugins` WRITE;
+/*!40000 ALTER TABLE `plugins` DISABLE KEYS */;
+INSERT INTO `plugins` VALUES ('check_apt',1,'check_apt: testdb','');
+INSERT INTO `plugins` VALUES ('check_breeze',1,'check_breeze: testdb','');
+INSERT INTO `plugins` VALUES ('check_by_ssh',1,'check_by_ssh: testdb','');
+INSERT INTO `plugins` VALUES ('check_clamd',1,'check_clamd: testdb','');
+INSERT INTO `plugins` VALUES ('check_dhcp',1,'check_dhcp: testdb','');
+INSERT INTO `plugins` VALUES ('check_dig',1,'check_dig: testdb','');
+INSERT INTO `plugins` VALUES ('check_disk',1,'check_disk: testdb','');
+INSERT INTO `plugins` VALUES ('check_disk_smb',1,'check_disk_smb: testdb','');
+INSERT INTO `plugins` VALUES ('check_dns',1,'check_dns: testdb','');
+INSERT INTO `plugins` VALUES ('check_dummy',1,'check_dummy: testdb','');
+INSERT INTO `plugins` VALUES ('check_dummy_plugin',1,'testmode!','');
+INSERT INTO `plugins` VALUES ('check_file_age',1,'check_file_age: testdb','');
+INSERT INTO `plugins` VALUES ('check_flexlm',1,'check_flexlm: testdb','');
+INSERT INTO `plugins` VALUES ('check_ftp',1,'check_ftp: testdb','');
+INSERT INTO `plugins` VALUES ('check_hpjd',1,'check_hpjd: testdb','');
+INSERT INTO `plugins` VALUES ('check_http',1,'check_http: testdb','');
+INSERT INTO `plugins` VALUES ('check_icmp',1,'check_icmp: testdb','');
+INSERT INTO `plugins` VALUES ('check_ifoperstatus',1,'check_ifoperstatus: testdb','');
+INSERT INTO `plugins` VALUES ('check_ifstatus',1,'check_ifstatus: testdb','');
+INSERT INTO `plugins` VALUES ('check_imap',1,'check_imap: testdb','');
+INSERT INTO `plugins` VALUES ('check_ircd',1,'check_ircd: testdb','');
+INSERT INTO `plugins` VALUES ('check_jabber',1,'check_jabber: testdb','');
+INSERT INTO `plugins` VALUES ('check_linksyswap',1,'check_linksyswap: testdb','');
+INSERT INTO `plugins` VALUES ('check_load',1,'check_load: testdb','');
+INSERT INTO `plugins` VALUES ('check_log',1,'check_log: testdb','');
+INSERT INTO `plugins` VALUES ('check_mailq',1,'check_mailq: testdb','');
+INSERT INTO `plugins` VALUES ('check_memory',1,'check_memory: testdb','');
+INSERT INTO `plugins` VALUES ('check_mrtg',1,'check_mrtg: testdb','');
+INSERT INTO `plugins` VALUES ('check_mrtgtraf',1,'check_mrtgtraf: testdb','');
+INSERT INTO `plugins` VALUES ('check_mysql',1,'check_mysql: testdb','');
+INSERT INTO `plugins` VALUES ('check_mysql_query',1,'check_mysql_query: testdb','');
+INSERT INTO `plugins` VALUES ('check_nagios',1,'check_nagios: testdb','');
+INSERT INTO `plugins` VALUES ('check_netbotz_humidity',1,'check_netbotz_humidity: testdb','');
+INSERT INTO `plugins` VALUES ('check_netbotz_temperature',1,'check_netbotz_temperature: testdb','');
+INSERT INTO `plugins` VALUES ('check_netsnmp_perfstats',1,'check_netsnmp_perfstats: testdb','');
+INSERT INTO `plugins` VALUES ('check_nntp',1,'check_nntp: testdb','');
+INSERT INTO `plugins` VALUES ('check_nntps',1,'check_nntps: testdb','');
+INSERT INTO `plugins` VALUES ('check_nrpe',1,'check_nrpe: testdb','');
+INSERT INTO `plugins` VALUES ('check_nt',1,'check_nt: testdb','');
+INSERT INTO `plugins` VALUES ('check_ntp',1,'check_ntp: testdb','');
+INSERT INTO `plugins` VALUES ('check_nwstat',1,'check_nwstat: testdb','');
+INSERT INTO `plugins` VALUES ('check_opsview_master',1,'check_opsview_master: testdb','');
+INSERT INTO `plugins` VALUES ('check_opsview_node',1,'test','');
+INSERT INTO `plugins` VALUES ('check_opsview_slave',1,'check_opsview_slave: testdb','');
+INSERT INTO `plugins` VALUES ('check_opsview_slave_cluster',1,'test','');
+INSERT INTO `plugins` VALUES ('check_opsview_slave_node',1,'test','');
+INSERT INTO `plugins` VALUES ('check_oracle',1,'check_oracle: testdb','');
+INSERT INTO `plugins` VALUES ('check_overcr',1,'check_overcr: testdb','');
+INSERT INTO `plugins` VALUES ('check_ping',1,'check_ping: testdb','');
+INSERT INTO `plugins` VALUES ('check_pop',1,'check_pop: testdb','');
+INSERT INTO `plugins` VALUES ('check_procs',1,'check_procs: testdb','');
+INSERT INTO `plugins` VALUES ('check_radius_ih',1,'check_radius_ih: testdb','');
+INSERT INTO `plugins` VALUES ('check_real',1,'check_real: testdb','');
+INSERT INTO `plugins` VALUES ('check_rpc',1,'check_rpc: testdb','');
+INSERT INTO `plugins` VALUES ('check_sensors',1,'check_sensors: testdb','');
+INSERT INTO `plugins` VALUES ('check_simap',1,'check_simap: testdb','');
+INSERT INTO `plugins` VALUES ('check_smart',1,'check_smart: testdb','');
+INSERT INTO `plugins` VALUES ('check_smtp',1,'check_smtp: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp',1,'check_snmp: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_apcups',1,'check_snmp_apcups: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_cisco_asa_hastatus',1,'check_snmp_cisco_asa_hastatus: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_cisco_bgppeer',1,'check_snmp_cisco_bgppeer: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_cisco_css_master',1,'check_snmp_cisco_css_master: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_cisco_ha',1,'check_snmp_cisco_ha: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_cisco_ha_ismaster',1,'check_snmp_cisco_ha_ismaster: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_cisco_ifstatus',1,'check_snmp_cisco_ifstatus: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_cisco_linkstatus',1,'check_snmp_cisco_linkstatus: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_cisco_loadavg',1,'check_snmp_cisco_loadavg: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_cisco_loadavg_asa',1,'check_snmp_cisco_loadavg_asa: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_cisco_memutil',1,'check_snmp_cisco_memutil: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_foundry_cpuavg',1,'check_snmp_foundry_cpuavg: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_foundry_loadavg',1,'check_snmp_foundry_loadavg: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_foundry_memutil',1,'check_snmp_foundry_memutil: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_fsutil',1,'check_snmp_fsutil: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_ifstatus',1,'check_snmp_ifstatus: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_interfaces',1,'check_snmp_interfaces: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_interfaces_cascade',1,'check_snmp_interfaces_cascade: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_linkstatus',1,'check_snmp_linkstatus: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_loadavg',1,'check_snmp_loadavg: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_memutil',1,'check_snmp_memutil: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_netscaler_clientconnections',1,'check_snmp_netscaler_clientconnections: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_netscaler_cpu',1,'check_snmp_netscaler_cpu: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_netscaler_httpssl',1,'check_snmp_netscaler_httpssl: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_netscaler_memutil',1,'check_snmp_netscaler_memutil: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_netscaler_serverconnections',1,'check_snmp_netscaler_serverconnections: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_netscaler_vserver',1,'check_snmp_netscaler_vserver: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_netscreen_activesessions',1,'check_snmp_netscreen_activesessions: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_netscreen_cpu',1,'check_snmp_netscreen_cpu: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_netscreen_mem',1,'check_snmp_netscreen_mem: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_netscreen_nsrp',1,'check_snmp_netscreen_nsrp: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_noprocesses',1,'check_snmp_noprocesses: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_nousers',1,'check_snmp_nousers: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_perfstats',1,'check_snmp_perfstats: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_runningproc',1,'check_snmp_runningproc: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_sensatronics_temp',1,'check_snmp_sensatronics_temp: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_sysinfo',1,'check_snmp_sysinfo: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_tcpcurrestab',1,'check_snmp_tcpcurrestab: testdb','EVENTSTARTTIME,PROCESSSTARTTIME');
+INSERT INTO `plugins` VALUES ('check_snmp_tcpcurrestab_cssfix',1,'check_snmp_tcpcurrestab_cssfix: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_uptime',1,'check_snmp_uptime: testdb','HOSTNAME');
+INSERT INTO `plugins` VALUES ('check_snmp_weblogic_appsessions',1,'check_snmp_weblogic_appsessions: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_weblogic_clusterservers',1,'check_snmp_weblogic_clusterservers: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_weblogic_deploymentstatus',1,'check_snmp_weblogic_deploymentstatus: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_weblogic_idlethreads',1,'check_snmp_weblogic_idlethreads: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_weblogic_jdbccapacity',1,'check_snmp_weblogic_jdbccapacity: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_weblogic_jdbcconns',1,'check_snmp_weblogic_jdbcconns: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_weblogic_jmsmsgbridge',1,'check_snmp_weblogic_jmsmsgbridge: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_weblogic_jmsqueuelength',1,'check_snmp_weblogic_jmsqueuelength: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_weblogic_jms_dests',1,'check_snmp_weblogic_jms_dests: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_weblogic_jms_servers',1,'check_snmp_weblogic_jms_servers: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_weblogic_lockedout',1,'check_snmp_weblogic_lockedout: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_weblogic_queuelength',1,'check_snmp_weblogic_queuelength: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_weblogic_servermemory',1,'check_snmp_weblogic_servermemory: testdb','');
+INSERT INTO `plugins` VALUES ('check_snmp_weblogic_serverstatus',1,'check_snmp_weblogic_serverstatus: testdb','');
+INSERT INTO `plugins` VALUES ('check_spop',1,'check_spop: testdb','');
+INSERT INTO `plugins` VALUES ('check_ssh',1,'check_ssh: testdb','HOSTADDRESS');
+INSERT INTO `plugins` VALUES ('check_ssmtp',1,'check_ssmtp: testdb','');
+INSERT INTO `plugins` VALUES ('check_swap',1,'check_swap: testdb','');
+INSERT INTO `plugins` VALUES ('check_tcp',1,'check_tcp: testdb','');
+INSERT INTO `plugins` VALUES ('check_tcpconnections',1,'check_tcpconnections: testdb','');
+INSERT INTO `plugins` VALUES ('check_tftp',1,'check_tftp: testdb','');
+INSERT INTO `plugins` VALUES ('check_time',1,'check_time: testdb','');
+INSERT INTO `plugins` VALUES ('check_udp',1,'check_udp: testdb','');
+INSERT INTO `plugins` VALUES ('check_ups',1,'check_ups: testdb','');
+INSERT INTO `plugins` VALUES ('check_users',1,'check_users: testdb','');
+INSERT INTO `plugins` VALUES ('check_wave',1,'check_wave: testdb','');
+/*!40000 ALTER TABLE `plugins` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `rancid_vendors`;
+CREATE TABLE `rancid_vendors` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) NOT NULL DEFAULT '',
+  `rancid_name` varchar(128) NOT NULL DEFAULT '',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB COMMENT='Vendor devices supported by rancid';
+
+
+LOCK TABLES `rancid_vendors` WRITE;
+/*!40000 ALTER TABLE `rancid_vendors` DISABLE KEYS */;
+/*!40000 ALTER TABLE `rancid_vendors` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `reloadmessages`;
+CREATE TABLE `reloadmessages` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `utime` int(11) NOT NULL DEFAULT '0',
+  `monitoringcluster` int(11) DEFAULT NULL,
+  `severity` enum('warning','critical') NOT NULL DEFAULT 'warning',
+  `message` text,
+  PRIMARY KEY (`id`),
+  KEY `monitoringcluster` (`monitoringcluster`),
+  CONSTRAINT `reloadmessages_monitoringcluster_fk` FOREIGN KEY (`monitoringcluster`) REFERENCES `monitoringservers` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `reloadmessages` WRITE;
+/*!40000 ALTER TABLE `reloadmessages` DISABLE KEYS */;
+/*!40000 ALTER TABLE `reloadmessages` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `reloadtimes`;
+CREATE TABLE `reloadtimes` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `start_config` int(11) DEFAULT NULL,
+  `end_config` int(11) DEFAULT NULL,
+  `duration` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `reloadtimes` WRITE;
+/*!40000 ALTER TABLE `reloadtimes` DISABLE KEYS */;
+INSERT INTO `reloadtimes` VALUES (1,1186586383,1186586383,1);
+INSERT INTO `reloadtimes` VALUES (2,1188559653,1188559654,NULL);
+INSERT INTO `reloadtimes` VALUES (3,1188564334,1188564334,NULL);
+INSERT INTO `reloadtimes` VALUES (4,1188564643,1188564644,NULL);
+/*!40000 ALTER TABLE `reloadtimes` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `role_access_hostgroups`;
+CREATE TABLE `role_access_hostgroups` (
+  `roleid` int(11) NOT NULL,
+  `hostgroupid` int(11) NOT NULL,
+  PRIMARY KEY (`roleid`,`hostgroupid`),
+  KEY `roleid` (`roleid`),
+  KEY `hostgroupid` (`hostgroupid`),
+  CONSTRAINT `role_access_hostgroups_hostgroupid_fk` FOREIGN KEY (`hostgroupid`) REFERENCES `hostgroups` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `role_access_hostgroups_roleid_fk` FOREIGN KEY (`roleid`) REFERENCES `roles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='Role to host groups access list';
+
+
+LOCK TABLES `role_access_hostgroups` WRITE;
+/*!40000 ALTER TABLE `role_access_hostgroups` DISABLE KEYS */;
+INSERT INTO `role_access_hostgroups` VALUES (18,5);
+INSERT INTO `role_access_hostgroups` VALUES (19,4);
+INSERT INTO `role_access_hostgroups` VALUES (19,5);
+INSERT INTO `role_access_hostgroups` VALUES (20,4);
+INSERT INTO `role_access_hostgroups` VALUES (20,5);
+/*!40000 ALTER TABLE `role_access_hostgroups` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `role_access_keywords`;
+CREATE TABLE `role_access_keywords` (
+  `roleid` int(11) NOT NULL,
+  `keywordid` int(11) NOT NULL,
+  PRIMARY KEY (`roleid`,`keywordid`),
+  KEY `roleid` (`roleid`),
+  KEY `keywordid` (`keywordid`),
+  CONSTRAINT `role_access_keywords_keywordid_fk` FOREIGN KEY (`keywordid`) REFERENCES `keywords` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `role_access_keywords_roleid_fk` FOREIGN KEY (`roleid`) REFERENCES `roles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='Role to keywords access list';
+
+
+LOCK TABLES `role_access_keywords` WRITE;
+/*!40000 ALTER TABLE `role_access_keywords` DISABLE KEYS */;
+INSERT INTO `role_access_keywords` VALUES (10,7);
+INSERT INTO `role_access_keywords` VALUES (10,8);
+INSERT INTO `role_access_keywords` VALUES (11,7);
+INSERT INTO `role_access_keywords` VALUES (14,2);
+INSERT INTO `role_access_keywords` VALUES (14,6);
+INSERT INTO `role_access_keywords` VALUES (15,1);
+INSERT INTO `role_access_keywords` VALUES (15,2);
+INSERT INTO `role_access_keywords` VALUES (15,4);
+INSERT INTO `role_access_keywords` VALUES (15,5);
+INSERT INTO `role_access_keywords` VALUES (19,6);
+/*!40000 ALTER TABLE `role_access_keywords` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `role_access_servicegroups`;
+CREATE TABLE `role_access_servicegroups` (
+  `roleid` int(11) NOT NULL,
+  `servicegroupid` int(11) NOT NULL,
+  PRIMARY KEY (`roleid`,`servicegroupid`),
+  KEY `roleid` (`roleid`),
+  KEY `servicegroupid` (`servicegroupid`),
+  CONSTRAINT `role_access_servicegroups_roleid_fk` FOREIGN KEY (`roleid`) REFERENCES `roles` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `role_access_servicegroups_servicegroupid_fk` FOREIGN KEY (`servicegroupid`) REFERENCES `servicegroups` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='Role to service groups access list';
+
+
+LOCK TABLES `role_access_servicegroups` WRITE;
+/*!40000 ALTER TABLE `role_access_servicegroups` DISABLE KEYS */;
+INSERT INTO `role_access_servicegroups` VALUES (19,1);
+INSERT INTO `role_access_servicegroups` VALUES (20,1);
+/*!40000 ALTER TABLE `role_access_servicegroups` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `roles`;
+CREATE TABLE `roles` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) NOT NULL DEFAULT '',
+  `description` varchar(255) DEFAULT NULL,
+  `priority` int(11) DEFAULT '1000',
+  `all_hostgroups` tinyint(1) NOT NULL DEFAULT '0',
+  `all_servicegroups` tinyint(1) NOT NULL DEFAULT '0',
+  `all_keywords` tinyint(1) NOT NULL DEFAULT '0',
+  `uncommitted` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `roles` WRITE;
+/*!40000 ALTER TABLE `roles` DISABLE KEYS */;
+INSERT INTO `roles` VALUES (1,'Public','Access available for public users',0,0,0,0,0);
+INSERT INTO `roles` VALUES (2,'Authenticated user','All authenticated users inherit this role',0,0,0,0,0);
+INSERT INTO `roles` VALUES (10,'Admin','Administrator access',1,1,1,0,0);
+INSERT INTO `roles` VALUES (11,'View all, change some','Operator',2,1,1,0,0);
+INSERT INTO `roles` VALUES (12,'View some, change some','Restricted operator',4,1,1,0,0);
+INSERT INTO `roles` VALUES (13,'View all, change none','Read only user',3,1,1,0,0);
+INSERT INTO `roles` VALUES (14,'View some, change none','Restricted read only user',5,0,0,0,0);
+INSERT INTO `roles` VALUES (15,'View some, change none, no notify','Restricted read only user without notifications',1000,0,0,0,0);
+INSERT INTO `roles` VALUES (16,'Admin no configurehosts','',1000,1,1,0,0);
+INSERT INTO `roles` VALUES (17,'demorole','Demo role',1000,0,0,0,0);
+INSERT INTO `roles` VALUES (18,'View some, change some - somehosts','Restricted operator',4,0,1,0,0);
+INSERT INTO `roles` VALUES (19,'View some, change none - viewsomechangenone','Restricted read only user',5,0,0,0,0);
+INSERT INTO `roles` VALUES (20,'View some, change none, no notify - viewsomechangenonewonotify','Restricted read only user without notifications',1000,0,0,0,0);
+INSERT INTO `roles` VALUES (21,'Keywordonly','Test keyword only',1000,1,1,1,0);
+/*!40000 ALTER TABLE `roles` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `roles_access`;
+CREATE TABLE `roles_access` (
+  `roleid` int(11) NOT NULL DEFAULT '0',
+  `accessid` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`roleid`,`accessid`),
+  KEY `roleid` (`roleid`),
+  KEY `accessid` (`accessid`),
+  CONSTRAINT `roles_access_access_fk` FOREIGN KEY (`accessid`) REFERENCES `access` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `roles_access_roles_fk` FOREIGN KEY (`roleid`) REFERENCES `roles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `roles_access` WRITE;
+/*!40000 ALTER TABLE `roles_access` DISABLE KEYS */;
+INSERT INTO `roles_access` VALUES (1,10);
+INSERT INTO `roles_access` VALUES (2,11);
+INSERT INTO `roles_access` VALUES (10,1);
+INSERT INTO `roles_access` VALUES (10,3);
+INSERT INTO `roles_access` VALUES (10,6);
+INSERT INTO `roles_access` VALUES (10,7);
+INSERT INTO `roles_access` VALUES (10,8);
+INSERT INTO `roles_access` VALUES (10,9);
+INSERT INTO `roles_access` VALUES (10,10);
+INSERT INTO `roles_access` VALUES (10,11);
+INSERT INTO `roles_access` VALUES (10,12);
+INSERT INTO `roles_access` VALUES (10,13);
+INSERT INTO `roles_access` VALUES (10,14);
+INSERT INTO `roles_access` VALUES (10,15);
+INSERT INTO `roles_access` VALUES (10,16);
+INSERT INTO `roles_access` VALUES (10,18);
+INSERT INTO `roles_access` VALUES (10,19);
+INSERT INTO `roles_access` VALUES (10,20);
+INSERT INTO `roles_access` VALUES (10,21);
+INSERT INTO `roles_access` VALUES (10,23);
+INSERT INTO `roles_access` VALUES (10,27);
+INSERT INTO `roles_access` VALUES (10,28);
+INSERT INTO `roles_access` VALUES (10,29);
+INSERT INTO `roles_access` VALUES (10,30);
+INSERT INTO `roles_access` VALUES (11,1);
+INSERT INTO `roles_access` VALUES (11,4);
+INSERT INTO `roles_access` VALUES (11,6);
+INSERT INTO `roles_access` VALUES (11,14);
+INSERT INTO `roles_access` VALUES (11,17);
+INSERT INTO `roles_access` VALUES (11,22);
+INSERT INTO `roles_access` VALUES (11,30);
+INSERT INTO `roles_access` VALUES (12,2);
+INSERT INTO `roles_access` VALUES (12,4);
+INSERT INTO `roles_access` VALUES (12,6);
+INSERT INTO `roles_access` VALUES (12,7);
+INSERT INTO `roles_access` VALUES (12,13);
+INSERT INTO `roles_access` VALUES (12,14);
+INSERT INTO `roles_access` VALUES (12,17);
+INSERT INTO `roles_access` VALUES (12,22);
+INSERT INTO `roles_access` VALUES (12,30);
+INSERT INTO `roles_access` VALUES (13,1);
+INSERT INTO `roles_access` VALUES (13,6);
+INSERT INTO `roles_access` VALUES (13,14);
+INSERT INTO `roles_access` VALUES (13,30);
+INSERT INTO `roles_access` VALUES (14,2);
+INSERT INTO `roles_access` VALUES (14,6);
+INSERT INTO `roles_access` VALUES (14,14);
+INSERT INTO `roles_access` VALUES (14,30);
+INSERT INTO `roles_access` VALUES (15,2);
+INSERT INTO `roles_access` VALUES (15,14);
+INSERT INTO `roles_access` VALUES (15,30);
+INSERT INTO `roles_access` VALUES (16,9);
+INSERT INTO `roles_access` VALUES (16,12);
+INSERT INTO `roles_access` VALUES (16,13);
+INSERT INTO `roles_access` VALUES (16,14);
+INSERT INTO `roles_access` VALUES (16,18);
+INSERT INTO `roles_access` VALUES (16,19);
+INSERT INTO `roles_access` VALUES (16,20);
+INSERT INTO `roles_access` VALUES (16,23);
+INSERT INTO `roles_access` VALUES (16,27);
+INSERT INTO `roles_access` VALUES (16,28);
+INSERT INTO `roles_access` VALUES (16,29);
+INSERT INTO `roles_access` VALUES (17,7);
+INSERT INTO `roles_access` VALUES (17,12);
+INSERT INTO `roles_access` VALUES (17,15);
+INSERT INTO `roles_access` VALUES (17,23);
+INSERT INTO `roles_access` VALUES (17,27);
+INSERT INTO `roles_access` VALUES (17,28);
+INSERT INTO `roles_access` VALUES (17,29);
+INSERT INTO `roles_access` VALUES (18,2);
+INSERT INTO `roles_access` VALUES (18,4);
+INSERT INTO `roles_access` VALUES (18,6);
+INSERT INTO `roles_access` VALUES (18,7);
+INSERT INTO `roles_access` VALUES (18,13);
+INSERT INTO `roles_access` VALUES (18,14);
+INSERT INTO `roles_access` VALUES (18,17);
+INSERT INTO `roles_access` VALUES (18,22);
+INSERT INTO `roles_access` VALUES (18,30);
+INSERT INTO `roles_access` VALUES (19,2);
+INSERT INTO `roles_access` VALUES (19,6);
+INSERT INTO `roles_access` VALUES (19,14);
+INSERT INTO `roles_access` VALUES (19,30);
+INSERT INTO `roles_access` VALUES (20,2);
+INSERT INTO `roles_access` VALUES (20,14);
+INSERT INTO `roles_access` VALUES (20,30);
+INSERT INTO `roles_access` VALUES (21,13);
+INSERT INTO `roles_access` VALUES (21,15);
+/*!40000 ALTER TABLE `roles_access` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `roles_hostgroups`;
+CREATE TABLE `roles_hostgroups` (
+  `roleid` int(11) NOT NULL DEFAULT '0',
+  `hostgroupid` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`roleid`,`hostgroupid`),
+  KEY `roleid` (`roleid`),
+  KEY `hostgroupid` (`hostgroupid`),
+  CONSTRAINT `roles_hostgroups_hostgroup_fk` FOREIGN KEY (`hostgroupid`) REFERENCES `hostgroups` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `roles_hostgroups_role_fk` FOREIGN KEY (`roleid`) REFERENCES `roles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `roles_hostgroups` WRITE;
+/*!40000 ALTER TABLE `roles_hostgroups` DISABLE KEYS */;
+INSERT INTO `roles_hostgroups` VALUES (10,1);
+INSERT INTO `roles_hostgroups` VALUES (12,6);
+INSERT INTO `roles_hostgroups` VALUES (12,7);
+INSERT INTO `roles_hostgroups` VALUES (16,4);
+INSERT INTO `roles_hostgroups` VALUES (17,1);
+INSERT INTO `roles_hostgroups` VALUES (18,6);
+INSERT INTO `roles_hostgroups` VALUES (18,7);
+/*!40000 ALTER TABLE `roles_hostgroups` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `roles_monitoringservers`;
+CREATE TABLE `roles_monitoringservers` (
+  `roleid` int(11) NOT NULL DEFAULT '0',
+  `monitoringserverid` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`roleid`,`monitoringserverid`),
+  KEY `roleid` (`roleid`),
+  KEY `monitoringserverid` (`monitoringserverid`),
+  CONSTRAINT `roles_monitoringservers_monitoringserver_fk` FOREIGN KEY (`monitoringserverid`) REFERENCES `monitoringservers` (`id`),
+  CONSTRAINT `roles_monitoringservers_role_fk` FOREIGN KEY (`roleid`) REFERENCES `roles` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `roles_monitoringservers` WRITE;
+/*!40000 ALTER TABLE `roles_monitoringservers` DISABLE KEYS */;
+INSERT INTO `roles_monitoringservers` VALUES (18,2);
+/*!40000 ALTER TABLE `roles_monitoringservers` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `schema_version`;
+CREATE TABLE `schema_version` (
+  `major_release` varchar(16) NOT NULL DEFAULT '',
+  `version` varchar(16) DEFAULT NULL,
+  `reason` varchar(255) DEFAULT NULL,
+  `created_at` datetime DEFAULT NULL,
+  `duration` int(11) DEFAULT NULL,
+  PRIMARY KEY (`major_release`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `schema_version` WRITE;
+/*!40000 ALTER TABLE `schema_version` DISABLE KEYS */;
+INSERT INTO `schema_version` VALUES ('2.10','5',NULL,NULL,NULL);
+INSERT INTO `schema_version` VALUES ('2.11','6',NULL,NULL,NULL);
+INSERT INTO `schema_version` VALUES ('2.12','5',NULL,NULL,NULL);
+INSERT INTO `schema_version` VALUES ('2.13','2',NULL,NULL,NULL);
+INSERT INTO `schema_version` VALUES ('2.14','9',NULL,NULL,NULL);
+INSERT INTO `schema_version` VALUES ('2.9','4',NULL,NULL,NULL);
+INSERT INTO `schema_version` VALUES ('20120906ios','all','Adding iOS push notification profile','2012-09-06 21:08:43',0);
+INSERT INTO `schema_version` VALUES ('20121023hostsidx','all','opsview.hosts (ip,name) index','2012-10-23 16:38:02',0);
+INSERT INTO `schema_version` VALUES ('20130115envvars','all','Support for envvars in plugins','2013-01-15 09:37:25',0);
+INSERT INTO `schema_version` VALUES ('20130122snmpport','all','Increasing the size of snmp_port','2013-01-22 10:18:48',0);
+INSERT INTO `schema_version` VALUES ('20130204baduuid','all','Checking for bad UUID','2013-02-04 14:40:14',0);
+INSERT INTO `schema_version` VALUES ('20130219hsteh','all','Host event handlers','2013-02-19 14:49:43',0);
+INSERT INTO `schema_version` VALUES ('20130221snmpthro','all','Increasing the size of snmp.throughput_*','2013-02-21 15:30:52',0);
+INSERT INTO `schema_version` VALUES ('20130424alerts','all','Support for limiting notification alerts','2013-04-24 11:14:58',0);
+INSERT INTO `schema_version` VALUES ('20130521notmeth','all','New notitication method on master','2013-05-21 14:19:29',0);
+INSERT INTO `schema_version` VALUES ('20130612accesses','all','New accessess','2013-06-11 10:46:29',0);
+INSERT INTO `schema_version` VALUES ('20130621tenacces','all','Rename tenancy access','2013-06-21 00:00:00',0);
+INSERT INTO `schema_version` VALUES ('20130625meta','all','Increase storage for metadata','2013-06-25 11:26:26',0);
+INSERT INTO `schema_version` VALUES ('20130702nagvis','all','New access for Nagvis','2013-07-02 13:15:57',0);
+INSERT INTO `schema_version` VALUES ('20130710hkmd','all','Master housekeep metadata','2013-07-10 13:37:28',0);
+INSERT INTO `schema_version` VALUES ('20130726opsp','all','Update monitor_pack status','2013-07-26 16:35:33',0);
+INSERT INTO `schema_version` VALUES ('20130814surv','all','Set survey to always send','2013-06-30 16:38:26',0);
+INSERT INTO `schema_version` VALUES ('20130905hstckint','all','Default host check interval is five minutes','2013-09-05 12:49:34',0);
+INSERT INTO `schema_version` VALUES ('3.0','4',NULL,NULL,NULL);
+INSERT INTO `schema_version` VALUES ('3.1','4',NULL,NULL,NULL);
+INSERT INTO `schema_version` VALUES ('3.11','15',NULL,NULL,NULL);
+INSERT INTO `schema_version` VALUES ('3.13','12',NULL,NULL,NULL);
+INSERT INTO `schema_version` VALUES ('3.15','11',NULL,NULL,NULL);
+INSERT INTO `schema_version` VALUES ('3.3','9',NULL,NULL,NULL);
+INSERT INTO `schema_version` VALUES ('3.5','4',NULL,NULL,NULL);
+INSERT INTO `schema_version` VALUES ('3.6','1',NULL,NULL,NULL);
+INSERT INTO `schema_version` VALUES ('3.7','37',NULL,NULL,NULL);
+INSERT INTO `schema_version` VALUES ('3.9','27',NULL,NULL,NULL);
+/*!40000 ALTER TABLE `schema_version` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `servicecheckdependencies`;
+CREATE TABLE `servicecheckdependencies` (
+  `servicecheckid` int(11) NOT NULL DEFAULT '0',
+  `dependencyid` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`servicecheckid`,`dependencyid`),
+  KEY `servicecheckid` (`servicecheckid`),
+  KEY `dependencyid` (`dependencyid`),
+  CONSTRAINT `servicecheckdependencies_dependencyid_fk` FOREIGN KEY (`dependencyid`) REFERENCES `servicechecks` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `servicecheckdependencies_servicecheckid_fk` FOREIGN KEY (`servicecheckid`) REFERENCES `servicechecks` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `servicecheckdependencies` WRITE;
+/*!40000 ALTER TABLE `servicecheckdependencies` DISABLE KEYS */;
+INSERT INTO `servicecheckdependencies` VALUES (22,91);
+INSERT INTO `servicecheckdependencies` VALUES (47,34);
+INSERT INTO `servicecheckdependencies` VALUES (61,60);
+INSERT INTO `servicecheckdependencies` VALUES (62,60);
+INSERT INTO `servicecheckdependencies` VALUES (91,60);
+INSERT INTO `servicecheckdependencies` VALUES (95,74);
+INSERT INTO `servicecheckdependencies` VALUES (103,60);
+INSERT INTO `servicecheckdependencies` VALUES (104,60);
+INSERT INTO `servicecheckdependencies` VALUES (105,60);
+INSERT INTO `servicecheckdependencies` VALUES (107,74);
+/*!40000 ALTER TABLE `servicecheckdependencies` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `servicecheckhostexceptions`;
+CREATE TABLE `servicecheckhostexceptions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `servicecheck` int(11) NOT NULL DEFAULT '0',
+  `host` int(11) NOT NULL DEFAULT '0',
+  `args` text NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `servicecheck` (`servicecheck`,`host`),
+  KEY `servicecheck_2` (`servicecheck`),
+  KEY `host` (`host`),
+  CONSTRAINT `servicecheckhostexceptions_host_fk` FOREIGN KEY (`host`) REFERENCES `hosts` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `servicecheckhostexceptions_servicecheck_fk` FOREIGN KEY (`servicecheck`) REFERENCES `servicechecks` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `servicecheckhostexceptions` WRITE;
+/*!40000 ALTER TABLE `servicecheckhostexceptions` DISABLE KEYS */;
+INSERT INTO `servicecheckhostexceptions` VALUES (4,29,6,'--exception');
+INSERT INTO `servicecheckhostexceptions` VALUES (5,44,6,'--exception --and');
+INSERT INTO `servicecheckhostexceptions` VALUES (6,4,12,'dns');
+INSERT INTO `servicecheckhostexceptions` VALUES (7,84,5,'-H $HOSTADDRESS$ -U username -P password -d database -q \"SELECT COUNT(*) FROM sometable WHERE ((col1 != 1) AND (col1 \\!= 2))\" -r 0');
+INSERT INTO `servicecheckhostexceptions` VALUES (8,45,4,'-H $HOSTADDRESS$ -c check_load -a \'-w 15,15,15 -c 19,19,19\'');
+/*!40000 ALTER TABLE `servicecheckhostexceptions` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `servicecheckhosttemplateexceptions`;
+CREATE TABLE `servicecheckhosttemplateexceptions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `servicecheck` int(11) NOT NULL DEFAULT '0',
+  `hosttemplate` int(11) NOT NULL DEFAULT '0',
+  `args` text NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `servicecheck` (`servicecheck`,`hosttemplate`),
+  KEY `servicecheck_2` (`servicecheck`),
+  KEY `hosttemplate` (`hosttemplate`),
+  CONSTRAINT `servicecheckhosttemplateexceptions_hosttemplate_fk` FOREIGN KEY (`hosttemplate`) REFERENCES `hosttemplates` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `servicecheckhosttemplateexceptions_servicecheck_fk` FOREIGN KEY (`servicecheck`) REFERENCES `servicechecks` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `servicecheckhosttemplateexceptions` WRITE;
+/*!40000 ALTER TABLE `servicecheckhosttemplateexceptions` DISABLE KEYS */;
+INSERT INTO `servicecheckhosttemplateexceptions` VALUES (1,44,3,'--except');
+/*!40000 ALTER TABLE `servicecheckhosttemplateexceptions` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `servicechecks`;
+CREATE TABLE `servicechecks` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(64) NOT NULL DEFAULT '',
+  `checktype` int(11) NOT NULL DEFAULT '1',
+  `plugin` varchar(128) DEFAULT NULL,
+  `args` text NOT NULL,
+  `category` varchar(128) DEFAULT NULL,
+  `servicegroup` int(11) NOT NULL DEFAULT '0',
+  `description` varchar(255) NOT NULL DEFAULT '',
+  `invertresults` int(11) DEFAULT NULL,
+  `notification_options` varchar(16) DEFAULT NULL,
+  `notification_interval` int(11) DEFAULT NULL,
+  `notification_period` int(11) DEFAULT NULL,
+  `check_interval` varchar(16) DEFAULT NULL,
+  `retry_check_interval` varchar(16) DEFAULT NULL,
+  `check_attempts` varchar(16) DEFAULT NULL,
+  `check_freshness` tinyint(4) NOT NULL DEFAULT '0',
+  `stalking` varchar(16) DEFAULT NULL,
+  `volatile` int(11) DEFAULT '0',
+  `flap_detection_enabled` int(11) DEFAULT '1',
+  `agent` int(11) DEFAULT NULL,
+  `check_period` int(11) DEFAULT NULL,
+  `uncommitted` int(11) NOT NULL DEFAULT '0',
+  `freshness_type` enum('renotify','set_stale') NOT NULL DEFAULT 'renotify',
+  `stale_threshold_seconds` int(11) NOT NULL DEFAULT '1860',
+  `stale_state` tinyint(4) NOT NULL DEFAULT '0',
+  `stale_text` text NOT NULL,
+  `markdown_filter` tinyint(4) NOT NULL DEFAULT '0',
+  `multiple_services_variable` varchar(64) NOT NULL DEFAULT '',
+  `attribute` int(11) DEFAULT NULL,
+  `cascaded_from` int(11) DEFAULT NULL,
+  `alert_from_failure` smallint(6) NOT NULL DEFAULT '1',
+  `event_handler` varchar(255) NOT NULL DEFAULT '',
+  `disable_name_change` tinyint(4) NOT NULL DEFAULT '0',
+  `dependency_level` tinyint(4) NOT NULL DEFAULT '0',
+  `sensitive_arguments` tinyint(1) NOT NULL DEFAULT '1',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`),
+  KEY `servicegroup` (`servicegroup`),
+  KEY `plugin` (`plugin`),
+  KEY `notification_period` (`notification_period`),
+  KEY `checktype` (`checktype`),
+  KEY `agent` (`agent`),
+  KEY `check_period` (`check_period`),
+  KEY `attribute` (`attribute`),
+  KEY `cascaded_from` (`cascaded_from`),
+  CONSTRAINT `servicechecks_agent_fk` FOREIGN KEY (`agent`) REFERENCES `agents` (`id`),
+  CONSTRAINT `servicechecks_attribute_fk` FOREIGN KEY (`attribute`) REFERENCES `attributes` (`id`),
+  CONSTRAINT `servicechecks_cascaded_from_fk` FOREIGN KEY (`cascaded_from`) REFERENCES `servicechecks` (`id`),
+  CONSTRAINT `servicechecks_checktype_fk` FOREIGN KEY (`checktype`) REFERENCES `checktypes` (`id`),
+  CONSTRAINT `servicechecks_check_period_fk` FOREIGN KEY (`check_period`) REFERENCES `timeperiods` (`id`),
+  CONSTRAINT `servicechecks_notification_period_fk` FOREIGN KEY (`notification_period`) REFERENCES `timeperiods` (`id`),
+  CONSTRAINT `servicechecks_plugin_fk` FOREIGN KEY (`plugin`) REFERENCES `plugins` (`name`),
+  CONSTRAINT `servicechecks_servicegroup_fk` FOREIGN KEY (`servicegroup`) REFERENCES `servicegroups` (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `servicechecks` WRITE;
+/*!40000 ALTER TABLE `servicechecks` DISABLE KEYS */;
+INSERT INTO `servicechecks` VALUES (1,'AFS',1,'check_tcp','-H $HOSTADDRESS$ -p 548','Network Services',1,'AFS over TCP',1,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'hostoverridden',0,0,1);
+INSERT INTO `servicechecks` VALUES (2,'PowerChute',1,'check_tcp','-H $HOSTADDRESS$ -p 3052','Network Services',1,'Checks APC PoweChute on TCP port 3052',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (3,'DHCP',1,'check_dhcp','','Network Services',1,'Checks DHCP on local network',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (4,'DNS',1,'check_dig','-H $HOSTADDRESS$ -l www.altinity.com','Network Services',1,'Checks DNS on TCP port 53',0,'w,c,r',0,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (5,'FTP',1,'check_ftp','-H $HOSTADDRESS$','Network Services',1,'Checks FTP on TCP port 21',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (6,'HTTP',1,'check_http','-H $HOSTADDRESS$ -w 5 -c 10','Network Services',1,'Checks for valid HTTP response on TCP port 80',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (7,'HTTPS',1,'check_http','-H $HOSTADDRESS -S -w 5 -c 10','Network Services',1,'Checks for valid HTTPS response on TCP port 443',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (8,'IMAP4',1,'check_imap','-H $HOSTADDRESS$','Network Services',1,'Checks IMAP on TCP port 220',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (9,'Jakarta Tomcat',1,'check_tcp','-H $HOSTADDRESS$ -p 8080','Network Services',1,'Checks Tomcat on TCP port 8080',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (10,'LDAP',1,'check_tcp','-H $HOSTADDRESS$ -p 389','Network Services',1,'Checks LDAP on TCP port 389',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (11,'Lotus Domino',1,'check_tcp','-H $HOSTADDRESS$ -p 1352','Network Services',1,'Checks Domino on TCP port 1352',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (12,'MS SQL Server',1,'check_tcp','-H $HOSTADDRESS$ -p 1433','Network Services',1,'Checks Microsoft SQL Server on TCP port 1433',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (13,'MS Active Directory',1,'check_tcp','-H $HOSTADDRESS$ -p 445','Network Services',1,'Checks AD Server on TCP port 445',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (14,'MySQL',1,'check_tcp','-H $HOSTADDRESS$ -p 3306 -u %MYSQL_CREDENTIALS:1% -p %MYSQL_CREDENTIALS:2%','Network Services',1,'Checks MySQL on TCP port 3306',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (15,'NETBIOS',1,'check_tcp','-H $HOSTADDRESS$ -p 139','Network Services',1,'Checks NETBIOS on TCP port 139',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (16,'NTP',1,'check_ntp','-H $HOSTADDRESS$','Network Services',1,'Checks NTP on TCP port 123',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (17,'Oracle',1,'check_tcp','-H $HOSTADDRESS$ -p 1521','Network Services',1,'Checks Oracle database server on TCP port 1521',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (18,'PC Anywhere',1,'check_tcp','-H $HOSTADDRESS$ -p 5631','Network Services',1,'Checks PC Anywhere on TCP port 5631',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (19,'POP3',1,'check_pop','-H $HOSTADDRESS$','Network Services',1,'Checks POP3 on TCP port',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (20,'RADIUS',1,'check_tcp','-H $HOSTADDRESS$ -p 1812','Network Services',1,'Checks RADIUS on TCP port 1812',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (21,'SMTP',1,'check_smtp','-H $HOSTADDRESS$','Network Services',1,'Checks SMTP on TCP port 25',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (22,'SSH',1,'check_tcp','-H $HOSTADDRESS$ -p 22','Network Services',1,'Checks SSH on TCP port 22',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (23,'SSH 2200',1,'check_tcp','-H $HOSTADDRESS$ -p 2200','Network Services',1,'SSH on port 2200',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (24,'Syslog',1,'check_udp','-H $HOSTADDRESS$ -p 514','Network Services',1,'Checks Syslog on UDP port 514',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (25,'Telnet',1,'check_tcp','-H $HOSTADDRESS$ -p 23','Network Services',1,'Checks Telnet on TCP port 23',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (26,'TFTP',1,'check_tftp','--connect $HOSTADDRESS$','Network Services',1,'Checks TFTP',0,'w,c,r',0,3,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (27,'VNC',1,'check_tcp','-H $HOSTADDRESS$ -p 5900','Network Services',1,'Checks VNC on TCP port 5900',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (28,'Web Management',1,'check_tcp','-H $HOSTADDRESS$ -p 80','Network Services',1,'Checks HTTP on TCP port 80',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (29,'TCP/IP',1,'check_icmp','-H $HOSTADDRESS$ -w 100.0,20% -c 500.0,60%','Network Protocols',1,'Checks IP connectivity',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (30,'NNTP',1,'check_tcp','-H $HOSTADDRESS$ -p 119','Network Services',1,'Checks TCP port 119',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (31,'IRC',1,'check_tcp','-H $HOSTADDRESS$ -p 6667','Network Services',1,'Checks TCP port 6667',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (32,'X.400',1,'check_tcp','-H $HOSTADDRESS$ -p 102','Network Services',1,'Checks TCP port 102',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (33,'MS-RPC',1,'check_tcp','-H $HOSTADDRESS$ -p 135','Network Services',1,'Checks TCP port 135',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (34,'JBoss',1,'check_tcp','-H $HOSTADDRESS$ -p 8080','Network Services',1,'Checks TCP port 8080',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (35,'IIOP',1,'check_tcp','-H $HOSTADDRESS$ -p 535','Network Services',1,'Checks TCP port 535',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (36,'CORBA',1,'check_tcp','-H $HOSTADDRESS$ -p 683','Network Services',1,'Checks TCP port 683',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (37,'PostgreSQL',1,'check_tcp','-H $HOSTADDRESS$ -p 5432','Network Services',1,'Checks TCP port 5432',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (38,'IBM DB2',1,'check_tcp','-H $HOSTADDRESS$ -p 523','Network Services',1,'Checks TCP port 523',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (39,'NFS',1,'check_tcp','-H $HOSTADDRESS$ -p 2049','Network Services',1,'Checks TCP port 2049',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (40,'Unix Portmap',1,'check_tcp','-H $HOSTADDRESS$ -p 2049','Network Services',1,'Checks TCP port 111',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (41,'TACACS',1,'check_tcp','-H $HOSTADDRESS$ -p 49','Network Services',1,'Checks TCP port 49',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (42,'Kerberos',1,'check_tcp','-H $HOSTADDRESS$ -p 88','Network Services',1,'Checks TCP port 88',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (43,'Whois',1,'check_tcp','-H $HOSTADDRESS$ -p 63','Network Services',1,'Checks TCP port 63',0,'w,c,r',0,3,'5','1','3',0,NULL,0,1,NULL,3,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (44,'Check Memory',1,'check_nrpe','-H $HOSTADDRESS$ -c check_memory -a \'-w 90 -c 98\'','Opsview Agent - Unix',1,'Checks Memory Utilisation',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (45,'Check Loadavg',1,'check_nrpe','-H $HOSTADDRESS$ -c check_load -a \'-w 5,5,5 -c 9,9,9\'','Opsview Agent - Unix',1,'Checks Load Average',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (46,'Check Swap',1,'check_nrpe','-H $HOSTADDRESS$ -c check_swap -a \'-w 10% -c 5%\'','Opsview Agent - Unix',1,'Checks Swap Utilisation',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (47,'/',1,'check_nrpe','-H $HOSTADDRESS$ -c check_disk -a \'-w 5% -c 2% -p /\'','Opsview Agent - Unix',1,'Utilisation of / partition',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (48,'/var',1,'check_nrpe','-H $HOSTADDRESS$ -c check_disk -a \'-w 5% -c 2% -p /var\'','Opsview Agent - Unix',1,'Utilisation of /var partition',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (49,'/usr',1,'check_nrpe','-H $HOSTADDRESS$ -c check_disk -a \'-w 5% -c 2% -p /usr\'','Opsview Agent - Unix',1,'Utilisation of /usr partition',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (50,'/home',1,'check_nrpe','-H $HOSTADDRESS$ -c check_disk -a \'-w 5% -c 2% -p /home\'','Opsview Agent - Unix',1,'Utilisation of /home partition',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (51,'/export',1,'check_nrpe','-H $HOSTADDRESS$ -c check_disk -a \'-w 5% -c 2% -p /export\'','Opsview Agent - Unix',1,'Utilisation of /export partition',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (52,'/boot',1,'check_nrpe','-H $HOSTADDRESS$ -c check_disk -a \'-w 5% -c 2% -p /boot\'','Opsview Agent - Unix',1,'Utilisation of /boot partition',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (53,'httpd processes',1,'check_nrpe','-H $HOSTADDRESS$ -c check_procs -a \'-C httpd -w 1:75 -c 1:500\'','Opsview Agent - Unix',1,'Number of httpd processes',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (54,'Opsview daemon',1,'check_nrpe','-H $HOSTADDRESS$ -c check_procs -a \'-C opsviewd -w 1:2 -c 1:2\'','Opsview',1,'Checks Opsview daemon is running',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (55,'nagios processes',1,'check_nrpe','-H $HOSTADDRESS$ -c check_procs -a \'-C nagios -w 1:60 -c 1:100\'','Opsview',1,'Checks nagios processes',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (56,'CPU Load',1,'check_nrpe','-H $HOSTADDRESS$ -c win_cpuload -a 80 95','Opsview Agent - Windows',1,'CPU utilisation',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (57,'Memory',1,'check_nrpe','-H $HOSTADDRESS$ -c win_memload -a 95 98','Opsview Agent - Windows',1,'Memory utilisation',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (58,'Disk Queue',1,'check_nrpe','-H $HOSTADDRESS$ -c win_check_wmi -a Win32_PerfRawData_PerfDisk_PhysicalDisk CurrentDiskQueueLength 6 12','Opsview Agent - Windows',1,'Disk queue - an indicator of I/O issues',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (59,'Events',1,'check_nrpe','-H $HOSTADDRESS$ -c win_eventlog','Opsview Agent - Windows',1,'Recent critical events in eventlog',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (60,'Opsview Agent',1,'check_nrpe','-H $HOSTADDRESS$ -c win_service_nrpe','Opsview Agent - Windows',1,'Opsview Agent service',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (61,'Server Service',1,'check_nrpe','-H $HOSTADDRESS$ -c win_service_server -p %NRPE_PORT%','Opsview Agent - Windows',1,'Windows server service',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (62,'OS Info',1,'check_nrpe','-H $HOSTADDRESS$ -c win_check_sysinfo -p %NRPE_PORT%','Opsview Agent - Windows',1,'OS Information',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (63,'C Drive',1,'check_nrpe','-H $HOSTADDRESS$ -c win_check_disk_c','Opsview Agent - Windows',1,'Drive utilisation',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (64,'D Drive',1,'check_nrpe','-H $HOSTADDRESS$ -c win_check_disk_d','Opsview Agent - Windows',1,'Drive utilisation',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (65,'E Drive',1,'check_nrpe','-H $HOSTADDRESS$ -c win_check_disk_e','Opsview Agent - Windows',1,'Drive utilisation',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (66,'F Drive',1,'check_nrpe','-H $HOSTADDRESS$ -c win_check_disk_f','Opsview Agent - Windows',1,'Drive utilisation',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (67,'G Drive',1,'check_nrpe','-H $HOSTADDRESS$ -c win_check_disk_g','Opsview Agent - Windows',1,'Drive utilisation',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (68,'H Drive',1,'check_nrpe','-H $HOSTADDRESS$ -c win_check_disk_h','Opsview Agent - Windows',1,'Drive utilisation',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (69,'X Drive',1,'check_nrpe','-H $HOSTADDRESS$ -c win_check_disk_x','Opsview Agent - Windows',1,'Drive utilisation',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (70,'Y Drive',1,'check_nrpe','-H $HOSTADDRESS$ -c win_check_disk_y','Opsview Agent - Windows',1,'Drive utilisation',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (71,'Z Drive',1,'check_nrpe','-H $HOSTADDRESS$ -c win_check_disk_z','Opsview Agent - Windows',1,'Drive utilisation',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (72,'TCP Connections',1,'check_snmp_tcpcurrestab','-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$','SNMP - MIB-II',1,'Currently established TCP connections',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (73,'Interface Status',1,'check_snmp_interfaces','-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$','SNMP - MIB-II',1,'Network interface status',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (74,'SNMP Agent',1,'check_snmp_sysinfo','-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$','SNMP - MIB-II',1,'Status of SNMP agent',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (75,'Uptime',1,'check_snmp_uptime','-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$','SNMP - MIB-II',1,'Uptime of SNMP agent usually equivalent to device uptime',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (76,'Cisco CPU load',1,'check_snmp_cisco_loadavg','-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -w 75 -c 90','SNMP - Cisco',1,'CPU load',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (77,'Cisco memory utilisation',1,'check_snmp_cisco_memutil','-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -w 75 -c 90','SNMP - Cisco',1,'Memory utilisation',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (78,'Opsview slave',1,'check_opsview_slave','','Opsview',1,'Opsview slave check',0,'w,c,r',NULL,NULL,'5','1','2',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (79,'Coldstart',4,NULL,'','snmptraps',1,'',0,'w,c,r,u',NULL,NULL,NULL,NULL,NULL,1,NULL,0,1,NULL,NULL,0,'set_stale',3700,2,'Set to critical!!',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (81,'Test exceptions',4,NULL,'','snmptraps',1,'Stuffed',0,'w,c,r,u',NULL,NULL,NULL,NULL,NULL,1,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (82,'Another exception',4,NULL,'','snmptraps',1,'Stuffed',0,'w,c,r,u',NULL,NULL,NULL,NULL,NULL,1,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (83,'snmp poll',5,NULL,'','SNMP - MIB-II',1,'',0,'w,c,r,u,f',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (84,'Mysql Query',1,'check_mysql_query','-H $HOSTADDRESS$ -U username -P password -d database -q \"SELECT * FROM sometable\" -r 0',NULL,1,'Mysql Query check',0,'w,c,r,u,f',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (85,'Passive no freshness',2,NULL,'',NULL,2,'',0,'w,c,r,u,f',NULL,NULL,NULL,NULL,NULL,0,NULL,0,1,NULL,NULL,0,'renotify',31,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (86,'Passive renotify',2,NULL,'',NULL,2,'',0,'w,c,r,u,f',NULL,NULL,NULL,NULL,NULL,1,NULL,0,1,NULL,NULL,0,'renotify',31,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (87,'Passive set_stale',2,NULL,'',NULL,2,'',0,'w,c,r,u,f',NULL,NULL,NULL,NULL,NULL,1,NULL,0,1,NULL,NULL,0,'set_stale',1860,0,'This is \'special\' with $HOSTADDRESS$ and other bits | pieces',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (88,'snmptrap no freshness',4,NULL,'',NULL,2,'',0,'w,c,r,u,f',NULL,NULL,NULL,NULL,NULL,0,NULL,0,1,NULL,NULL,0,'renotify',31,3,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (89,'snmptrap renotify',4,NULL,'',NULL,2,'',0,'w,c,r,u,f',NULL,NULL,NULL,NULL,NULL,1,NULL,0,1,NULL,NULL,0,'renotify',31,3,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (90,'snmptrap set_stale',2,NULL,'',NULL,2,'',0,'w,c,r,u,f',NULL,NULL,NULL,NULL,NULL,1,NULL,0,1,NULL,NULL,0,'set_stale',1863,1,'This is \'special\' with warnings and other bits | pieces',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (91,'Disk',1,'check_nrpe','-H $HOSTADDRESS$ -c check_disk -a \'%DISK%\'',NULL,1,'Utilisation of disk partitions based on host variables',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'DISK',4,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (92,'Processes',1,'check_nrpe','-H $HOSTADDRESS$ -c check_disk -a \'%PROCESS:1%\'',NULL,1,'Process checking',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',6,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (93,'Windows Processes',1,'check_nrpe','-H $HOSTADDRESS$ -c check_disk -a \'%PROCESS%\'',NULL,1,'Process checking',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',6,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (94,'Slave-node',1,'check_opsview_slave_node','-r %SLAVENODE%',NULL,1,'Checks for slave node availability',NULL,'w,c',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',1,NULL,1,'slave_node_resync',1,0,1);
+INSERT INTO `servicechecks` VALUES (95,'Interface',2,'check_snmp_linkstatus','-H $HOSTADDRESS$ -i -o %INTERFACE:1% %INTERFACE:2%',NULL,1,'Checks for interfaces',NULL,'n',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',2,107,3,'',1,0,1);
+INSERT INTO `servicechecks` VALUES (96,'Cluster-node',1,'check_opsview_slave_cluster','%CLUSTERNODE:1%',NULL,1,'Takeover of other cluster nodes',NULL,'w,c,r',NULL,NULL,'2','1','1',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',3,NULL,1,'cluster_node_takeover_hosts',1,0,1);
+INSERT INTO `servicechecks` VALUES (97,'snmp poll rate',5,NULL,'',NULL,1,'',0,'w,c,r,u,f',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (99,'snmp poll stringcheck',5,NULL,'',NULL,1,'',0,'w,c,r,u,f',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (100,'Errors',2,'check_snmp_linkstatus','-H $HOSTADDRESS$ %INTERFACE:1% -E %INTERFACE:3%',NULL,1,'SNMP Interface errors',NULL,'n',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',2,107,3,'',1,0,1);
+INSERT INTO `servicechecks` VALUES (101,'Discards',2,'check_snmp_linkstatus','-H $HOSTADDRESS$ %INTERFACE:1% -D %INTERFACE:4%',NULL,1,'SNMP Interface discards',NULL,'n',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',2,107,3,'',1,0,1);
+INSERT INTO `servicechecks` VALUES (102,'snmp poll rate minute',5,NULL,'',NULL,1,'',0,'w,c,r,u,f',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,NULL,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (103,'Inode',1,'check_nrpe','-H $HOSTADDRESS$ -c check_disk -a \'%DISK:2%\'',NULL,1,'Utilisation of inode space based on host variables',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',4,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (104,'arg3',1,'check_nrpe','-H $HOSTADDRESS$ -c check_disk -a \'%DISK:3%\'',NULL,1,'Utilisation of inode space based on host variables',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',4,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (105,'arg4',1,'check_nrpe','-H $HOSTADDRESS$ -c check_disk -a \'%DISK:4%\'',NULL,1,'Utilisation of inode space based on host variables',0,'w,c,r',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',4,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (106,'Search test 20 for api wildcards',2,NULL,'',NULL,1,'Check for API tests - 658-api2-downtimes.t',0,'w,c,r,u,f',NULL,NULL,NULL,NULL,NULL,0,NULL,0,1,NULL,1,0,'renotify',3600,3,'',0,'',NULL,NULL,1,'',0,0,1);
+INSERT INTO `servicechecks` VALUES (107,'Interface Poller',1,'check_snmp_interfaces_cascade','-H $HOSTNAME$',NULL,1,'SNMP interface polling',NULL,'n',NULL,NULL,'5','1','3',0,NULL,0,1,NULL,1,0,'renotify',1860,0,'',0,'',NULL,NULL,1,'',1,0,1);
+/*!40000 ALTER TABLE `servicechecks` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `servicechecksnmpactions`;
+CREATE TABLE `servicechecksnmpactions` (
+  `trapid` int(11) NOT NULL DEFAULT '0',
+  `servicecheckid` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`trapid`,`servicecheckid`),
+  KEY `trapid` (`trapid`),
+  KEY `servicecheckid` (`servicecheckid`),
+  CONSTRAINT `servicechecksnmpactions_servicecheckid_fk` FOREIGN KEY (`servicecheckid`) REFERENCES `servicechecks` (`id`),
+  CONSTRAINT `servicechecksnmpactions_trapid_fk` FOREIGN KEY (`trapid`) REFERENCES `snmptraps` (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `servicechecksnmpactions` WRITE;
+/*!40000 ALTER TABLE `servicechecksnmpactions` DISABLE KEYS */;
+/*!40000 ALTER TABLE `servicechecksnmpactions` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `servicechecksnmpignores`;
+CREATE TABLE `servicechecksnmpignores` (
+  `trapid` int(11) NOT NULL DEFAULT '0',
+  `servicecheckid` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`trapid`,`servicecheckid`),
+  KEY `trapid` (`trapid`),
+  KEY `servicecheckid` (`servicecheckid`),
+  CONSTRAINT `servicechecksnmpignores_servicecheckid_fk` FOREIGN KEY (`servicecheckid`) REFERENCES `servicechecks` (`id`),
+  CONSTRAINT `servicechecksnmpignores_trapid_fk` FOREIGN KEY (`trapid`) REFERENCES `snmptraps` (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `servicechecksnmpignores` WRITE;
+/*!40000 ALTER TABLE `servicechecksnmpignores` DISABLE KEYS */;
+/*!40000 ALTER TABLE `servicechecksnmpignores` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `servicechecksnmppolling`;
+CREATE TABLE `servicechecksnmppolling` (
+  `id` int(11) NOT NULL DEFAULT '0',
+  `oid` varchar(255) DEFAULT NULL,
+  `critical_comparison` varchar(10) DEFAULT NULL,
+  `critical_value` varchar(255) DEFAULT NULL,
+  `warning_comparison` varchar(10) DEFAULT NULL,
+  `warning_value` varchar(255) DEFAULT NULL,
+  `label` varchar(255) DEFAULT NULL,
+  `calculate_rate` enum('no','per_second','per_minute','per_hour') NOT NULL DEFAULT 'no',
+  PRIMARY KEY (`id`),
+  CONSTRAINT `servicechecksnmppolling_servicechecks_fk` FOREIGN KEY (`id`) REFERENCES `servicechecks` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `servicechecksnmppolling` WRITE;
+/*!40000 ALTER TABLE `servicechecksnmppolling` DISABLE KEYS */;
+INSERT INTO `servicechecksnmppolling` VALUES (4,NULL,NULL,NULL,NULL,NULL,NULL,'');
+INSERT INTO `servicechecksnmppolling` VALUES (14,NULL,NULL,NULL,NULL,NULL,NULL,'');
+INSERT INTO `servicechecksnmppolling` VALUES (29,NULL,NULL,NULL,NULL,NULL,NULL,'no');
+INSERT INTO `servicechecksnmppolling` VALUES (74,NULL,NULL,NULL,NULL,NULL,NULL,'no');
+INSERT INTO `servicechecksnmppolling` VALUES (83,'0.1.2.3','string','','numeric','',NULL,'no');
+INSERT INTO `servicechecksnmppolling` VALUES (91,NULL,NULL,NULL,NULL,NULL,NULL,'');
+INSERT INTO `servicechecksnmppolling` VALUES (95,NULL,NULL,NULL,NULL,NULL,NULL,'no');
+INSERT INTO `servicechecksnmppolling` VALUES (97,'IF-MIB::ifInOctets.1','string','','numeric','','inOctet','per_second');
+INSERT INTO `servicechecksnmppolling` VALUES (99,'SNMPv2-MIB::sysName.0','ne','rover','numeric','','','no');
+INSERT INTO `servicechecksnmppolling` VALUES (102,'IF-MIB::ifInOctets.1','string','','numeric','','inOctet-per-minute','per_minute');
+INSERT INTO `servicechecksnmppolling` VALUES (103,NULL,NULL,NULL,NULL,NULL,NULL,'');
+INSERT INTO `servicechecksnmppolling` VALUES (104,NULL,NULL,NULL,NULL,NULL,NULL,'');
+INSERT INTO `servicechecksnmppolling` VALUES (105,NULL,NULL,NULL,NULL,NULL,NULL,'');
+INSERT INTO `servicechecksnmppolling` VALUES (107,NULL,NULL,NULL,NULL,NULL,NULL,'no');
+/*!40000 ALTER TABLE `servicechecksnmppolling` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `servicechecktimedoverridehostexceptions`;
+CREATE TABLE `servicechecktimedoverridehostexceptions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `servicecheck` int(11) NOT NULL DEFAULT '0',
+  `host` int(11) NOT NULL DEFAULT '0',
+  `timeperiod` int(11) NOT NULL DEFAULT '0',
+  `args` text NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `servicecheck` (`servicecheck`,`host`),
+  KEY `servicecheck_2` (`servicecheck`),
+  KEY `host` (`host`),
+  KEY `timeperiod` (`timeperiod`),
+  CONSTRAINT `servicechecktimedoverridehostexceptions_host_fk` FOREIGN KEY (`host`) REFERENCES `hosts` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `servicechecktimedoverridehostexceptions_servicecheck_fk` FOREIGN KEY (`servicecheck`) REFERENCES `servicechecks` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `servicechecktimedoverridehostexceptions_timeperiod_fk` FOREIGN KEY (`timeperiod`) REFERENCES `timeperiods` (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `servicechecktimedoverridehostexceptions` WRITE;
+/*!40000 ALTER TABLE `servicechecktimedoverridehostexceptions` DISABLE KEYS */;
+INSERT INTO `servicechecktimedoverridehostexceptions` VALUES (4,44,6,2,'--timed --too --port %NRPE_PORT% --creds %MYSQL_CREDENTIALS%');
+INSERT INTO `servicechecktimedoverridehostexceptions` VALUES (5,45,6,1,'--timed');
+INSERT INTO `servicechecktimedoverridehostexceptions` VALUES (8,6,12,2,'workhours $SNMP_COMMUNITY$');
+INSERT INTO `servicechecktimedoverridehostexceptions` VALUES (9,44,4,3,'-H $HOSTADDRESS$ -c check_memory -a \'-w 70 -c 78\'');
+/*!40000 ALTER TABLE `servicechecktimedoverridehostexceptions` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `servicechecktimedoverridehosttemplateexceptions`;
+CREATE TABLE `servicechecktimedoverridehosttemplateexceptions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `servicecheck` int(11) NOT NULL DEFAULT '0',
+  `hosttemplate` int(11) NOT NULL DEFAULT '0',
+  `timeperiod` int(11) NOT NULL DEFAULT '0',
+  `args` text NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `servicecheck` (`servicecheck`,`hosttemplate`),
+  KEY `servicecheck_2` (`servicecheck`),
+  KEY `hosttemplate` (`hosttemplate`),
+  KEY `timeperiod` (`timeperiod`),
+  CONSTRAINT `servicechecktimedoverridehosttemplateexceptions_hosttemplate_fk` FOREIGN KEY (`hosttemplate`) REFERENCES `hosttemplates` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `servicechecktimedoverridehosttemplateexceptions_servicecheck_fk` FOREIGN KEY (`servicecheck`) REFERENCES `servicechecks` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `servicechecktimedoverridehosttemplateexceptions_timeperiod_fk` FOREIGN KEY (`timeperiod`) REFERENCES `timeperiods` (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `servicechecktimedoverridehosttemplateexceptions` WRITE;
+/*!40000 ALTER TABLE `servicechecktimedoverridehosttemplateexceptions` DISABLE KEYS */;
+INSERT INTO `servicechecktimedoverridehosttemplateexceptions` VALUES (1,44,3,3,'--timed --nonworkhours');
+/*!40000 ALTER TABLE `servicechecktimedoverridehosttemplateexceptions` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `servicegroups`;
+CREATE TABLE `servicegroups` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) NOT NULL DEFAULT '',
+  `uncommitted` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `servicegroups` WRITE;
+/*!40000 ALTER TABLE `servicegroups` DISABLE KEYS */;
+INSERT INTO `servicegroups` VALUES (1,'Operations',0);
+INSERT INTO `servicegroups` VALUES (2,'freshness checks',0);
+/*!40000 ALTER TABLE `servicegroups` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `serviceinfo`;
+CREATE TABLE `serviceinfo` (
+  `id` int(11) NOT NULL,
+  `information` text,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `serviceinfo` WRITE;
+/*!40000 ALTER TABLE `serviceinfo` DISABLE KEYS */;
+INSERT INTO `serviceinfo` VALUES (152,'Some wiki text for the coldstart service on cisco1!');
+/*!40000 ALTER TABLE `serviceinfo` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `sessions`;
+CREATE TABLE `sessions` (
+  `id` char(72) NOT NULL,
+  `session_data` text,
+  `expires` int(10) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB COMMENT='Opsview-Web session information stored directly by Catalyst';
+
+
+LOCK TABLES `sessions` WRITE;
+/*!40000 ALTER TABLE `sessions` DISABLE KEYS */;
+/*!40000 ALTER TABLE `sessions` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `sharednotificationprofile_hostgroups`;
+CREATE TABLE `sharednotificationprofile_hostgroups` (
+  `sharednotificationprofileid` int(11) NOT NULL,
+  `hostgroupid` int(11) NOT NULL,
+  PRIMARY KEY (`sharednotificationprofileid`,`hostgroupid`),
+  KEY `sharednotificationprofileid` (`sharednotificationprofileid`),
+  KEY `hostgroupid` (`hostgroupid`),
+  CONSTRAINT `snp_hostgroups_sharednotificationprofileid_fk` FOREIGN KEY (`sharednotificationprofileid`) REFERENCES `sharednotificationprofiles` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `snp_hostgroups_hostgroupid_fk` FOREIGN KEY (`hostgroupid`) REFERENCES `hostgroups` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='Joining table for shared notification profiles to host group';
+
+
+LOCK TABLES `sharednotificationprofile_hostgroups` WRITE;
+/*!40000 ALTER TABLE `sharednotificationprofile_hostgroups` DISABLE KEYS */;
+INSERT INTO `sharednotificationprofile_hostgroups` VALUES (6,4);
+INSERT INTO `sharednotificationprofile_hostgroups` VALUES (6,9);
+/*!40000 ALTER TABLE `sharednotificationprofile_hostgroups` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `sharednotificationprofile_keywords`;
+CREATE TABLE `sharednotificationprofile_keywords` (
+  `sharednotificationprofileid` int(11) NOT NULL,
+  `keywordid` int(11) NOT NULL,
+  PRIMARY KEY (`sharednotificationprofileid`,`keywordid`),
+  KEY `sharednotificationprofileid` (`sharednotificationprofileid`),
+  KEY `keywordid` (`keywordid`),
+  CONSTRAINT `snp_keywords_sharednotificationprofileid_fk` FOREIGN KEY (`sharednotificationprofileid`) REFERENCES `sharednotificationprofiles` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `snp_keywords_keywordid_fk` FOREIGN KEY (`keywordid`) REFERENCES `keywords` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='Joining table for shared notification profiles to keywords';
+
+
+LOCK TABLES `sharednotificationprofile_keywords` WRITE;
+/*!40000 ALTER TABLE `sharednotificationprofile_keywords` DISABLE KEYS */;
+/*!40000 ALTER TABLE `sharednotificationprofile_keywords` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `sharednotificationprofile_notificationmethods`;
+CREATE TABLE `sharednotificationprofile_notificationmethods` (
+  `sharednotificationprofileid` int(11) NOT NULL,
+  `notificationmethodid` int(11) NOT NULL,
+  PRIMARY KEY (`sharednotificationprofileid`,`notificationmethodid`),
+  KEY `sharednotificationprofileid` (`sharednotificationprofileid`),
+  KEY `notificationmethodid` (`notificationmethodid`),
+  CONSTRAINT `snp_notificationmethods_sharednotificationprofileid_fk` FOREIGN KEY (`sharednotificationprofileid`) REFERENCES `sharednotificationprofiles` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `snp_notificationmethods_notificationmethodid_fk` FOREIGN KEY (`notificationmethodid`) REFERENCES `notificationmethods` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='Shared notification profile with multiple notification metho';
+
+
+LOCK TABLES `sharednotificationprofile_notificationmethods` WRITE;
+/*!40000 ALTER TABLE `sharednotificationprofile_notificationmethods` DISABLE KEYS */;
+/*!40000 ALTER TABLE `sharednotificationprofile_notificationmethods` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `sharednotificationprofile_servicegroups`;
+CREATE TABLE `sharednotificationprofile_servicegroups` (
+  `sharednotificationprofileid` int(11) NOT NULL,
+  `servicegroupid` int(11) NOT NULL,
+  PRIMARY KEY (`sharednotificationprofileid`,`servicegroupid`),
+  KEY `sharednotificationprofileid` (`sharednotificationprofileid`),
+  KEY `servicegroupid` (`servicegroupid`),
+  CONSTRAINT `snp_servicegroups_sharednotificationprofileid_fk` FOREIGN KEY (`sharednotificationprofileid`) REFERENCES `sharednotificationprofiles` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `snp_servicegroups_servicegroupid_fk` FOREIGN KEY (`servicegroupid`) REFERENCES `servicegroups` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB COMMENT='Joining table for shared notification profiles to service gr';
+
+
+LOCK TABLES `sharednotificationprofile_servicegroups` WRITE;
+/*!40000 ALTER TABLE `sharednotificationprofile_servicegroups` DISABLE KEYS */;
+INSERT INTO `sharednotificationprofile_servicegroups` VALUES (6,1);
+/*!40000 ALTER TABLE `sharednotificationprofile_servicegroups` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `sharednotificationprofiles`;
+CREATE TABLE `sharednotificationprofiles` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) NOT NULL DEFAULT '',
+  `host_notification_options` varchar(16) DEFAULT NULL,
+  `service_notification_options` varchar(16) DEFAULT NULL,
+  `notification_period` int(11) NOT NULL DEFAULT '1',
+  `all_hostgroups` tinyint(1) NOT NULL DEFAULT '1',
+  `all_servicegroups` tinyint(1) NOT NULL DEFAULT '1',
+  `all_keywords` tinyint(1) NOT NULL DEFAULT '1',
+  `notification_level` int(11) NOT NULL DEFAULT '1',
+  `role` int(11) NOT NULL,
+  `uncommitted` int(11) NOT NULL DEFAULT '0',
+  `notification_level_stop` smallint(6) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`),
+  KEY `snp_notification_period` (`notification_period`),
+  KEY `snp_role` (`role`),
+  CONSTRAINT `snp_notification_period` FOREIGN KEY (`notification_period`) REFERENCES `timeperiods` (`id`),
+  CONSTRAINT `snp_role` FOREIGN KEY (`role`) REFERENCES `roles` (`id`)
+) ENGINE=InnoDB COMMENT='Shared notification profiles';
+
+
+LOCK TABLES `sharednotificationprofiles` WRITE;
+/*!40000 ALTER TABLE `sharednotificationprofiles` DISABLE KEYS */;
+INSERT INTO `sharednotificationprofiles` VALUES (1,'Admin role profile 1','u,d,r,f','w,c,r,u,f',1,1,1,1,1,10,0,4);
+INSERT INTO `sharednotificationprofiles` VALUES (2,'Admin role profile 2','u,d,r,f','w,c,r,u,f',1,1,1,1,1,10,0,5);
+INSERT INTO `sharednotificationprofiles` VALUES (3,'demorole profile 1','u,d,r,f','w,c,r,u,f',1,1,1,1,1,17,0,0);
+INSERT INTO `sharednotificationprofiles` VALUES (4,'demorole profile 2','u,d,r,f','w,c,r,u,f',1,1,1,1,1,17,0,0);
+INSERT INTO `sharednotificationprofiles` VALUES (5,'View some change some profile 1','u,d,r,f','w,c,r,u,f',1,1,1,1,1,12,0,0);
+INSERT INTO `sharednotificationprofiles` VALUES (6,'View some change some profile 2','u,d,r,f','w,c,r,u,f',1,0,0,0,1,12,0,0);
+INSERT INTO `sharednotificationprofiles` VALUES (7,'View some change some profile 3','u,d,r,f','w,c,r,u,f',1,1,1,1,1,12,0,0);
+/*!40000 ALTER TABLE `sharednotificationprofiles` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `snmptraprules`;
+CREATE TABLE `snmptraprules` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) NOT NULL DEFAULT '',
+  `servicecheck` int(11) NOT NULL DEFAULT '0',
+  `code` text,
+  `alertlevel` int(11) NOT NULL DEFAULT '0',
+  `message` varchar(255) DEFAULT NULL,
+  `priority` int(11) NOT NULL DEFAULT '1000',
+  `process` int(11) NOT NULL DEFAULT '1',
+  `disabled` int(11) NOT NULL DEFAULT '0',
+  `uncommitted` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `snmptraprules_name_servicecheck` (`name`,`servicecheck`),
+  KEY `servicecheck` (`servicecheck`),
+  CONSTRAINT `snmptraprules_servicechecks_fk` FOREIGN KEY (`servicecheck`) REFERENCES `servicechecks` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `snmptraprules` WRITE;
+/*!40000 ALTER TABLE `snmptraprules` DISABLE KEYS */;
+INSERT INTO `snmptraprules` VALUES (1,'Check coldstart',79,'\"${TRAPNAME}\" =~ /SNMPv2-MIB::coldstart/i',1,'Device coldstarted',1000,1,0,0);
+INSERT INTO `snmptraprules` VALUES (2,'Otherwise Ok',79,'1',0,'OK',1000,1,0,0);
+INSERT INTO `snmptraprules` VALUES (6,'Test bad compile',81,'This will not compile',0,'OK',1000,1,0,0);
+INSERT INTO `snmptraprules` VALUES (7,'False',82,'0',0,'OK',1000,1,0,0);
+/*!40000 ALTER TABLE `snmptraprules` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `snmptraps`;
+CREATE TABLE `snmptraps` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) NOT NULL DEFAULT '',
+  `allow` int(11) NOT NULL DEFAULT '1',
+  `message` varchar(255) DEFAULT NULL,
+  `alertlevel` int(11) NOT NULL DEFAULT '0',
+  `uncommitted` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `snmptraps` WRITE;
+/*!40000 ALTER TABLE `snmptraps` DISABLE KEYS */;
+/*!40000 ALTER TABLE `snmptraps` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `snmpwalkcache`;
+CREATE TABLE `snmpwalkcache` (
+  `hostid` int(11) NOT NULL DEFAULT '0',
+  `last_updated` int(11) DEFAULT NULL,
+  `text` mediumtext,
+  PRIMARY KEY (`hostid`),
+  CONSTRAINT `snmpwalkcache_hosts_fk` FOREIGN KEY (`hostid`) REFERENCES `hosts` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `snmpwalkcache` WRITE;
+/*!40000 ALTER TABLE `snmpwalkcache` DISABLE KEYS */;
+/*!40000 ALTER TABLE `snmpwalkcache` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `systempreferences`;
+CREATE TABLE `systempreferences` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `default_statusmap_layout` int(11) DEFAULT NULL,
+  `default_statuswrl_layout` int(11) DEFAULT NULL,
+  `refresh_rate` int(11) DEFAULT NULL,
+  `log_notifications` int(11) DEFAULT NULL,
+  `log_service_retries` int(11) DEFAULT NULL,
+  `log_host_retries` int(11) DEFAULT NULL,
+  `log_event_handlers` int(11) DEFAULT NULL,
+  `log_initial_states` int(11) DEFAULT NULL,
+  `log_external_commands` int(11) DEFAULT NULL,
+  `log_passive_checks` int(11) DEFAULT NULL,
+  `daemon_dumps_core` int(11) DEFAULT NULL,
+  `audit_log_retention` int(11) DEFAULT NULL,
+  `host_info_url` varchar(255) DEFAULT NULL,
+  `hostgroup_info_url` varchar(255) DEFAULT NULL,
+  `enable_odw_import` int(11) DEFAULT '0',
+  `enable_full_odw_import` smallint(6) DEFAULT '0',
+  `odw_large_retention_months` int(11) DEFAULT NULL,
+  `odw_small_retention_months` int(11) DEFAULT NULL,
+  `opsview_server_name` varchar(255) DEFAULT '',
+  `soft_state_dependencies` int(11) DEFAULT NULL,
+  `show_timeline` tinyint(1) NOT NULL DEFAULT '1',
+  `smart_hosttemplate_removal` tinyint(1) NOT NULL DEFAULT '0',
+  `rancid_email_notification` varchar(255) DEFAULT NULL,
+  `viewport_summary_style` varchar(255) DEFAULT 'list',
+  `send_anon_data` tinyint(4) NOT NULL DEFAULT '1',
+  `uuid` char(36) NOT NULL DEFAULT '',
+  `netdisco_url` varchar(255) NOT NULL DEFAULT '',
+  `updates_includemajor` tinyint(4) NOT NULL DEFAULT '1',
+  `date_format` enum('us','euro','iso8601','strict-iso8601') NOT NULL DEFAULT 'euro',
+  `service_info_url` varchar(255) DEFAULT NULL,
+  `set_downtime_on_host_delete` tinyint(1) DEFAULT '1',
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `systempreferences` WRITE;
+/*!40000 ALTER TABLE `systempreferences` DISABLE KEYS */;
+INSERT INTO `systempreferences` VALUES (1,3,2,30,1,1,1,0,1,1,0,1,365,'','',0,0,0,0,'',0,1,0,NULL,'list',1,'TestDB','',1,'euro',NULL,1);
+/*!40000 ALTER TABLE `systempreferences` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `temporary_hostmonitoredbynode`;
+CREATE TABLE `temporary_hostmonitoredbynode` (
+  `hostid` int(11) NOT NULL DEFAULT '0',
+  `primary_node` int(11) DEFAULT NULL,
+  `secondary_node` int(11) DEFAULT NULL,
+  PRIMARY KEY (`hostid`)
+) ENGINE=InnoDB COMMENT='Temporary table for lookup of host to node in a cluster';
+
+
+LOCK TABLES `temporary_hostmonitoredbynode` WRITE;
+/*!40000 ALTER TABLE `temporary_hostmonitoredbynode` DISABLE KEYS */;
+/*!40000 ALTER TABLE `temporary_hostmonitoredbynode` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `timeperiods`;
+CREATE TABLE `timeperiods` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(128) NOT NULL DEFAULT '',
+  `alias` varchar(128) NOT NULL,
+  `sunday` varchar(255) NOT NULL,
+  `monday` varchar(255) NOT NULL,
+  `tuesday` varchar(255) NOT NULL,
+  `wednesday` varchar(255) NOT NULL,
+  `thursday` varchar(255) NOT NULL,
+  `friday` varchar(255) NOT NULL,
+  `saturday` varchar(255) NOT NULL,
+  `uncommitted` int(11) NOT NULL DEFAULT '0',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `timeperiods` WRITE;
+/*!40000 ALTER TABLE `timeperiods` DISABLE KEYS */;
+INSERT INTO `timeperiods` VALUES (1,'24x7','24 Hours A Day, 7 Days A Week','00:00-24:00','00:00-24:00','00:00-24:00','00:00-24:00','00:00-24:00','00:00-24:00','00:00-24:00',0);
+INSERT INTO `timeperiods` VALUES (2,'workhours','Normal Working Hours','','09:00-17:00','09:00-17:00','09:00-17:00','09:00-17:00','09:00-17:00','',0);
+INSERT INTO `timeperiods` VALUES (3,'nonworkhours','Non-work Hours','00:00-24:00','00:00-09:00,17:00-24:00','00:00-09:00,17:00-24:00','00:00-09:00,17:00-24:00','00:00-09:00,17:00-24:00','00:00-09:00,17:00-24:00','00:00-24:00',0);
+INSERT INTO `timeperiods` VALUES (4,'none','None','','','','','','','',0);
+/*!40000 ALTER TABLE `timeperiods` ENABLE KEYS */;
+UNLOCK TABLES;
+
+
+DROP TABLE IF EXISTS `useragents`;
+CREATE TABLE `useragents` (
+  `id` varchar(760) NOT NULL,
+  `last_update` datetime NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB;
+
+
+LOCK TABLES `useragents` WRITE;
+/*!40000 ALTER TABLE `useragents` DISABLE KEYS */;
+/*!40000 ALTER TABLE `useragents` ENABLE KEYS */;
+UNLOCK TABLES;
+/*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
+
+/*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
+/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;
+/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;
+/*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
+

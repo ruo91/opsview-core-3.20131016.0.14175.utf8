@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.application_opsview_master
+VERSION=1.2
+ALIAS=Application - Opsview Master
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

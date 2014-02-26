@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.database_postgresql
+VERSION=1.0
+ALIAS=Database - PostgreSQL
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

@@ -1,0 +1,78 @@
+#name,plugin,args,servicegroup,description,invertresults,notification_options,check_interval,retry_check_interval,check_attempts
+AFS,check_tcp,-H $HOSTADDRESS$ -p 548,Network Services,AFS over TCP,0,"w,c,r",5,1,3
+PowerChute,check_tcp,-H $HOSTADDRESS$ -p 3052,Network Services,Checks APC PoweChute on TCP port 3052,0,"w,c,r",5,1,3
+DHCP,check_dhcp,,Network Services,Checks DHCP on local network,0,"w,c,r",5,1,3
+DNS,check_dig,-H $HOSTADDRESS$ -l www.opsview.com,Network Services,Checks DNS on TCP port 53,0,"w,c,r",5,1,3
+FTP,check_ftp,-H $HOSTADDRESS$,Network Services,Checks FTP on TCP port 21,0,"w,c,r",5,1,3
+HTTP,check_http,-H $HOSTADDRESS$ -w 5 -c 10,Webserver,Checks for valid HTTP response on TCP port 80,0,"w,c,r",5,1,3
+HTTPS,check_http,-H $HOSTADDRESS$ -S -w 5 -c 10,Webserver,Checks for valid HTTPS response on TCP port 443,0,"w,c,r",5,1,3
+IMAP4,check_imap,-H $HOSTADDRESS$,Email,Checks IMAP on TCP port 143,0,"w,c,r",5,1,3
+Jakarta Tomcat,check_tcp,-H $HOSTADDRESS$ -p 8080,Network Services,Checks Tomcat on TCP port 8080,0,"w,c,r",5,1,3
+LDAP,check_tcp,-H $HOSTADDRESS$ -p 389,Network Services,Checks LDAP on TCP port 389,0,"w,c,r",5,1,3
+Lotus Domino,check_tcp,-H $HOSTADDRESS$ -p 1352,Network Services,Checks Domino on TCP port 1352,0,"w,c,r",5,1,3
+MS SQL Server,check_tcp,-H $HOSTADDRESS$ -p 1433,Database,Checks Microsoft SQL Server on TCP port 1433,0,"w,c,r",5,1,3
+MS Active Directory,check_tcp,-H $HOSTADDRESS$ -p 445,Network Services,Checks AD Server on TCP port 445,0,"w,c,r",5,1,3
+Mysql,check_tcp,-H $HOSTADDRESS$ -p 3306,Database,Checks MySQL on TCP port 3306,0,"w,c,r",5,1,3
+NETBIOS,check_tcp,-H $HOSTADDRESS$ -p 139,Network Services,Checks NETBIOS on TCP port 139,0,"w,c,r",5,1,3
+NTP Server,check_ntp_peer,-H $HOSTADDRESS$,Network Services,Checks the remote NTP server is synchronised with its peers,0,"w,c,r",5,1,3
+Oracle,check_tcp,-H $HOSTADDRESS$ -p 1521,Database,Checks Oracle database server on TCP port 1521,0,"w,c,r",5,1,3
+PC Anywhere,check_tcp,-H $HOSTADDRESS$ -p 5631,Network Services,Checks PC Anywhere on TCP port 5631,0,"w,c,r",5,1,3
+RADIUS,check_tcp,-H $HOSTADDRESS$ -p 1812,Network Services,Checks RADIUS on TCP port 1812,0,"w,c,r",5,1,3
+POP3,check_pop,-H $HOSTADDRESS$,Email,Checks POP3,0,"w,c,r",5,1,3
+SMTP,check_smtp,-H $HOSTADDRESS$,Email,Checks SMTP on TCP port 25,0,"w,c,r",5,1,3
+SSH,check_tcp,-H $HOSTADDRESS$ -p 22,Network Services,Checks SSH on TCP port 22,0,"w,c,r",5,1,3
+SSH 2200,check_tcp,-H $HOSTADDRESS$ -p 2200,Network Services,SSH on port 2200,0,"w,c,r",5,1,3
+Telnet,check_tcp,-H $HOSTADDRESS$ -p 23,Network Services,Checks Telnet on TCP port 23,0,"w,c,r",5,1,3
+TFTP,check_tftp,--connect $HOSTADDRESS$,Network Services,Checks TFTP,0,"w,c,r",5,1,3
+VNC,check_tcp,-H $HOSTADDRESS$ -p 5900,Network Services,Checks VNC on TCP port 5900,0,"w,c,r",5,1,3
+Web Management,check_tcp,-H $HOSTADDRESS$ -p 80,Network Services,Checks HTTP on TCP port 80,0,"w,c,r",5,1,3
+TCP/IP,check_icmp,"-H $HOSTADDRESS$ -w 100.0,20% -c 500.0,60%",Base Network,Checks IP connectivity,0,"w,c,r",5,1,3
+NNTP,check_tcp,-H $HOSTADDRESS$ -p 119,Network Services,Checks TCP port 119,0,"w,c,r",5,1,3
+IRC,check_tcp,-H $HOSTADDRESS$ -p 6667,Network Services,Checks TCP port 6667,0,"w,c,r",5,1,3
+X.400,check_tcp,-H $HOSTADDRESS$ -p 102,Network Services,Checks TCP port 102,0,"w,c,r",5,1,3
+MS-RPC,check_tcp,-H $HOSTADDRESS$ -p 135,Network Services,Checks TCP port 135,0,"w,c,r",5,1,3
+JBoss,check_tcp,-H $HOSTADDRESS$ -p 8080,Network Services,Checks TCP port 8080,0,"w,c,r",5,1,3
+IIOP,check_tcp,-H $HOSTADDRESS$ -p 535,Network Services,Checks TCP port 535,0,"w,c,r",5,1,3
+CORBA,check_tcp,-H $HOSTADDRESS$ -p 683,Network Services,Checks TCP port 683,0,"w,c,r",5,1,3
+PostgreSQL,check_tcp,-H $HOSTADDRESS$ -p 5432,Database,Checks TCP port 5432,0,"w,c,r",5,1,3
+IBM DB2,check_tcp,-H $HOSTADDRESS$ -p 523,Database,Checks TCP port 523,0,"w,c,r",5,1,3
+NFS,check_tcp,-H $HOSTADDRESS$ -p 2049,Network Services,Checks TCP port 2049,0,"w,c,r",5,1,3
+Unix Portmap,check_tcp,-H $HOSTADDRESS$ -p 2049,Network Services,Checks TCP port 111,0,"w,c,r",5,1,3
+TACACS,check_tcp,-H $HOSTADDRESS$ -p 49,Network Services,Checks TCP port 49,0,"w,c,r",5,1,3
+Kerberos,check_tcp,-H $HOSTADDRESS$ -p 88,Network Services,Checks TCP port 88,0,"w,c,r",5,1,3
+Whois,check_tcp,-H $HOSTADDRESS$ -p 63,Network Services,Checks TCP port 63,0,"w,c,r",5,1,3
+Check Memory,check_nrpe,-H $HOSTADDRESS$ -c check_memory -a '-w 90 -c 98',Unix,Checks Memory Utilisation,0,"w,c,r",5,1,3
+Check Loadavg,check_nrpe,"-H $HOSTADDRESS$ -c check_load -a '-w 5,5,5 -c 9,9,9'",Unix,Checks Load Average,0,"w,c,r",5,1,3
+Check Swap,check_nrpe,-H $HOSTADDRESS$ -c check_swap -a '-w 10% -c 5%',Unix,Checks Swap Utilisation,0,"w,c,r",5,1,3
+/,check_nrpe,-H $HOSTADDRESS$ -c check_disk -a '-w 5% -c 2% -p /',Unix,Utilisation of / partition,0,"w,c,r",5,1,3
+/var,check_nrpe,-H $HOSTADDRESS$ -c check_disk -a '-w 5% -c 2% -p /var',Unix,Utilisation of /var partition,0,"w,c,r",5,1,3
+/usr,check_nrpe,-H $HOSTADDRESS$ -c check_disk -a '-w 5% -c 2% -p /usr',Unix,Utilisation of /usr partition,0,"w,c,r",5,1,3
+/home,check_nrpe,-H $HOSTADDRESS$ -c check_disk -a '-w 5% -c 2% -p /home',Unix,Utilisation of /home partition,0,"w,c,r",5,1,3
+/export,check_nrpe,-H $HOSTADDRESS$ -c check_disk -a '-w 5% -c 2% -p /export',Unix,Utilisation of /export partition,0,"w,c,r",5,1,3
+/boot,check_nrpe,-H $HOSTADDRESS$ -c check_disk -a '-w 5% -c 2% -p /boot',Unix,Utilisation of /boot partition,0,"w,c,r",5,1,3
+Httpd Processes,check_nrpe,-H $HOSTADDRESS$ -c check_procs -a '-C httpd -w 1:75 -c 1:500',Webserver,Number of httpd processes,0,"w,c,r",5,1,3
+Opsview Daemon,check_nrpe,-H $HOSTADDRESS$ -c check_procs -a '-a opsviewd -w 1:2 -c 1:2',Opsview,Checks Opsview daemon is running,0,"w,c,r",5,1,3
+Nagios Processes,check_nrpe,-H $HOSTADDRESS$ -c check_procs -a '-C nagios -w 1:60 -c 1:100',Opsview,Checks nagios processes,0,"w,c,r",5,1,3
+CPU Load,check_nrpe,-H $HOSTADDRESS$ -c check_cpuload -a '80 95',Windows,CPU utilisation,0,"w,c,r",5,1,3
+Memory,check_nrpe,-H $HOSTADDRESS$ -c check_memload -a '95 98',Windows,Memory utilisation,0,"w,c,r",5,1,3
+Disk Queue,check_nrpe,-H $HOSTADDRESS$ -c check_wmi -a 'Win32_PerfRawData_PerfDisk_PhysicalDisk CurrentDiskQueueLength 6 12',Windows,Disk queue - an indicator of I/O issues,0,"w,c,r",5,1,3
+Events,check_nrpe,-H $HOSTADDRESS$ -c nsc_checkeventlog -a 'filter=new filter+generated=>2d file=Security',Windows,Recent critical events in the security eventlog,0,"w,c,r",5,1,3
+OS Info,check_nrpe,-H $HOSTADDRESS$ -c check_sysinfo,Windows,OS Information,0,"w,c,r",5,1,3
+C Drive,check_nrpe,-H $HOSTADDRESS$ -c check_disk -a 'c: 90 95',Windows,Drive utilisation,0,"w,c,r",5,1,3
+D Drive,check_nrpe,-H $HOSTADDRESS$ -c check_disk -a 'd: 90 95',Windows,Drive utilisation,0,"w,c,r",5,1,3
+E Drive,check_nrpe,-H $HOSTADDRESS$ -c check_disk -a 'e: 90 95',Windows,Drive utilisation,0,"w,c,r",5,1,3
+F Drive,check_nrpe,-H $HOSTADDRESS$ -c check_disk -a 'f: 90 95',Windows,Drive utilisation,0,"w,c,r",5,1,3
+G Drive,check_nrpe,-H $HOSTADDRESS$ -c check_disk -a 'g: 90 95',Windows,Drive utilisation,0,"w,c,r",5,1,3
+H Drive,check_nrpe,-H $HOSTADDRESS$ -c check_disk -a 'h: 90 95',Windows,Drive utilisation,0,"w,c,r",5,1,3
+X Drive,check_nrpe,-H $HOSTADDRESS$ -c check_disk -a 'x: 90 95',Windows,Drive utilisation,0,"w,c,r",5,1,3
+Y Drive,check_nrpe,-H $HOSTADDRESS$ -c check_disk -a 'y: 90 95',Windows,Drive utilisation,0,"w,c,r",5,1,3
+Z Drive,check_nrpe,-H $HOSTADDRESS$ -c check_disk -a 'z: 90 95',Windows,Drive utilisation,0,"w,c,r",5,1,3
+TCP Connections,check_snmp_tcpcurrestab,-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$,Network SNMP,Currently established TCP connections,0,"w,c,r",5,1,3
+Interface Status,check_snmp_interfaces,-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$,Network SNMP,Network interface status,0,"w,c,r",5,1,3
+SNMP Agent,check_snmp_sysinfo,-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$,Network SNMP,Status of SNMP agent,0,"w,c,r",5,1,3
+Uptime,check_snmp_uptime,-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$,Network SNMP,Uptime of SNMP agent usually equivalent to device uptime,0,"w,c,r",5,1,3
+Cisco CPU load,check_snmp_cisco_loadavg,-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -w 75 -c 90,Network SNMP,CPU load,0,"w,c,r",5,1,3
+Cisco memory utilisation,check_snmp_cisco_memutil,-H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -w 75 -c 90,Network SNMP,Memory utilisation,0,"w,c,r",5,1,3
+Opsview Slaves,check_opsview_slave,-r,Opsview,Checks Opsview slaves are functioning correctly,0,"w,c,r",5,1,2
+Opsview NDO,check_opsview_ndo_import,,Opsview,Checks NDO files are being imported,0,"w,c,r",5,1,2
+Nagios Startup,check_nagios_startup,,Opsview,Checks time taken to startup Nagios,0,,60,1,1

@@ -1,0 +1,181 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+# 	register_module {directory | tar.gz_file}
+#
+# DESCRIPTION:
+# 	Takes an argument of a tar gzip file or a directory. If targzip, will expand
+#	into /usr/local/nagios/modules - expects filename to be {module_name}.tar.gz.
+#	If directory, expect to be like
+#	/usr/local/nagios/modules/opsview-report
+#	Reads the module.info file (XML format) and takes appropriate action
+#	to install the module
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+
+use lib "/usr/local/nagios/perl/lib";
+use Cwd;
+use XML::Simple qw(:strict);
+use File::Find;
+use File::Copy;
+
+use Data::Dumper;
+
+my $root_dir         = "/usr/local";
+my $opsview_core_dir = "$root_dir/nagios";
+my $module_dir       = "$opsview_core_dir/modules";
+my $initial_dir      = getcwd();
+my $dir;
+my $xs = new XML::Simple(
+    ForceArray => [qw/dir requires/],
+    KeyAttr    => []
+);
+my $config;
+
+my $arg = shift @ARGV
+  || die "Must specify a targzip file or a directory containing module.info";
+
+if ( -f $arg ) {
+    my $file;
+    if ( $arg =~ /^\// ) {
+        $file = $arg;
+    }
+    else {
+        $file = "$initial_dir/$arg";
+    }
+    chdir("$module_dir") or die "Cannot chdir";
+    system("gunzip -c $file | tar -xf - ") == 0 or die "Cannot untar";
+    my $module_name = $arg;
+    $module_name =~ s%.*/%%;
+    $module_name =~ s/\.tar\.gz$|\.tgz$//;
+    $module_name =~ s/\-(\d+)(\.(\d+))+//;
+    chdir($module_name) or die "Cannot chdir to $module_name";
+    $config = $xs->XMLin( "module.info" );
+    $dir    = "$module_dir/$module_name";
+}
+elsif ( -d $arg ) {
+    if ( $arg =~ /^\// ) {
+        $dir = $arg;
+    }
+    else {
+        $dir = "$initial_dir/$arg";
+    }
+    chdir($dir) or die "Cannot chdir to $dir";
+    $config = $xs->XMLin( "module.info" );
+
+    # recursively copy source to correct place ($module_dir)
+    my $module_name = $config->{name};
+    my $perms       = $config->{module}->{mode};
+    my ( $o, $g ) = split( "\:", $config->{module}->{owner} );
+    my $owner = scalar getpwnam($o);
+    my $group = scalar getgrnam($g);
+    if ( !-d "$module_dir/$module_name" ) {
+        mkdir("$module_dir/$module_name")
+          or die( "Failed to create $module_dir/$module_name: $!\n" );
+    }
+    find {
+        wanted => sub {
+            ( my $name = $File::Find::name ) =~ s!^./!!; # correct name
+            return if ( $name eq "." );
+            return if ( $name =~ m/\.svn/ );
+            my $dest = "$module_dir/$module_name/$name";
+            if (-d) {
+                if ( !-d $dest ) {
+                    mkdir($dest) or die( "Failed to create $dest: $!\n" );
+                }
+            }
+            else {
+                copy( $dir . "/" . $name, $dest )
+                  || die( "Failed to copy $name to $dest: $!\n" );
+                chown( $owner, $group, $dest )
+                  or die "Cannot chown $owner:$group $dest";
+                chmod( oct($perms), $dest )
+                  or die "Cannot chmod ", oct($perms), " $dest";
+            }
+        },
+    } => ".";
+    $dir = "$module_dir/$module_name";
+    chdir($dir) or die( "Failed to chdir to $dir: $!\n" );
+}
+else {
+    die "Sorry, don't understand what $arg is!";
+}
+
+# At this point, we are working inside the module directory
+# $dir is the full path to this directory
+
+print Dumper $config;
+
+do_install( $config->{install} );
+
+sub do_install {
+    my $install = shift || return;
+    foreach my $dir ( @{ $install->{dir} } ) {
+        my $d = "$opsview_core_dir/" . $dir->{file};
+        print "Got dir: $d with owner "
+          . $dir->{owner}
+          . " and perms "
+          . $dir->{mode}
+          . $/;
+        if ( !-e $d ) {
+            mkdir $d or die "Cannot make " . $dir->{file};
+        }
+        my ( $o, $g ) = split( "\:", $dir->{owner} );
+        chown( scalar getpwnam($o), scalar getgrnam($g), $d )
+          or die "Cannot chown $d";
+        chmod( oct( $dir->{mode} ), $d ) or die "Cannot chmod $d";
+    }
+
+    if ( $install->{setup_links} ) {
+        find( \&setup_links, "nagios", "opsview-web" );
+    }
+}
+
+sub setup_links {
+    my $f = $File::Find::name;
+    if ( $f =~ m@/.svn@ ) {
+
+        # Ignore
+    }
+    elsif ( -d "$dir/$f" ) {
+
+        # Is a directory. Create at target if not there
+        if ( !-d "$root_dir/$f" ) {
+            mkdir "$root_dir/$f" or die "Cannot create dir at $root_dir/$f";
+        }
+    }
+    elsif ( -f "$dir/$f" ) {
+        if ( -l "$root_dir/$f" ) {
+            unlink( "$root_dir/$f", )
+              ; # recreate from scratch to ensure all up to date
+        }
+        print "linking $root_dir/$f -> $dir/$f", $/;
+        symlink "$dir/$f", "$root_dir/$f"
+          or die "Cannot symlink $root_dir/$f to $dir/$f";
+    }
+    else {
+        die "What is this? $f";
+    }
+}

@@ -1,0 +1,146 @@
+#!/bin/sh
+# 
+#
+# SYNTAX:
+#	rc.opsview-slave
+#
+# DESCRIPTION:
+#	Start/stop script for Opsview Slaves tunnels when using 
+# slave initiated ssh tunnels
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+# chkconfig: 345 99 01
+# description: Control script for Opsview Slaves
+# processname: autossh
+### BEGIN INIT INFO
+# Provides:          opsview-slave
+# Required-Start:    $network $named
+# Required-Stop:     $network $named
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Start Opsview Slave daemons at boot/shutdown
+# Description:       Start Opsview Slave daemons at boot/shutdown
+### END INIT INFO
+
+
+# Switch to nagios if run as root
+id | grep "uid=0(" >/dev/null
+if [ $? = "0" ] ; then
+	case "$0" in
+		/*) cmd="$0" ;;
+		*) cmd=`which $0`
+			case "$cmd" in
+			/*) ;;
+			*) cmd="$PWD/$cmd";;
+			esac
+			;;
+        esac
+        exec su - nagios -c "$cmd $@"
+fi
+
+die() { echo "$1"; exit 1; }
+
+status() {
+	if [ -e $pidfile ] ; then
+		pid=`cat $pidfile`
+		if [ "x$pid" = x ] ; then
+			rm -f $pidfile
+			return 1
+		fi
+		if kill -0 $pid > /dev/null 2>&1 ; then
+			return 0
+		else
+			rm -f $pidfile
+			return 1
+		fi
+	else
+		return 1
+	fi
+}
+	
+prefix=/usr/local/nagios
+etcdir=$prefix/etc
+pidfile=$prefix/var/opsview-slave.pid
+
+# If run from /etc/init.d script, then force full path
+if echo $0 | grep "^/etc" > /dev/null ; then
+	bindir=$prefix/bin
+else
+	bindir=`echo $0 | perl -pe 's/(.*)\/.*/$1/'`
+fi
+
+# only eval the file if it exists
+if [ -f $etcdir/opsview-slave.conf ]; then
+	eval `cat $etcdir/opsview-slave.conf`
+fi
+
+# Will set MASTER and SLAVE_PORT (calculated)
+if [ "x$MASTER" = "x" ] ; then 
+	exit 0
+fi
+
+# See how we were called.
+case "$1" in
+
+	status) if status; then
+			echo "Running as pid `cat $pidfile`"
+		else
+			die "Not running"
+		fi
+		;;
+	start)
+		status && die "Already running as pid `cat $pidfile`"
+		# Set pid file
+		AUTOSSH_PIDFILE=$pidfile
+		export AUTOSSH_PIDFILE
+		AUTOSSH_GATEWAY=0
+		export AUTOSSH_GATEWAY
+		$prefix/bin/autossh -M 0 -f -N -T -2 -o TCPKeepAlive=yes -o ServerAliveCountMax=3 -o ServerAliveInterval=10 -R $SLAVE_PORT:127.0.0.1:22 -L 5669:127.0.0.1:5669 -L 4125:127.0.0.1:4125 -L 5667:127.0.0.1:5667 -L 2345:127.0.0.1:2345 nagios@$MASTER
+		;;
+	stop)
+		if [ -e $pidfile ] ; then
+			# Get pid file
+			pid=`cat $pidfile`
+			if [ "x$pid" != "x" ] ; then
+				kill $pid
+			fi
+			rm -f $pidfile
+		fi
+		;;
+
+	restart)
+		$0 stop
+		sleep 5		# Let things die off
+		$0 start
+		;;
+
+	test)
+		ssh nagios@$MASTER echo "Connected to $MASTER okay"
+		;;
+
+	*)
+		echo "Usage: $comm {start|stop|restart|status|test}"
+		exit 1
+		;;
+
+esac
+  
+# End of this script

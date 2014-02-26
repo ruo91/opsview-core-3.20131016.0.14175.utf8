@@ -1,0 +1,189 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use FindBin qw($Bin $Script);
+use lib '/usr/local/nagios/perl/lib';
+use lib $Bin. '/../lib';
+
+use Getopt::Long qw(:config no_ignore_case bundling no_auto_abbrev);
+use Pod::Usage;
+
+use Runtime::Schema;
+use Opsview::Config;
+
+my $VERSION = '0.01';
+
+my %options = (
+    'help|h|?'  => 0,
+    'man'       => 0,
+    'version|V' => 0,
+    'debug:+'   => 0,
+);
+
+GetOptions( \%options, keys(%options) ) || pod2usage( -verbose => 1 );
+
+die("Version: $VERSION\n") if ( $options{version} );
+pod2usage( -verbose => 1 ) if ( $options{'?'}  || $options{help} );
+pod2usage( -verbose => 2 ) if ( $options{HELP} || $options{man} );
+
+$options{debug} ||= 0;
+$options{debug} = 8 if ( $options{debug} > 8 );
+
+sub logmsg($@) {
+    my ( $level, @text ) = @_;
+    print @text, $/ if ( $level <= $options{debug} );
+}
+
+logmsg( 1, "Script $Script is running out of $Bin" );
+
+my $hostname    = shift;
+my $servicename = shift;
+
+if ( !$hostname ) {
+    pod2usage(
+        -verbose => 1,
+        -message => 'Hostname not provided'
+    );
+}
+
+logmsg( 2, 'Looking for host object: ', $hostname );
+logmsg( 3, 'Connected to runtime database' );
+my $schema = Runtime::Schema->my_connect;
+logmsg( 3, 'Performing initial search for all services on host: ', $hostname );
+my $search_rs =
+  $schema->resultset('OpsviewHostServices')
+  ->search( { hostname => $hostname, } );
+
+die 'Unable to find host: ', $hostname, $/ unless ($search_rs);
+
+logmsg( 3, 'Services found: ', $search_rs->count );
+if ( $search_rs->count == 0 ) {
+    die 'Hostname not found', $/;
+}
+
+if ($servicename) {
+    logmsg( 3, 'Restricting search for host to service: ', $servicename );
+    $search_rs = $search_rs->search( { servicename => $servicename, } );
+    logmsg( 3, 'Services found: ', $search_rs->count );
+}
+
+foreach my $service ( $search_rs->all ) {
+    print 'Host: ', $service->hostname, ', Service: ', $service->servicename,
+      $/;
+
+    # massage check_command so it can be run directly from the command line
+    if ( $service->servicestatus ) {
+        my $command = $service->servicestatus->check_command;
+
+        logmsg( 3, 'Raw command: ', $command );
+        my $path = Opsview::Config->root_dir . '/libexec';
+        $command =~ s{(\w+)!}{$path/$1 };
+        logmsg( 3, 'Amended path ', $command );
+
+        # swap out some macros, too
+        my $hostaddress = $service->host->ip;
+        $command =~ s{\$HOSTADDRESS\$}{$hostaddress}g;
+
+        print '  => ', $command, $/;
+    }
+    else {
+        print '  => command not been run yet', $/;
+    }
+}
+
+exit 0;
+
+__END__
+
+=head1 NAME
+
+get_actual_command
+
+=head1 SYNOPSIS
+
+S<< get_actual_command [-?hV] <host name> [service name] >>
+
+=head1 DESCRIPTION
+
+Fetch the actual commands run for services on a given host to allow for
+copy-n-paste testing of the commands run.
+
+Only the last command run by nagios for the given host/service will be shown.
+
+=head1 OPTIONS
+
+=over
+
+=item --help, -?, -h
+
+Display basic help 
+
+=item --man
+
+Display man page
+
+=item --debug [0-9], --debug [--debug [...]]
+
+Enable debugging mode (using more than once increases verbosity, or specify
+a level explicitly to a maximum of level 8) 
+
+=item --version, -V
+
+Show version information
+
+=back
+
+=head1 ARGUMENTS
+
+=over
+
+=item hostname
+
+Hostname to get commands for
+
+=item servicename
+
+Optionally restrict the output to the given service name
+
+=back
+
+=head1 NOTES
+
+Some service checks may not be able to run as they expect environment
+variables to have been set up by nagios.
+
+Also, some macros may not have been expanded.
+
+=head1 FILES
+
+N/A
+
+=head1 AUTHOR AND COPYRIGHT
+
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This software is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Opsview; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+=head1 KNOWN BUGS
+
+None known at this time.
+
+=head1 SEE ALSO
+
+L<perl>
+
+=cut

@@ -1,0 +1,65 @@
+#!/bin/sh
+# 
+#
+# SYNTAX:
+#	check_file_state {file}
+#
+# DESCRIPTION:
+#	Returns a code based on the contents of the file
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+file=$1
+
+if [ x$file = x ] ; then
+	echo "UNKNOWN: No file specified"
+	exit 3
+fi
+
+if [ ! -e $file ] ; then
+	echo "UNKNOWN: $file does not exist"
+	exit 3
+fi
+
+if [ ! -f $file ] ; then
+	echo "UNKNOWN: $file is not a file"
+	exit 3
+fi
+
+if [ ! -r $file ] ; then
+	echo "UNKNOWN: File $file not readable"
+	exit 3
+fi
+
+a=`head -1 $file`
+if [ "$a" = 0 ] ; then
+	echo "OK: File $file contains 0"
+	exit 0
+elif [ "$a" = 1 ] ; then
+	echo "WARNING: File $file contains 1"
+	exit 1
+elif [ "$a" = 2 ] ; then
+	echo "CRITICAL: File $file contains 2"
+	exit 2
+else
+	echo "UNKNOWN: File $file does not contain 0, 1 or 2"
+	exit 3
+fi

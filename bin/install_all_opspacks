@@ -1,0 +1,49 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+# 	install_all_opspacks [--force] [--dir=DIR]
+#
+# DESCRIPTION:
+#   Installs all Opspacks
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#
+
+use strict;
+use warnings;
+use FindBin qw($Bin);
+use lib "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib",
+  '/opt/opsview/perl/lib/perl5';
+use Getopt::Long;
+use Opsview::Schema;
+
+use Log::Log4perl;
+Log::Log4perl::init( "$Bin/../etc/Log4perl.conf" );
+my $logger = Log::Log4perl->get_logger( "opspacks" );
+$logger->info( "Starting OpsPacks import" );
+
+my $schema = Opsview::Schema->my_connect;
+
+my $force = 0;
+my $dir   = "$Bin/../var/spool/opspacks";
+
+GetOptions(
+    "force" => \$force,
+    "dir=s" => \$dir,
+) or die( "Incorrect options" );
+
+my $success = $schema->resultset("MonitorPacks")->install_new_monitorpacks(
+    $logger,
+    {
+        dir   => $dir,
+        force => $force
+    }
+);
+my $rc = $success ? 0 : 1;
+$logger->info( "Finished OpsPacks import with rc=$rc" );
+exit $rc;

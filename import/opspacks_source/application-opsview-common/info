@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.application_opsview_common
+VERSION=1.2
+ALIAS=Application - Opsview Common
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

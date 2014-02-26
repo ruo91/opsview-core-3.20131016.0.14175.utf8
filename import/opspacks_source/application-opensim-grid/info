@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.application_opensim_grid
+VERSION=1.0
+ALIAS=Application - OpenSim Grid
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

@@ -1,0 +1,7 @@
+$rulesets = {};
+$advsnmptrap = {};
+$hostip_lookup = {};
+$trace = {};
+$debug = undef;
+$enabled = 0;
+1;

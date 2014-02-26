@@ -1,0 +1,65 @@
+#!/bin/bash
+# 
+#
+# SYNTAX:
+#       snmpd
+#
+# DESCRIPTION:
+# 	A wrapper script to restart snmpd on various OSes
+#
+# AUTHORS:
+#       Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+# Must be run as root
+if [[ $(id -u) -ne 0 ]] ; then
+	echo "Must be run as root"
+	exit 1
+fi
+
+ACTION=$1
+
+# Solaris
+if [[ -x /usr/sbin/svcadm ]]; then
+	svcadm restart svc:/application/management/sma:default
+	exec /etc/init.d/snmptrapd $ACTION
+fi
+
+
+# Debian
+if [[ -x /etc/init.d/snmpd ]] ; then
+	PATH=$PATH:/sbin:/usr/sbin
+
+	# rewrite the ACTION on debian as reload doesnt work as previous
+	if [[ "$ACTION" == "reload" ]]; then
+		ACTION="restart"
+	fi
+
+	/etc/init.d/snmpd $ACTION
+	rc=$?
+	[[ $rc -ne 0 ]] && exit $rc
+fi
+
+# Redhat and other distros have separate snmptrapd script
+if [[ -x /etc/init.d/snmptrapd ]] ; then
+	exec /etc/init.d/snmptrapd $ACTION
+fi
+
+# MacOSX
+# Looks like the Apple delivered file is broken - does not support
+# restarts in /System/Library/StartupItems/SNMP/SNMP

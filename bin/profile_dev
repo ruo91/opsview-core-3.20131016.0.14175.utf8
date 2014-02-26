@@ -1,0 +1,52 @@
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+# sh compatible profile for development servers
+if [ -d /usr/local/opsview ]; then
+	OPSVIEWDEV_DIR=/usr/local/opsview
+elif [ -d /usr/local/trunk ]; then
+	OPSVIEWDEV_DIR=/usr/local/trunk
+elif [ -d $HOME/opsview ]; then
+	OPSVIEWDEV_DIR=$HOME/opsview
+elif [ -d $HOME/svnroot/opsview ]; then
+	OPSVIEWDEV_DIR=$HOME/svnroot/opsview
+elif [ -d $HOME/gitroot/opsview ]; then
+	OPSVIEWDEV_DIR=$HOME/gitroot/opsview
+elif [ -d $HOME/opsview-trunk ]; then
+	OPSVIEWDEV_DIR=$HOME/opsview-trunk
+fi
+
+export OPSVIEW_TEST=1
+OPSVIEWDEV_CORE=$OPSVIEWDEV_DIR/opsview-core
+OPSVIEWDEV_BASE=$OPSVIEWDEV_DIR/opsview-base
+OPSVIEWDEV_PERL=$OPSVIEWDEV_DIR/../opsview-perl
+OPSVIEWDEV_WEB=$OPSVIEWDEV_DIR/opsview-web
+
+alias cdo="cd $OPSVIEWDEV_DIR"
+alias cdc="cd $OPSVIEWDEV_CORE"
+alias cdb="cd $OPSVIEWDEV_BASE"
+alias cdp="cd $OPSVIEWDEV_PERL"
+alias cdw="cd $OPSVIEWDEV_WEB"
+
+# Easily edit and source this file
+alias realias='$EDITOR /usr/local/nagios/bin/profile_dev ; source /usr/local/nagios/bin/profile_dev'
+
+# Easily get perl module version
+alias pmver="perl -le '\$m=shift; eval qq{require \$m} or die qq{Module \"\$m\" is not installed\\n}; print \$m->VERSION'"

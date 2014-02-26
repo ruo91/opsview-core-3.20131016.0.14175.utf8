@@ -1,0 +1,2 @@
+# Do not use depend file as this prevents smooth ugprades.
+# Instead use 'checkinstall' script

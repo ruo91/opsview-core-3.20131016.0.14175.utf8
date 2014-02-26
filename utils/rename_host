@@ -1,0 +1,267 @@
+#!/usr/bin/perl
+#
+# $Id$
+#
+
+# NOTES:
+#
+# "perldoc perlpod" for more info on using POD
+# "perldoc Getopt::Long" for more info on using command line options
+#   and imposing limits on what can be used with which switches
+# When script is complete, use "perltidy -b -i=2 <script>" to format correctly
+
+# all "use" statements
+use strict;   # ALWAYS USE! Helps to catch bugs and problems much faster
+use warnings; # ALWAYS USE! Helps to catch bugs and problems much faster
+
+# extra required library search paths
+use lib '/usr/local/nagios/perl/lib';
+use lib '/usr/local/nagios/lib';
+
+# find the path to the script directory and the script name
+use Cwd;
+my ( $script, $scriptname, $scriptdir );
+( $scriptname = $0 ) =~ s!^.*/!!;
+( $scriptdir = Cwd::abs_path($0) ) =~ s!/[^/]+$!!;
+$script = "$scriptdir/$scriptname";
+
+# Pull in functions to use inline POD as output for help options
+use Pod::Usage;
+
+# Pull in functions to parse the command line options
+# Configure command line options to be case sensitive, and allow
+# -v -a -x as -vax (different to --vax).  Long options must also use --'s
+# Also stop long options being abreviated to uniqueness
+use Getopt::Long qw(:config no_ignore_case bundling no_auto_abbrev);
+
+# Suplimentary modules required when customising this script
+# use File::Find;
+# use Some::Other::Module;
+use Opsview::Schema;
+use Opsview::Config;
+use Readonly;
+use Log::Log4perl;
+use FindBin qw($Bin);
+use File::Copy;
+
+# Version information, as from CVS
+my $_VERS = sprintf( "%d", q$Revision: 1 $ =~ m!(\d+)! );
+my $_DATE = sprintf( "%s %s",
+    q$Date: 2000-01-01 00:00:00 $ =~ m!(\d...-\d.-\d.) (\d.:\d.:\d.)! );
+
+my $VERSION = "$_VERS $_DATE"; # Combined for script version (-V output)
+
+# Start of POD (Perl Online Documentation)
+#   Use "perldoc <script>" or "<script> --help" to read POD
+
+=head1 NAME
+
+rename_host
+
+=head1 SYNOPSIS
+
+S<< rename_host [-?hV] <old hostname> <new hostname> >>
+
+=head1 DESCRIPTION
+
+Rename a host in opsview's configuration while also preserving any graphing
+and ODW history
+
+=head1 OPTIONS
+
+=over
+
+=cut
+
+#### Set up default options available for all scripts,
+# i.e. "<script> --version" or "<script> --help"
+# All command line options are stored within a hash for easy access
+# This initialises hash and defines some entries in one go
+# See "perldoc perldata" for more info
+my %options = (
+    'help|h|?'  => 0,
+    'man'       => 0,
+    'version|V' => 0,
+    'debug:+'   => 0,
+);
+
+#### Document default options
+
+=item --help, -?, -h
+
+Display basic help
+
+=item --man
+
+Display man page
+
+=item --debug [0-9], --debug [--debug [...]]
+
+Enable debugging mode (using more than once increases verbosity, or specify
+a level explicitly to a maximum of level 8)
+
+=item --version, -V
+
+Show version information
+
+=cut
+
+#### End of options
+
+=back
+
+=head1 ARGUMENTS
+
+=over
+
+=item <old hostname>
+
+Hostname to be renamed.  If none given will output all available choices.
+
+=item <new hostname>
+
+New hostname to be used
+
+=back
+
+=cut
+
+#### start of perl code ####
+
+# Getopt::Long can limit/expand on how switches are used.  This step
+# normalises the options hash to remove optional specifiers used by
+# Getopts::Long.  Show usage (from the inline POD) if any options unrecognised
+GetOptions( \%options, keys(%options) ) || pod2usage( -verbose => 1 );
+
+# output version and exit
+# i.e. "<script> --version" or "<script> -v"
+die("Version: $VERSION\n") if ( $options{version} );
+
+# output basic help text when -?, --help or -h used
+pod2usage( -verbose => 1 ) if ( $options{'?'} || $options{help} );
+
+#output complete help text when -m|--man|-H|--HELP used
+pod2usage( -verbose => 2 ) if ( $options{HELP} || $options{man} );
+
+#### global variables ####
+# Initialise debug variable correctly if not already set by --debug
+$options{debug} ||= 0;
+
+# Set an arbitrary max level of 8 for debug
+$options{debug} = 8 if ( $options{debug} > 8 );
+
+Log::Log4perl::init( "$Bin/../etc/Log4perl.conf" );
+my $logger = Log::Log4perl->get_logger($scriptname);
+
+#### all sub-routines ####
+
+# description:
+#   given a level and a message, if level <= debug level, output message
+#   Allows for progressivly more output the higher the debug level, as
+#   given by the use of --debug. Saves on "expensive" 3rd party module
+# parameters:
+#   $1 = level --> level (to match debug level)
+#   $2 .. $n   --> list to pass to print
+# returns:
+#   nothing
+sub logmsg($@) {
+    print @_, $/ if ( shift() <= $options{debug} );
+}
+
+# Constant definitions
+Readonly my $TAB => "\t";
+
+#### main ####
+my ( $old_hostname, $new_hostname ) = @ARGV;
+
+my $opsview_schema = Opsview::Schema->my_connect;
+
+# example command line check for validity of arguments
+if ( !$old_hostname ) {
+    print 'No hostname given.  Available choices are: ', $/;
+
+    my $opsview_hosts = $opsview_schema->resultset( "Hosts" );
+
+    while ( my $host_object = $opsview_hosts->next ) {
+        print $TAB, $host_object->name, $/;
+    }
+    exit 1;
+}
+
+my $host_obj =
+  $opsview_schema->resultset("Hosts")->find( { name => $old_hostname } );
+
+if ( !$host_obj ) {
+    die 'Invalid hostname given', $/;
+}
+
+if ( !$new_hostname ) {
+    die 'New hostname not given', $/;
+}
+
+my $rrd_dir = Opsview::Config->root_dir . '/var/rrd';
+
+print "About to rename '$old_hostname' to '$new_hostname'", $/;
+sleep 10;
+
+$host_obj->name($new_hostname);
+$host_obj->uncommitted(1);
+$host_obj->update;
+
+my $old_rrd_dir = $rrd_dir . '/' . $old_hostname;
+my $new_rrd_dir = $rrd_dir . '/' . $new_hostname;
+
+logmsg( 1, "old_rrd_dir=$old_rrd_dir" );
+logmsg( 1, "new_rrd_dir=$new_rrd_dir" );
+
+if ( -d $old_rrd_dir ) {
+    logmsg( 1, "Found rrd data dir - renaming" );
+    move( $old_rrd_dir, $new_rrd_dir )
+      || warn "Failed to rename '$old_rrd_dir' to '$new_rrd_dir': $!", $/;
+}
+
+logmsg( 1, 'Requesting opsview reload' );
+my $command = Opsview::Config->root_dir . '/bin/send_opsview_cmd web_reload';
+logmsg( 2, "Running: $command" );
+system($command);
+
+__END__
+# Remaining POD for man page/help text
+
+=head1 NOTES
+
+Changes as logged under 'WARN' into the F<opsviewd.log> logfile
+
+=head1 FILES
+
+F</var/log/opsview/opsviewd.log> - actions taken are logged into here
+
+=head1 AUTHOR AND COPYRIGHT
+
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This software is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Opsview; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+=head1 KNOWN BUGS
+
+None at this time
+
+=head1 SEE ALSO
+
+L<perl>
+
+L<http://docs.opsview.com/>
+
+=cut

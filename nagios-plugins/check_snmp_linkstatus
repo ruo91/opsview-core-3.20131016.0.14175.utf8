@@ -1,0 +1,1507 @@
+#!/usr/bin/perl
+#
+### BEGIN OPSVIEW INFO
+# Macros: HOSTNAME
+### END OPSVIEW INFO
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#	Written by Neil Ferguson
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+use lib qw ( /usr/local/nagios/perl/lib /usr/local/nagios/lib );
+use Net::SNMP;
+use Opsview::Utils::QueryHost;
+
+# Needs DBD::SQLite >= 1.25 otherwise can get transaction errors
+use DBI;
+use Getopt::Std;
+use Data::Dump qw(dump);
+use Math::BigInt;
+use Lazy::Lockfile;
+use File::stat;
+
+# About us
+my $script             = "check_snmp_linkstatus";
+my $script_version     = "3.4";
+my $script_description = "Monitors specified interface for link state changes";
+
+my $hostname = '192.168.10.20';
+my $port     = 161;
+
+# Cleanup
+END { db_disconnect() }
+
+# Cache hold time in seconds
+my $cache_hold_time = 1800;
+
+# Where to put the .db file
+my $db_home = "/usr/local/nagios/var/plugins/$script";
+
+# make sure db_home area exists
+if ( !-d $db_home ) {
+    if ( !mkdir $db_home ) {
+        print "Cannot create directory '$db_home': $!\n";
+        exit 3;
+    }
+}
+
+# Name of the database file
+# Rename the file when it structurally changes, or the contents are invalid
+# Must be of form qr{_v\d+\.\d+\.db}
+my $db_name_ext = "_v3.3.db";
+
+# Has the cache expired?
+my $cache_expired = 0;
+
+# speed of the interface
+my $link_speed = 0;
+
+# Performance data
+my $perfdata = "";
+
+# SNMP variables
+my $oid_sysDescr =
+  ".1.3.6.1.2.1.1.1.0"; # Used to check whether SNMP is actually responding
+my $oid_sysUptime = ".1.3.6.1.2.1.1.3.0"; # SNMP agent uptime
+my $oid_interfaces_base =
+  ".1.3.6.1.2.1.2.2.1";                   # Where all the interface names are
+my $oid_ifhighspeed_base = ".1.3.6.1.2.1.31.1.1.1.15"
+  ; # High speed (64-bit counter - not all devices have this)
+my $oid_interfaces_descr = "$oid_interfaces_base.2";
+my $oid_outOctets        = "1.3.6.1.2.1.2.2.1.16";
+my $oid_inOctets         = "1.3.6.1.2.1.2.2.1.10";
+my $oid_inHCOctets       = "1.3.6.1.2.1.31.1.1.1.6";
+my $oid_outHCOctets      = "1.3.6.1.2.1.31.1.1.1.10";
+my $oid_adminstatus      = ".1.3.6.1.2.1.2.2.1.7";
+my $oid_operstatus       = ".1.3.6.1.2.1.2.2.1.8";
+my $oid_ifAlias          = ".1.3.6.1.2.1.31.1.1.1.18";
+my $oid_inErrors         = ".1.3.6.1.2.1.2.2.1.14";
+my $oid_outErrors        = ".1.3.6.1.2.1.2.2.1.20";
+my $oid_inDiscards       = ".1.3.6.1.2.1.2.2.1.13";
+my $oid_outDiscards      = ".1.3.6.1.2.1.2.2.1.19";
+my @interface_list       = ( "$oid_interfaces_base.1" );
+my $counter_limit;
+my @common_interface_data = (
+    "$oid_interfaces_base.2", # Friendly interface name
+);
+my @poll_only_interface_data = (
+    "$oid_interfaces_base.5", # speed (32-bit counter)
+    $oid_operstatus,
+    $oid_adminstatus,
+);
+my @scan_only_interface_data = (
+    $oid_ifAlias,             # ifAlias
+);
+
+# This table will have the interface index suffixed, so only the required interface's data is retrieved
+# Only poll for MIB2 things, otherwise errors will appear on some devices
+my @interface_data = ( @common_interface_data, @poll_only_interface_data );
+my $community           = "public"; # Default community
+my $snmpv3_username     = "";       # SNMPv3 username
+my $snmpv3_password     = "";       # SNMPv3 password
+my $snmpv3_authprotocol = "md5";    # SNMPv3 hash algorithm (md5 / sha)
+my $snmpv3_privpassword = "";       # SNMPv3 hash algorithm (md5 / sha)
+my $snmpv3_privprotocol =
+  "des"; # SNMPv3 encryption protocol (des / aes / aes128)
+my $timeout                 = 10;   # SNMP timeout
+my $retval                  = 0;    # Innocent until proven guilty
+my $retmsg                  = "";   # Text to return from plugin
+my $rescanned               = 0;    # Have we rescanned the device yet?
+my $uptime                  = 0;
+my $version                 = "2c";
+my $warning                 = 0;
+my $critical                = 0;
+my $direction_in            = 0;
+my $direction_out           = 0;
+my $check_errors            = 0;
+my $check_discards          = 0;
+my $throughput_in           = 0;
+my $throughput_in_pct       = 0;
+my $throughput_out          = 0;
+my $throughput_out_pct      = 0;
+my $throughput_in_friendly  = 0;
+my $throughput_out_friendly = 0;
+my $warning_pct             = undef;
+my $critical_pct            = undef;
+my $compare_in_percentages  = 0;
+my $user_specified_ifname;
+my $user_specified_index;
+my $verbose    = 0;
+my $db_backend = 'SQLite';
+
+my ( $s, $e, $st_h, $db_h );
+
+# Command line arguments
+our (
+    $opt_h, $opt_H, $opt_C, $opt_t, $opt_w, $opt_c, $opt_o, $opt_i,
+    $opt_I, $opt_v, $opt_u, $opt_a, $opt_A, $opt_x, $opt_X, $opt_n,
+    $opt_d, $opt_D, $opt_E, $opt_p, $opt_l, $opt_m, $opt_B
+);
+getopts( "hdH:C:t:w:c:oiI:v:u:a:A:x:X:n:EDp:l:m:B:" );
+if ($opt_h) {
+    usage();
+    exit 0;
+}
+if ($opt_H) {
+    $hostname = $opt_H;
+}
+else {
+    print "No hostname specified\n";
+    usage();
+    exit 3;
+}
+if ($opt_C) {
+    $community = $opt_C;
+}
+if ( defined $opt_t ) {
+
+    # Validity test - must be numeric
+    unless ( $opt_t =~ m/^[0-9]+$/xsm ) {
+        print "Specify time in seconds - $opt_t is not a valid integer\n";
+        exit 3;
+    }
+    $cache_hold_time = $opt_t;
+}
+if ($opt_w) {
+    unless ( $opt_w =~ m/^[0-9\.]+%?$/xsm ) {
+        print
+          "Warning must be an integer indicating bits per second, or a percentage\n";
+        exit 3;
+    }
+
+    if ( $opt_w =~ m/%$/xsm ) {
+        $warning_pct = 1;
+        $opt_w =~ s/%//xsm;
+    }
+    else {
+        $warning_pct = 0;
+    }
+
+    $warning = $opt_w;
+}
+if ($opt_c) {
+    unless ( $opt_c =~ m/^[0-9\.]+%?$/xsm ) {
+        print
+          "Critical must be an integer indicating bits per second, or a percentage\n";
+        exit 3;
+    }
+
+    if ( $opt_c =~ m/%$/xsm ) {
+        $critical_pct = 1;
+        $opt_c =~ s/%//xsm;
+    }
+    else {
+        $critical_pct = 0;
+    }
+
+    $critical = $opt_c;
+}
+if ($opt_o) {
+    $direction_out = 1;
+}
+if ($opt_i) {
+    $direction_in = 1;
+}
+if ($opt_I) {
+    $user_specified_ifname = $opt_I;
+}
+else {
+    print "Must specify interface name!\n";
+    exit 3;
+}
+if ($opt_d) {
+    $verbose = 1;
+}
+
+if ( defined $opt_n ) {
+    $user_specified_index = $opt_n;
+}
+
+# SNMPv3
+if ($opt_u) {
+    $snmpv3_username = $opt_u;
+}
+if ($opt_A) {
+    $snmpv3_password = $opt_A;
+}
+if ($opt_a) {
+    $snmpv3_authprotocol = $opt_a;
+}
+if ($opt_x) {
+    $snmpv3_privprotocol = $opt_x;
+}
+if ($opt_X) {
+    $snmpv3_privpassword = $opt_X;
+}
+if ($opt_v) {
+    $version = $opt_v;
+}
+if ($opt_E) {
+    $check_errors = 1;
+}
+if ($opt_D) {
+    $check_discards = 1;
+}
+if ($opt_B) {
+    if ( $opt_B ne 'SQLite' && $opt_B ne 'MySQL' ) {
+        print 'Backend must be "SQLite" or "MySQL"', $/;
+        exit 3;
+    }
+    $db_backend = $opt_B;
+}
+if ( !$direction_in && !$direction_out && !$check_errors && !$check_discards ) {
+    print
+      "Must specify -i and/or -o for throughput, -E for errors or -D for discards\n";
+    usage();
+    exit 3;
+}
+if ($opt_p) {
+    $port = $opt_p;
+}
+my $tidy_ifdesc_level = $opt_l || 0;
+my $max_msg_size      = $opt_m || 0;
+if ( $max_msg_size =~ m/\D/ || $max_msg_size < 0 || $max_msg_size > 65535 ) {
+    print 'Invalid -m (max_msg_size) option', $/;
+    print 'Must be between 0 and 65535',      $/;
+    usage();
+    exit(3);
+}
+
+# Can't have warning and critical in different types
+if ( defined $warning_pct && defined $critical_pct ) {
+    if ( $warning_pct != $critical_pct ) {
+        print
+          "Warning and critical values must either both be in bps, or in %\n";
+        exit 3;
+    }
+}
+if ( $warning_pct || $critical_pct ) {
+    $compare_in_percentages = 1;
+}
+
+# Some of our SQL statements (We do this after getopts because we use
+# the provided hostname variable to create the SQL statements
+my $sqlite_sql_create_hosts = q{ 
+    CREATE TABLE IF NOT EXISTS hosts (
+        hostname UNIQUE,uptime,modified_on
+    )
+};
+my $mysql_sql_create_hosts = q{ 
+    CREATE TABLE IF NOT EXISTS hosts (
+        hostname VARCHAR(128) UNIQUE,
+        uptime INT,
+        modified_on INT
+    ) ENGINE=InnoDB;
+};
+my $sqlite_sql_create_interfaces = q{
+    CREATE TABLE IF NOT EXISTS interfaces (
+        hostname,name,ifindex,inOctets,inLastUpdate,
+        outOctets,outLastUpdate,ifalias,
+        errorsIn,errorsInLastUpdate,errorsOut,errorsOutLastUpdate,
+        discardsIn,discardsInLastUpdate,discardsOut,discardsOutLastUpdate
+    )
+};
+my $mysql_sql_create_interfaces = q{
+    CREATE TABLE IF NOT EXISTS interfaces (
+        hostname VARCHAR(120),
+        name VARCHAR(180),
+        ifindex INT UNSIGNED,
+        inOctets BIGINT UNSIGNED,
+        inLastUpdate INT UNSIGNED,
+        outOctets BIGINT UNSIGNED,
+        outLastUpdate INT UNSIGNED,
+        ifalias VARCHAR(180),
+        errorsIn BIGINT UNSIGNED,
+        errorsInLastUpdate INT UNSIGNED,
+        errorsOut BIGINT UNSIGNED,
+        errorsOutLastUpdate INT UNSIGNED,
+        discardsIn BIGINT UNSIGNED,
+        discardsInLastUpdate INT UNSIGNED,
+        discardsOut BIGINT UNSIGNED,
+        discardsOutLastUpdate INT UNSIGNED
+    ) ENGINE=InnoDB;
+};
+my $sql_host_info = q{
+    SELECT modified_on FROM hosts WHERE hostname=?
+};
+
+sub usage {
+    print <<"EOF";
+--------------------------------------------------------------------
+$script $script_version
+
+Monitors interface status and throughput
+
+Usage: $script -H <hostname> -C <community> [...]
+
+Options: 
+     -H Hostname or IP address
+     -C Community (default is public)
+     -p Port (default:161)
+     -I Interface name
+     -n Interface index. Will check interface name matches (otherwise warn)
+     -t Cache expiry time - the time in seconds before the
+        monitored device's interface table is rescanned for
+        new or changed interfaces.
+     -l Set level of tidying of interface ifDescr (default: 0)
+     -m Set SNMP max_msg_size (default: SNMP default)
+     -i Monitor throughput inbound traffic
+     -o Monitor throughput outbound traffic
+     -E Monitor errors (inbound and outbound, though thresholds apply individually)
+     -D Monitor discards (inbound and outbound, though thresholds apply individually)
+     -w Warning threshold (bits per second or n% for throughput, or number per minute for errors/discards)
+     -c Critical threshold (bits per second or n% for throughput, or number per minute for errors/discards)
+     -B Database backend (default 'SQLite')
+
+Note that you can have -i and -o independently. However you can only have 1 of -i/-o, -E or -D
+
+On busier system a MySQL database backend may function better than SQLite.
+To use a MySQL backend set up MySQL Server on the monitoring server and then
+run the following commands
+---
+CREATE DATABASE check_snmp_linkstatus;
+GRANT ALL ON check_snmp_linkstatus.* TO linkstatus\@localhost IDENTIFIED BY 'linkstatus';
+---
+and use the "-B MySQL" option against all servicechecks using this plugin
+
+
+Access to the following OIDs on the device is required:
+    .1.3.6.1.2.1.2.2.1.1.x     - interface ID
+    .1.3.6.1.2.1.2.2.1.2.x     - interface name
+    .1.3.6.1.2.1.2.2.1.5.x     - speed
+    .1.3.6.1.2.1.2.2.1.7.x     - administration status
+    .1.3.6.1.2.1.2.2.1.8.x     - operating status
+    .1.3.6.1.2.1.2.2.1.10.x    - in octets
+    .1.3.6.1.2.1.2.2.1.16.x    - out octets
+    .1.3.6.1.2.1.31.1.1.1.18   - interface alias
+    .1.3.6.1.2.1.31.1.1.1.6.x  - in octets - 64 bit counter (where available)
+    .1.3.6.1.2.1.31.1.1.1.10.x - out octets - 64 bit counter (where available)
+    .1.3.6.1.2.1.2.2.1.14.x    - in errors
+    .1.3.6.1.2.1.2.2.1.20.x    - out errors
+    .1.3.6.1.2.1.2.2.1.13.x    - in discards
+    .1.3.6.1.2.1.2.2.1.19.x    - out discards
+
+--------------------------------------------------------------------     
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved  
+         
+This program is free software; you can redistribute it or modify
+it under the terms of the GNU General Public License
+------------------------------------------------------------------
+EOF
+
+    return;
+}
+
+sub db_connect {
+    my ($hostname) = @_;
+
+    if ( $db_backend eq 'SQLite' ) {
+        my $filename = "$db_home/${hostname}${db_name_ext}";
+        if ( -f $filename && !-w $filename ) {
+            print "Cannot write to existing $filename\n";
+            exit 3;
+        }
+
+        # We cache interface data in a SQLite DB for cache_hold_time
+        if ( !$db_h ) {
+            my $exception = sub {
+                my ( $package, $filename, $line ) = caller;
+                my $error = $_[0];
+                print "DB error: '$error' at $filename line $line\n";
+                exit 3;
+            };
+            $db_h =
+              DBI->connect( "dbi:SQLite:dbname=$filename", "", "",
+                { HandleError => $exception }
+              );
+        }
+    }
+    elsif ( $db_backend eq 'MySQL' ) {
+
+        $db_h = DBI->connect(
+            'dbi:mysql:database=check_snmp_linkstatus;host=localhost',
+            'linkstatus', 'linkstatus' );
+
+    }
+    else {
+        print 'Unknown database backend: ', $db_backend, $/;
+        exit 3;
+    }
+
+    # Check if the db has been set up - create hosts and interfaces table
+    if ( $db_backend eq 'SQLite' ) {
+
+        # These staements include 'IF NOT EXISTS' in the sql
+        $st_h = $db_h->prepare($sqlite_sql_create_hosts);
+        $st_h->execute();
+
+        $st_h = $db_h->prepare($sqlite_sql_create_interfaces);
+        $st_h->execute();
+    }
+
+    if ( $db_backend eq 'MySQL' ) {
+
+        # These staements include 'IF NOT EXISTS' in the sql
+        $st_h = $db_h->prepare($mysql_sql_create_hosts);
+        $st_h->execute();
+
+        $st_h = $db_h->prepare($mysql_sql_create_interfaces);
+        $st_h->execute();
+    }
+}
+
+sub db_disconnect {
+    if ($st_h) {
+        $st_h->finish();
+        undef($st_h);
+    }
+    if ($db_h) {
+        $db_h->disconnect();
+        undef($db_h);
+    }
+}
+
+sub convert_units {
+
+    # Input should be in bytes - we'll convert to something more human readable
+    my ($bits)   = @_;
+    my $gigabits = 1000 * 1000 * 1000;
+    my $megabits = 1000 * 1000;
+    my $kilobits = 1000;
+
+    # Gigabits
+    if ( $bits > $gigabits ) {
+        return int( ( 100 * $bits ) / $gigabits ) / 100 . " Gbps";
+    }
+    elsif ( $bits > $megabits - 1 ) {
+        return int( ( 100 * $bits ) / $megabits ) / 100 . " Mbps";
+    }
+    elsif ( $bits > $kilobits - 1 ) {
+        return int( ( 100 * $bits ) / $kilobits ) / 100 . " Kbps";
+    }
+    else {
+        return $bits . " bps";
+    }
+
+    return;
+}
+
+sub plog {
+    print @_, $/ if $verbose;
+}
+
+# Scans a device and populates the db with a list of interfaces for this
+# device, along with their states
+sub rescan_device {
+    plog( "Running a rescan" );
+    my ($interface_name) = @_;
+    $interface_name = "" unless defined $interface_name;
+    my $name;
+    my $answer = {};
+    my @snmp_interface_ids;
+
+    # Mark that we've run a rescan
+    $rescanned = 1;
+
+    my $lockfile = "$db_home/${hostname}.lock";
+    my $lock = Lazy::Lockfile->new( { location => $lockfile, } );
+
+    # Couldnt grab the scan lock so return
+    if ( !$lock ) {
+        plog( "Could not get rescan lockfile: $lockfile" );
+        my $lock_info = stat($lockfile);
+        my $mtime     = time() - $lock_info->mtime;
+
+        if ( $mtime < 30 ) {
+            plog( 'Lock released within 30 seconds - using cached info' );
+
+            # Couldn't get lock so just return older cached info
+            my $st_h = $db_h->prepare(
+                q{
+                    SELECT ifindex,ifAlias
+                    FROM interfaces 
+                    WHERE hostname=? AND name=?
+            }
+            );
+            my ( $ifindex, $ifAlias );
+            $st_h->execute( $hostname, $user_specified_ifname );
+            $st_h->bind_columns( \$ifindex, \$ifAlias );
+            $st_h->fetch();
+            my $reply = {
+                ifIndex => $ifindex,
+                ifAlias => $ifAlias,
+            };
+
+            return $reply;
+        }
+        elsif ( $mtime < 60 ) {
+            print
+              "WARNING: device rescan process locked for more than 30 seconds",
+              $/;
+            exit 1;
+        }
+        else {
+            print
+              "CRITICAL: device rescan process locked for more than 60 seconds",
+              $/;
+            exit 2;
+        }
+    }
+
+    # Get a list of interfaces (by index) and gather their interface name
+    # Use the same technique as query_host, as using $s->get_entries( columns => \@cols )
+    # can complain about size being too big on some devices
+    my $table;
+    my $ifNames = {};
+    $table = $s->get_table( -baseoid => $oid_interfaces_descr );
+    foreach my $oid ( keys %$table ) {
+
+        # Get index number. Is an assumption that index number == interface number
+        my ($interface_number) = ( $oid =~ /(\d+)$/ );
+
+        # Tidy up the ifDescr as per query_host to ensure it all matches
+        my $ifDescr =
+          Opsview::Utils::QueryHost->tidy_interface_ifdescr( $tidy_ifdesc_level,
+            $table->{$oid} );
+
+        $ifNames->{$interface_number} = $ifDescr;
+        push( @snmp_interface_ids, $interface_number );
+    }
+    plog( "Got interface ids: " . join( ",", @snmp_interface_ids ) );
+
+    # Store a hash of all the current rate values for re-adding in later
+    my $previous_data = {};
+    my $sth           = $db_h->prepare(
+        "SELECT ifindex,inOctets,inLastUpdate,outOctets,outLastUpdate,
+        errorsIn,errorsInLastUpdate,errorsOut,errorsOutLastUpdate,
+        discardsIn,discardsInLastUpdate,discardsOut,discardsOutLastUpdate
+        FROM interfaces WHERE hostname=?"
+    );
+    $sth->execute($hostname);
+    while ( my $row = $sth->fetchrow_hashref ) {
+        $previous_data->{ $row->{ifindex} } = $row;
+    }
+    $sth->finish();
+
+    plog( "previous_data=" . dump($previous_data) );
+
+    # Use a different technique to get ifAlias information. We use get_next_request because
+    # get_entries might return back too much data to handle at once. This is the same technique as query_host
+    # so information returned there should also return information here
+
+    # Get all the data before attempting to update the db so it reduces load on
+    # both the db and the device
+
+    my $ifAliases = {};
+    $table = $s->get_table( -baseoid => $oid_ifAlias );
+    foreach my $oid ( keys %$table ) {
+        my ($interface_number) = ( $oid =~ /(\d+)$/ );
+        $ifAliases->{$interface_number} = $table->{$oid};
+    }
+
+    # For devices that do not support ifAlias information, we ignore the error and continue
+    if ( my $errstr = $s->error ) {
+        if ( $errstr !~ /The requested table is empty or does not exist/ ) {
+            print "UNKNOWN - " . $s->error . "\n";
+            exit 3;
+        }
+    }
+
+    my @interfaces_to_update;
+
+    foreach (@snmp_interface_ids) {
+        $name = $ifNames->{$_};
+        my $ifAlias = $ifAliases->{$_};
+
+        # Some systems do not have ifAlias, so var_bind_list will return a hash without a value
+        # We set the ifAlias to be empty in this case, so that the DB saves an empty ifAlias in the cache
+        $ifAlias = "" unless defined $ifAlias;
+
+        my $now                   = time();
+        my $lastIn                = 0;
+        my $lastOut               = 0;
+        my $lastInUpdate          = undef;
+        my $lastOutUpdate         = undef;
+        my $lastErrorsIn          = undef;
+        my $lastErrorsOut         = undef;
+        my $lastErrorsInUpdate    = undef;
+        my $lastErrorsOutUpdate   = undef;
+        my $lastDiscardsIn        = undef;
+        my $lastDiscardsOut       = undef;
+        my $lastDiscardsInUpdate  = undef;
+        my $lastDiscardsOutUpdate = undef;
+        if ( exists $previous_data->{$_} ) {
+            $lastIn              = $previous_data->{$_}->{inOctets};
+            $lastOut             = $previous_data->{$_}->{outOctets};
+            $lastInUpdate        = $previous_data->{$_}->{inLastUpdate};
+            $lastOutUpdate       = $previous_data->{$_}->{outLastUpdate};
+            $lastErrorsIn        = $previous_data->{$_}->{errorsIn};
+            $lastErrorsOut       = $previous_data->{$_}->{errorsOut};
+            $lastErrorsInUpdate  = $previous_data->{$_}->{errorsInLastUpdate};
+            $lastErrorsOutUpdate = $previous_data->{$_}->{errorsOutLastUpdate};
+            $lastDiscardsIn      = $previous_data->{$_}->{discardsIn};
+            $lastDiscardsOut     = $previous_data->{$_}->{discardsOut};
+            $lastDiscardsInUpdate =
+              $previous_data->{$_}->{discardsInLastUpdate};
+            $lastDiscardsOutUpdate =
+              $previous_data->{$_}->{discardsOutLastUpdate};
+        }
+
+        my $if_data = {
+            hostname => $hostname,
+            name     => $name,
+            ifindex  => $_,
+            inOctets => $lastIn,
+            ,
+            outOctets             => $lastOut,
+            inLastUpdate          => $lastInUpdate,
+            outLastUpdate         => $lastOutUpdate,
+            ifalias               => $ifAlias,
+            errorsIn              => $lastErrorsIn,
+            errorsInLastUpdate    => $lastErrorsInUpdate,
+            errorsOut             => $lastErrorsOut,
+            errorsOutLastUpdate   => $lastErrorsOutUpdate,
+            discardsIn            => $lastDiscardsIn,
+            discardsInLastUpdate  => $lastDiscardsInUpdate,
+            discardsOut           => $lastDiscardsOut,
+            discardsOutLastUpdate => $lastDiscardsOutUpdate,
+        };
+
+        plog( 'New data: ' . dump($if_data) );
+
+        push( @interfaces_to_update, $if_data, );
+
+        if ( $name eq $interface_name ) {
+            $answer->{ifIndex} = $_;
+            $answer->{ifAlias} = $ifAlias;
+        }
+    }
+
+    # Turn autocommit off so that all of this database work
+    # occurs as one transaction.  This prevents problems with
+    # concurrent execution
+    # Needs to occur after the select above because a select affects the transaction
+    $db_h->{AutoCommit} = 0;
+    $db_h->do(
+        q{
+            UPDATE hosts 
+            SET modified_on=? 
+            WHERE hostname=?
+        }, undef, time(), $hostname
+    );
+
+    # Remove the previous data
+    $db_h->do( "DELETE FROM interfaces WHERE hostname=?", undef, $hostname );
+    my $dbst = $db_h->prepare(
+        q{
+                INSERT INTO interfaces 
+                    (hostname,name,ifindex,inOctets,outOctets,inLastUpdate,outLastUpdate,ifalias,
+                    errorsIn,errorsInLastUpdate,errorsOut,errorsOutLastUpdate,
+                    discardsIn,discardsInLastUpdate,discardsOut,discardsOutLastUpdate
+                    )
+                VALUES 
+                    (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            }, {},
+    );
+
+    foreach my $if (@interfaces_to_update) {
+        plog( 'Putting in to DB:' . dump($if) );
+
+        $dbst->execute(
+            $if->{hostname},      $if->{name},
+            $if->{ifindex},       $if->{inOctets},
+            $if->{outOctets},     $if->{inLastUpdate},
+            $if->{outLastUpdate}, $if->{ifalias},
+            $if->{errorsIn},      $if->{errorsInLastUpdate},
+            $if->{errorsOut},     $if->{errorsOutLastUpdate},
+            $if->{discardsIn},    $if->{discardsInLastUpdate},
+            $if->{discardsOut},   $if->{discardsOutLastUpdate},
+        );
+    }
+
+    # Commit all the changes to the DB
+    $db_h->commit;
+
+    # Put autocommit back on
+    $db_h->{AutoCommit} = 1;
+
+    $lock->unlock;
+
+    plog( 'Returning from rescan with answer=' . dump($answer) );
+    return $answer;
+}
+
+# Set the outbound octets value in the DB
+sub set_out_octets {
+    my ( $ifindex, $count ) = @_;
+    my $now = time();
+
+    plog( "Setting out=$count" );
+    $db_h->do(
+        q{
+            UPDATE interfaces 
+            SET outOctets=?,outLastUpdate=?
+            WHERE hostname=? AND ifindex=?
+        }, undef, $count, time(), $hostname, $ifindex
+    );
+    return;
+}
+
+# Get an inbound rate by using the last value in the DB
+sub get_in_octet_rate {
+    my ( $ifindex, $curval ) = @_;
+    my $inOctets;
+    my $lastUpdate;
+
+    $st_h = $db_h->prepare(
+        q{
+            SELECT inOctets,inLastUpdate 
+            FROM interfaces
+            WHERE hostname=? AND ifindex=?
+        }
+    );
+    $st_h->execute( $hostname, $ifindex );
+    $st_h->bind_columns( \$inOctets, \$lastUpdate );
+    $st_h->fetch();
+
+    $lastUpdate = 0 if !defined $lastUpdate;
+    plog(
+        "Reading inOctets=$inOctets at lastUpdate=$lastUpdate ("
+          . ( scalar localtime $lastUpdate ) . ")"
+    );
+
+    # These should only be set to 0 on a first run
+    # This means the rate value is going to be very low on the first invocation (and possibly if the device index moves)
+    $lastUpdate ||= 0;
+    $inOctets   ||= 0;
+
+    my $inOctetsRate;
+
+    $inOctets = Math::BigInt->new($inOctets);
+    my $time_duration = time() - $lastUpdate;
+    plog( "time_duration=$time_duration" );
+    my $difference = $curval->bsub($inOctets);
+    plog( "difference=" . $difference->bstr() );
+
+    # Check for counter overflow
+    if ( $difference->is_pos() ) {
+        $inOctetsRate = $difference->bdiv($time_duration);
+        $inOctetsRate = $inOctetsRate->numify();
+    }
+    else {
+
+        # Could try and do some counter checking, but this is a problem if a device gets restarted
+        # Could introduce if there was some validation on the number
+        # We set this to 0 at the moment
+        $inOctetsRate = 0;
+
+        #$inOctetsRate = ( $counter_limit + $curval - $inOctets ) / ( time() - $lastUpdate );
+    }
+
+    return $inOctetsRate;
+}
+
+# Set the inbound octets value in the DB
+sub set_in_octets {
+    my ( $ifindex, $count ) = @_;
+
+    plog( "Setting in=$count" );
+    $db_h->do(
+        q{
+            UPDATE interfaces 
+            SET inOctets=?,inLastUpdate=?
+            WHERE hostname=? AND ifindex=?
+        }, undef, $count, time(), $hostname, $ifindex
+    );
+    return;
+}
+
+# Get the outbound octets value from the DB
+sub get_out_octet_rate {
+    my ( $ifindex, $curval ) = @_;
+    my $outOctets;
+    my $lastUpdate;
+
+    $st_h = $db_h->prepare(
+        q{
+            SELECT outOctets,outLastUpdate 
+            FROM interfaces
+            WHERE hostname=? AND ifindex=?
+        }
+    );
+    $st_h->execute( $hostname, $ifindex );
+    $st_h->bind_columns( \$outOctets, \$lastUpdate );
+    $st_h->fetch();
+
+    $lastUpdate = 0 if !defined $lastUpdate;
+    plog(
+        "Reading outOctets=$outOctets at lastUpdate=$lastUpdate ("
+          . ( scalar localtime $lastUpdate ) . ")"
+    );
+
+    # these should only be set to 0 on a first run through
+    $lastUpdate ||= 0;
+    $outOctets  ||= 0;
+
+    my $outOctetsRate;
+
+    $outOctets = Math::BigInt->new($outOctets);
+    my $time_duration = ( time() - $lastUpdate );
+    plog( "time_duration=$time_duration" );
+    my $difference = $curval->bsub($outOctets);
+    plog( "difference=" . $difference->bstr() );
+
+    # Check for counter overflow
+    if ( $difference->is_pos() ) {
+        $outOctetsRate = $difference->bdiv($time_duration);
+        $outOctetsRate = $outOctetsRate->numify();
+    }
+    else {
+
+        # See in values for explanation
+        $outOctetsRate = 0;
+
+        #$outOctetsRate = ( $counter_limit + $curval - $outOctets ) / ( time() - $lastUpdate );
+    }
+
+    return $outOctetsRate;
+}
+
+# Call this when you know you'll get a single value back
+sub get_oid_value {
+    my ($oid) = @_;
+    my ( $result, $status, $returnstring );
+
+    if ( !defined( $s->get_request($oid) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 3;
+            return -1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 3;
+            return -1;
+        }
+    }
+
+    foreach ( $s->var_bind_names() ) {
+        $result = $s->var_bind_list()->{$_};
+    }
+
+    return $result;
+}
+
+sub calculate_rate_per_minute {
+    my ( $latest_value, $previous_value, $time, $previous_time ) = @_;
+
+    # If previous value is undef, OK
+    if ( !defined $previous_value ) {
+        print "OK - no previous value to compare against\n";
+        exit 0;
+    }
+
+    my $duration = $time - $previous_time;
+
+    # If duration is 0, UNKNOWN
+    if ( $duration <= 0 ) {
+        print "UNKNOWN - duration between calls has a duration of 0\n";
+        exit 3;
+    }
+
+    return ( $latest_value - $previous_value ) / $duration * 60;
+}
+
+if ( $version eq "3" ) {
+    if ($snmpv3_privpassword) {
+        ( $s, $e ) = Net::SNMP->session(
+            -username     => $snmpv3_username,
+            -authpassword => $snmpv3_password,
+            -authprotocol => $snmpv3_authprotocol,
+            -privpassword => $snmpv3_privpassword,
+            -privprotocol => $snmpv3_privprotocol,
+            -hostname     => $hostname,
+            -version      => $version,
+            -timeout      => $timeout,
+            -port         => $port,
+        );
+    }
+    else {
+        ( $s, $e ) = Net::SNMP->session(
+            -username     => $snmpv3_username,
+            -authpassword => $snmpv3_password,
+            -authprotocol => $snmpv3_authprotocol,
+            -hostname     => $hostname,
+            -version      => $version,
+            -timeout      => $timeout,
+            -port         => $port,
+        );
+    }
+}
+else {
+    ( $s, $e ) = Net::SNMP->session(
+        -community => $community,
+        -hostname  => $hostname,
+        -version   => $version,
+        -timeout   => $timeout,
+        -port      => $port,
+    );
+}
+if ( !defined $s ) {
+    print "No SNMP session initiated - is $hostname correct?\n";
+    exit 3;
+}
+
+# Weirdly, $s->get_request seems to take 2 x $timeout to get a response
+if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+
+    # If we couldn't connect as v3 or v1, fail
+    # No point trying v1 again
+    if ( $version eq "3" || $version eq "1" ) {
+        print
+          "Agent not responding to SNMP v$version requests with the given credentials\n";
+        exit 3;
+    }
+
+    # If we can't connect using SNMPv2 lets try as SNMPv1.
+    $s->close();
+    sleep 0.5;
+    $version = "1";
+    ( $s, $e ) = Net::SNMP->session(
+        -community => $community,
+        -hostname  => $hostname,
+        -version   => $version,
+        -timeout   => $timeout,
+        -port      => $port,
+    );
+    if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+        print "Agent not responding, tried SNMP v1 and v2\n";
+        exit 3;
+    }
+}
+
+if ($max_msg_size) {
+    if ( !defined $s->max_msg_size($max_msg_size) ) {
+        print "SNMP Error: ", $s->error, $/;
+        exit 3;
+    }
+}
+
+my $nagios_hostname = $ENV{NAGIOS_HOSTNAME};
+
+# Plugin run from command line
+if ( !defined $nagios_hostname ) {
+    print STDERR
+      "WARNING: Running from command line. This could change statistics for the next run from Nagios\n";
+    $nagios_hostname = $hostname;
+}
+
+# We use the nagios hostname because in future, we will want to search for all interface names
+# and ifalias and link back to a specific nagios host. So the hostname will be encoded as the db cache name - see OPS-250
+db_connect($nagios_hostname);
+
+# See if we have a last-checked value for this host
+my $modified_on;
+$st_h = $db_h->prepare($sql_host_info);
+$st_h->execute($hostname);
+$st_h->bind_columns( \$modified_on );
+$st_h->fetch();
+
+# Check if cache time has expired
+if ( !$modified_on ) {
+
+    # We've not been run before, add host
+    $db_h->do(
+        q{
+            INSERT INTO hosts 
+                (hostname,uptime,modified_on) 
+            VALUES 
+                (?,?,?)
+        }, undef, $hostname, $uptime, time()
+    );
+    rescan_device();
+    $modified_on = time; # Stop a stale cache rescan
+}
+
+# Elapsed time?
+my $elapsed = time() - $modified_on;
+
+## Check our last values against what we have now
+my $ifindex = "";
+my $ifAlias;
+
+# If we were given name and index, then we don't need to check the db
+if ( defined $user_specified_index ) {
+    $ifindex = $user_specified_index;
+    $ifAlias = $db_h->selectrow_array(
+        "SELECT ifAlias FROM interfaces WHERE hostname=? AND name=?",
+        {}, $hostname, $user_specified_ifname );
+
+    # Has the cache expired or can we use it?
+}
+elsif ( $elapsed >= $cache_hold_time ) {
+    my $reply = rescan_device($user_specified_ifname);
+    $ifindex = $reply->{ifIndex} || "";
+    $ifAlias = $reply->{ifAlias}
+      if exists( $reply->{ifAlias} ); # Could be null string
+}
+else {
+
+    # Get interface information from database
+    $st_h = $db_h->prepare(
+        q{
+            SELECT ifindex,ifAlias
+            FROM interfaces 
+            WHERE hostname=? AND name=?
+        }
+    );
+    $st_h->execute( $hostname, $user_specified_ifname );
+    $st_h->bind_columns( \$ifindex, \$ifAlias );
+    $st_h->fetch();
+}
+
+if ( $ifindex eq "" ) {
+
+    # In case this interface is new or has moved, rescan the device if we haven't already
+    if ( !$rescanned ) {
+        my $reply = rescan_device($user_specified_ifname);
+
+        # rescan might not return something valid if another process has
+        # already got lock for a scan
+        if ($reply) {
+            $ifindex = $reply->{ifIndex} || "";
+            $ifAlias = $reply->{ifAlias}
+              if exists( $reply->{ifAlias} ); # Could be null string
+        }
+    }
+
+    if ( $ifindex eq "" ) {
+        print "UNKNOWN - Interface $user_specified_ifname not found!\n";
+        exit 3;
+    }
+}
+
+# Get data from device - only look at the one interface
+{
+    my @ifindex_list = map { $_ . '.' . $ifindex } @interface_data;
+
+    # Get information from switch
+    $s->get_request( -varbindlist => \@ifindex_list );
+}
+
+# Check for an SNMP error first...
+if ( $s->error ) {
+    print "UNKNOWN - " . $s->error . "|\n";
+    exit 3;
+}
+
+# Save data
+my $linkstate       = $s->var_bind_list()->{"$oid_operstatus.$ifindex"};
+my $adminstate      = $s->var_bind_list()->{"$oid_adminstatus.$ifindex"};
+my $mib2_link_speed = $s->var_bind_list()->{"$oid_interfaces_base.5.$ifindex"};
+
+# Normalise name. Strip NULs for comparison
+my $name = $s->var_bind_list()->{"$oid_interfaces_base.2.$ifindex"};
+$name = Opsview::Utils::QueryHost->tidy_interface_ifdescr( $tidy_ifdesc_level,
+    $name );
+$name =~ s/\0//g;
+
+# Test for the high speed value (ifHighSpeed), or fall back to standard ifSpeed value
+$link_speed = get_oid_value( "$oid_ifhighspeed_base.$ifindex" );
+if ( defined($link_speed) && $link_speed !~ m/\D/ ) {
+
+    # Convert to bps - from the RFC:
+    # The ifHighSpeed object reports the speed of the interface in 1,000,000 (1 million) bits/second units.
+    $link_speed = $link_speed * 1000000;
+    plog( "Using high speed value" );
+}
+else {
+
+    # This is already in bps
+    $link_speed = $mib2_link_speed;
+}
+
+if ($verbose) {
+    plog( "Name = $name" );
+    plog( "Link speed = $link_speed" );
+    plog( "Link state = $linkstate" );
+    plog( "Admin state = $adminstate" );
+}
+
+# This should only get called when the initial cache data holds NULL for ifAlias
+if ( !defined $ifAlias ) {
+    $ifAlias = get_oid_value( "$oid_ifAlias.$ifindex" );
+
+    # Need to set ifAlias to "" if eq to "noSuchObject" - this appears to be returned in some cases of SNMPv2c if OID does not exist
+    $ifAlias = "" if ( $ifAlias eq "-1" or $ifAlias eq "noSuchObject" );
+}
+
+my $interface_display_name = $name;
+
+# Only show ifAlias if there is a value set
+if ($ifAlias) {
+
+    # Some interfaces return | in the ifalias, which interferes with Nagios perf data
+    ( $_ = $ifAlias ) =~ s/\|/\//g;
+    $interface_display_name .= " ($_)";
+}
+
+# Check whether or not this is still the same interface
+my $curval;
+if ( $name eq $user_specified_ifname ) {
+
+    # OK scenario - fall through
+}
+elsif ( defined $user_specified_index && ( $name ne $user_specified_ifname ) ) {
+    print
+      "WARNING - Interface name $user_specified_ifname expected at index $user_specified_index, but got $interface_display_name!\n";
+    exit 1;
+}
+elsif ( !$name ) {
+    print "UNKNOWN - Interface name $user_specified_ifname not found!\n";
+    exit 3;
+}
+else {
+
+    # Interface vanished
+    # Do we need to do a rescan?  This might happen when the switch is rebooted, if a
+    # virtual interface is given a different ifindex.
+    # Only do a rescan if we havent already done one
+    if ( !$rescanned ) {
+        rescan_device();
+    }
+    print
+      "OK - Device was rescanned - ifindex changed for $user_specified_ifname|\n";
+    exit 0;
+}
+
+# Errors if interface status incorrect
+if ( $adminstate == 1 && $linkstate == 2 ) {
+
+    # If link is down, while interface is configured admin up, it is critical
+    print "Interface $interface_display_name is DOWN (admin status is UP)!\n";
+    exit 2;
+}
+elsif ( $adminstate == 2 && $linkstate == 1 ) {
+
+    # If links is up and admin state is down, the interface is misconfigured, this is a warning
+    print
+      "Interface $interface_display_name is UP, but admin state is DOWN - misconfiguration of admin state\n";
+    exit 1;
+}
+elsif ( $adminstate == 2 && $linkstate == 2 ) {
+
+    # If link is down and admin state is down, everything is fine, interface is OK
+    print
+      "Interface $interface_display_name: admin state is down and link state is down - interface not used\n";
+    exit 0;
+}
+
+# So interface is up and admin status is up, let's get rate information
+my $rate = 0;
+
+if ( $direction_in || $direction_out ) {
+    if ($direction_in) {
+
+        # in
+        # Try for HC counters first
+        $counter_limit = 2**64 - 1;
+        $curval        = get_oid_value( "$oid_inHCOctets.$ifindex" );
+
+        my $curval_bigint = Math::BigInt->new($curval);
+
+        # Check for >0. Will be -1 if oid doesn't exist, or 0 if counters not incrementing
+        unless ( $curval =~ /^\d+$/ && $curval > 0 ) {
+            $counter_limit = 2**32 - 1;
+            $curval        = get_oid_value( "$oid_inOctets.$ifindex" );
+            $curval_bigint = Math::BigInt->new($curval);
+        }
+
+        plog( "raw in value=" . $curval_bigint->bstr() );
+        $rate = get_in_octet_rate( $ifindex, $curval_bigint->copy() );
+
+        plog( "rate = $rate" );
+        $throughput_in = int( ( $rate * 8 ) * 100 ) / 100; # rounds bits to 2dp
+        if ( $link_speed > 0 ) {
+            $throughput_in_pct =
+              int( 100 * 100 * ( $rate * 8 ) / $link_speed ) / 100;
+        }
+        $throughput_in_friendly = convert_units($throughput_in);
+
+        # Update the DB
+        set_in_octets( $ifindex, $curval_bigint->bstr() );
+    }
+    if ($direction_out) {
+
+        # out
+        # Try for HC counters first
+        $counter_limit = 2**64 - 1;
+        $curval        = get_oid_value( "$oid_outHCOctets.$ifindex" );
+
+        my $curval_bigint = Math::BigInt->new($curval);
+
+        # Check for >0. Will be -1 if oid doesn't exist, or 0 if counters not incrementing
+        unless ( $curval =~ /^\d+$/ && $curval > 0 ) {
+            $counter_limit = 2**32 - 1;
+            $curval        = get_oid_value( "$oid_outOctets.$ifindex" );
+            $curval_bigint = Math::BigInt->new($curval);
+        }
+        plog( "raw out value=" . $curval_bigint->bstr() );
+        $rate = get_out_octet_rate( $ifindex, $curval_bigint->copy() );
+
+        plog( "rate = $rate" );
+        $throughput_out = int( ( $rate * 8 ) * 100 ) / 100;
+
+        plog( "link_speed=$link_speed" );
+        if ( $link_speed > 0 ) {
+            $throughput_out_pct =
+              int( 100 * 100 * ( $rate * 8 ) / $link_speed ) / 100;
+        }
+        $throughput_out_friendly = convert_units($throughput_out);
+
+        # Update the DB
+        set_out_octets( $ifindex, $curval_bigint->copy() );
+    }
+
+    # The interface is up, so what about the thresholds?
+    # (Have to deal with percent and raw bps separately)
+    if ($compare_in_percentages) {
+
+        # Percentage thresholds?
+        if (
+            $critical > 0
+            && (   ( $direction_in && $throughput_in_pct > $critical )
+                || ( $direction_out && $throughput_out_pct > $critical ) )
+          )
+        {
+            $retmsg =
+              "$interface_display_name throughput (in/out) $throughput_in_friendly/$throughput_out_friendly, $throughput_in_pct%/$throughput_out_pct% has exceeded critical threshold!";
+            $retval = 2;
+        }
+        elsif (
+            $warning > 0
+            && (   ( $direction_in && $throughput_in_pct > $warning )
+                || ( $direction_out && $throughput_out_pct > $warning ) )
+          )
+        {
+            $retmsg =
+              "$interface_display_name throughput (in/out) $throughput_in_friendly/$throughput_out_friendly, $throughput_in_pct%/$throughput_out_pct% has exceeded warning threshold!";
+            $retval = 1;
+        }
+        else {
+            $retmsg =
+              "$interface_display_name is up, throughput (in/out) $throughput_in_friendly/$throughput_out_friendly, $throughput_in_pct%/$throughput_out_pct%";
+        }
+    }
+    else {
+
+        # bps thresholds?
+        if (
+            $critical > 0
+            && (   ( $direction_in && $throughput_in > $critical )
+                || ( $direction_out && $throughput_out > $critical ) )
+          )
+        {
+            $retmsg =
+              "$interface_display_name throughput (in/out) $throughput_in_friendly/$throughput_out_friendly, $throughput_in_pct%/$throughput_out_pct% has exceeded critical threshold!";
+            $retval = 2;
+        }
+        elsif (
+            $warning > 0
+            && (   ( $direction_in && $throughput_in > $warning )
+                || ( $direction_out && $throughput_out > $warning ) )
+          )
+        {
+            $retmsg =
+              "$interface_display_name throughput (in/out) $throughput_in_friendly/$throughput_out_friendly, $throughput_in_pct%/$throughput_out_pct% has exceeded warning threshold!";
+            $retval = 1;
+        }
+        else {
+            $retmsg =
+              "$interface_display_name is up, throughput (in/out) $throughput_in_friendly/$throughput_out_friendly, $throughput_in_pct%/$throughput_out_pct%";
+        }
+    }
+
+    $perfdata =
+      "throughput_in=${throughput_in}b throughput_out=${throughput_out}b";
+    if ($compare_in_percentages) {
+        $perfdata
+          .= " throughput_in_pct=${throughput_in_pct}% throughput_out_pct=${throughput_out_pct}%";
+    }
+
+}
+elsif ($check_errors) {
+
+    # Get values
+    my $in_errors  = get_oid_value( "$oid_inErrors.$ifindex" );
+    my $out_errors = get_oid_value( "$oid_outErrors.$ifindex" );
+    plog( "In Errors: $in_errors, Out Errors: $out_errors" );
+
+    # Get previous values
+    $st_h = $db_h->prepare(
+        q{
+            SELECT errorsIn,errorsInLastUpdate,errorsOut,errorsOutLastUpdate
+            FROM interfaces
+            WHERE hostname=? AND ifindex=?
+        }
+    );
+    $st_h->execute( $hostname, $ifindex );
+    my $previous = $st_h->fetchrow_hashref;
+
+    # Update DB
+    my $now = time();
+    $db_h->do(
+        q{
+            UPDATE interfaces 
+            SET errorsIn=?, errorsInLastUpdate=?, errorsOut=?, errorsOutLastUpdate=?
+            WHERE hostname=? AND ifindex=?
+        }, undef, $in_errors, $now, $out_errors, $now, $hostname, $ifindex
+    );
+
+    # Get rate based on previous
+    my $in_errors_per_minute =
+      calculate_rate_per_minute( $in_errors, $previous->{errorsIn}, $now,
+        $previous->{errorsInLastUpdate}
+      );
+    my $out_errors_per_minute = calculate_rate_per_minute(
+        $out_errors, $previous->{errorsOut},
+        $now, $previous->{errorsOutLastUpdate}
+    );
+
+    # Set result + perfdata
+    $retmsg =
+        "$interface_display_name errors (in: "
+      . sprintf( "%.3f", $in_errors_per_minute )
+      . " per minute, out: "
+      . sprintf( "%.3f", $out_errors_per_minute ) . ")";
+    $perfdata =
+      "errors_in_per_minute=${in_errors_per_minute} errors_out_per_minute=${out_errors_per_minute}";
+
+    if (
+        $critical > 0
+        && (   $in_errors_per_minute >= $critical
+            || $out_errors_per_minute >= $critical )
+      )
+    {
+        $retmsg = "$retmsg over threshold $critical";
+        $retval = 2;
+    }
+    elsif (
+        $warning > 0
+        && (   $in_errors_per_minute >= $warning
+            || $out_errors_per_minute >= $warning )
+      )
+    {
+        $retmsg = "$retmsg over threshold $warning";
+        $retval = 1;
+    }
+}
+elsif ($check_discards) {
+
+    # Get values
+    my $in_discards  = get_oid_value( "$oid_inDiscards.$ifindex" );
+    my $out_discards = get_oid_value( "$oid_outDiscards.$ifindex" );
+    plog( "In Discards $in_discards, Out Discards $out_discards" );
+
+    # Get previous values
+    $st_h = $db_h->prepare(
+        q{
+            SELECT discardsIn,discardsInLastUpdate,discardsOut,discardsOutLastUpdate
+            FROM interfaces
+            WHERE hostname=? AND ifindex=?
+        }
+    );
+    $st_h->execute( $hostname, $ifindex );
+    my $previous = $st_h->fetchrow_hashref;
+
+    # Update DB
+    my $now = time();
+    $db_h->do(
+        q{
+            UPDATE interfaces 
+            SET discardsIn=?,discardsInLastUpdate=?, discardsOut=?, discardsOutLastUpdate=?
+            WHERE hostname=? AND ifindex=?
+        }, undef, $in_discards, $now, $out_discards, $now, $hostname, $ifindex
+    );
+
+    # Get rate based on previous
+    my $in_discards_per_minute = calculate_rate_per_minute(
+        $in_discards, $previous->{discardsIn},
+        $now, $previous->{discardsInLastUpdate}
+    );
+    my $out_discards_per_minute = calculate_rate_per_minute(
+        $out_discards, $previous->{discardsOut},
+        $now, $previous->{discardsOutLastUpdate}
+    );
+
+    # Set result + perfdata
+    $retmsg =
+        "$interface_display_name discards (in: "
+      . sprintf( "%.3f", $in_discards_per_minute )
+      . " per minute, out: "
+      . sprintf( "%.3f", $out_discards_per_minute ) . ")";
+    $perfdata =
+      "discards_in_per_minute=${in_discards_per_minute} discards_out_per_minute=${out_discards_per_minute}";
+
+    if (
+        $critical > 0
+        && (   $in_discards_per_minute >= $critical
+            || $out_discards_per_minute >= $critical )
+      )
+    {
+        $retmsg = "$retmsg over threshold $critical";
+        $retval = 2;
+    }
+    elsif (
+        $warning > 0
+        && (   $in_discards_per_minute >= $warning
+            || $out_discards_per_minute >= $warning )
+      )
+    {
+        $retmsg = "$retmsg over threshold $warning";
+        $retval = 1;
+    }
+}
+
+# Get rid of db handles etc.
+db_disconnect();
+$s->close();
+
+# Ignore this for now. Is wrong anyway, as it is only applied to last metric
+#if ( $warning || $critical ) {
+#    $perfdata .= ";$warning;$critical";
+#}
+
+# Show appropriate message
+if ( $retval == 0 ) {
+    print "OK - $retmsg|$perfdata\n";
+}
+elsif ( $retval == 1 ) {
+    print "WARNING - $retmsg|$perfdata\n";
+}
+elsif ( $retval == 2 ) {
+    print "CRITICAL - $retmsg|$perfdata\n";
+}
+else {
+    print "UNKNOWN - plugin error $retmsg|$perfdata\n";
+}
+
+exit $retval;

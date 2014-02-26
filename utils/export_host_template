@@ -1,0 +1,143 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+# 	export_host_template {hosttemplatename}
+#
+# DESCRIPTION:
+#   Uses Opsview's REST API to get a list of host templates and the servicechecks related and
+#   prints to stdout the json structure for import with import_json
+#   Output format:
+#   [ {
+#       url => "...",
+#       method => "...",
+#       data => {...}
+#     },
+#     ...
+#   ]
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin", "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+
+use Getopt::Long;
+use Opsview::API;
+use JSON::Any;
+use Data::Dump qw(dump);
+
+my $url_prefix = $ENV{OPSVIEW_URL_PREFIX} || "http://localhost";
+my $username;
+my $password;
+
+GetOptions(
+    "username|u=s" => \$username,
+    "password|p=s" => \$password,
+) or my_die( "Incorrect options" );
+
+my $hosttemplate_name = shift @ARGV
+  || my_die( "Must specify a host template name" );
+
+my $j = JSON::Any->new;
+
+my $ua = Opsview::API->new(
+    username        => $username,
+    password        => $password,
+    url_prefix      => $url_prefix,
+    api_min_version => "2",
+    data_format     => "json",
+);
+
+$ua->login;
+
+$ua->get(
+    "config/hosttemplate?s.name=$hosttemplate_name&cols=-id,-hosts,-uncommitted"
+);
+
+my $result = $j->decode( $ua->content );
+
+if ( $result->{summary}->{rows} == 0 ) {
+    die( "Cannot find host template: $hosttemplate_name" );
+}
+if ( $result->{summary}->{rows} > 1 ) {
+    die( "Got more than one row: " . $result->{summary}->{rows} );
+}
+
+my $hosttemplate = $result->{list}->[0];
+
+#print "result=".dump($hosttemplate)."\n";
+
+my %servicegroups;
+my @servicechecks;
+foreach my $scname ( @{ $hosttemplate->{servicechecks} } ) {
+    $ua->get( $scname->{ref} . "?cols=-hosts,-hosttemplates,-id,-uncommitted"
+    );
+    $result = $j->decode( $ua->content );
+
+    # Store the servicegroup for later expansion
+    $servicegroups{ $result->{object}->{servicegroup}->{name} } =
+      $result->{object}->{servicegroup}->{ref};
+
+    push @servicechecks, $result->{object};
+}
+
+my @servicegroups;
+foreach my $sgname ( keys %servicegroups ) {
+    $ua->get( $servicegroups{$sgname} . "?cols=-servicechecks,-id,-uncommitted"
+    );
+    $result = $j->decode( $ua->content );
+    push @servicegroups, $result->{object};
+}
+
+# The order here is reversed. We need to create the service checks before we can create the host template
+my $export = [
+    {
+        url    => "config/servicegroup",
+        method => "put",
+        data   => { list => \@servicegroups },
+    },
+    {
+        url    => "config/servicecheck",
+        method => "put",
+        data   => { list => \@servicechecks },
+    },
+    {
+        url    => "config/hosttemplate",
+        method => "put",
+        data   => $hosttemplate,
+    }
+];
+
+print $j->encode($export);
+
+sub my_die {
+    print <<"USAGE";
+
+export_host_template --username=username --password=password {template name}
+
+Will output a JSON format for the host template information, plus the service checks related
+and any service groups too. Will be in a format import_json can read to apply to an Opsview
+system.
+
+USAGE
+    die(@_);
+}

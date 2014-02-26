@@ -1,0 +1,61 @@
+#!/usr/bin/perl
+#
+#
+# update_opsview_conf
+#
+#	This updates opsview.conf with any new variables required
+#	Run as nagios user from postinstall
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+use lib "/usr/local/nagios/perl/lib";
+use Data::UUID;
+
+my $conf_file = "/usr/local/nagios/etc/opsview.conf";
+open CONF, $conf_file || die "Cannot open $conf_file";
+my @opsview_conf = <CONF>;
+close CONF;
+my $changed = 0;
+
+my $found_nrd_shared_password = 0;
+foreach (@opsview_conf) {
+    $found_nrd_shared_password = 1 if /^\$nrd_shared_password\s*=\s*/;
+}
+
+if ( $opsview_conf[$#opsview_conf] =~ /^\s*1\s*;\s*/ ) {
+    pop @opsview_conf;
+}
+
+if ( !$found_nrd_shared_password ) {
+    my $ug   = new Data::UUID;
+    my $uuid = $ug->to_string( $ug->create );
+    push @opsview_conf, "\$nrd_shared_password = \"$uuid\";\n";
+    $changed++;
+}
+
+if ($changed) {
+    push @opsview_conf, "1;\n";
+    open CONF, ">", $conf_file || die "Cannot open $conf_file for writing: $!";
+    print CONF @opsview_conf;
+    close CONF;
+}

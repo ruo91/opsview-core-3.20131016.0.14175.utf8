@@ -1,0 +1,98 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+# 	parse_config_json
+#
+# DESCRIPTION:
+#   Quick tool to read through a config.json file
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin", "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+
+use File::Next;
+use File::Slurp;
+use Data::Dump qw(dump);
+use JSON;
+use Getopt::Long;
+use Opsview::Utils;
+
+my $opspacks_dir = "$Bin/../import/opspacks_source";
+
+GetOptions( "opspacks_dir=s" => \$opspacks_dir, )
+  or die( "Incorrect options\n" );
+
+my $j = JSON->new;
+
+chdir($opspacks_dir) or die "Cannot chdir";
+
+my $config_file = "config.json";
+
+my $files = File::Next::files($opspacks_dir);
+
+while ( defined( my $file = $files->() ) ) {
+
+    if ( $file =~ m%/Makefile$% ) {
+        unlink $file;
+        next;
+    }
+
+    next unless $file =~ m%/config.json$%;
+
+    # Ignore opsview opspacks
+    next if $file =~ /application-opsview/;
+
+    # Ignore database-mysql too as this has a keyword for opsview-components
+    next if $file =~ /database-mysql/;
+
+    #print "file=$file\n";
+
+    process_json_file($file);
+}
+
+sub process_json_file {
+    my $json_file   = shift;
+    my $config_json = read_file($json_file);
+
+    my $config = $j->decode($config_json);
+
+    # Note: Just by printing, things that were integers will be converted to strings,
+    # eg: level: 0 would change to level: "0"
+    #print Data::Dump::dump($config);
+
+    delete $config->{keyword};
+
+    if ( $config->{servicecheck} ) {
+        foreach my $s ( @{ $config->{servicecheck} } ) {
+            delete $s->{keywords};
+        }
+    }
+
+    Opsview::Utils->remove_keys_from_hash( $config, ["ref"] );
+
+    open F, ">", $json_file or die "Cannot write to $json_file";
+    print F $j->canonical->pretty->encode($config);
+    close F;
+}

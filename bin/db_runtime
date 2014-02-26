@@ -1,0 +1,564 @@
+#!/bin/bash
+#
+#
+# SYNTAX:
+#	db_runtime {db_install}
+#
+# DESCRIPTION:
+# 	This is the script to create the runtime database
+#	$1 is the action to take
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+function db_export {
+	echo "SET FOREIGN_KEY_CHECKS=0;"
+	eval mysqldump --no-create-info --extended-insert=false --complete-insert $user_parms $db
+	echo "SET FOREIGN_KEY_CHECKS=1;"
+}
+
+function dump_status {
+	echo "SET FOREIGN_KEY_CHECKS=0;"
+	eval mysqldump $user_parms $db nagios_objects nagios_hoststatus nagios_servicestatus nagios_scheduleddowntime nagios_acknowledgements opsview_hostgroups opsview_hostgroup_hosts opsview_hosts opsview_contact_hosts opsview_contact_objects opsview_contact_services opsview_host_objects opsview_host_services opsview_monitoringservers opsview_monitoringclusternodes opsview_performance_metrics opsview_viewports opsview_servicechecks opsview_servicegroups
+	echo "SET FOREIGN_KEY_CHECKS=1;"
+}
+
+function db_import {
+	eval mysql $user_parms $db || die "Cannot import"
+	eval check_constraints.sh $user_parms $db | grep "|" > /dev/null
+	if [ $? -eq 0 ] ; then
+		echo "Error with constraints - use check_constraints.sh to see where problems and check import file"
+		exit 1
+	fi
+}
+
+function db_install {
+
+	eval mysql $user_parms <<-EOF || die "Cannot install db"
+	# Create db
+	DROP DATABASE IF EXISTS $db;
+	CREATE DATABASE $db;
+	USE $db;
+
+	# --------------------------------------------------------
+	#
+	# Table structures
+	#
+
+	# Create this here until NDOUtils does it itself
+	CREATE TABLE nagios_database_version (version varchar(10)) ENGINE=InnoDB;
+	INSERT nagios_database_version VALUES ('1.4b2');
+
+	CREATE TABLE snmptrapexceptions (
+		id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+                time varchar(16),	# This is a timev value
+                hostip varchar(16),
+                trapname varchar(128),
+                reason int,
+		arg1 varchar(8),
+                packet text,
+		trapdebug int,
+		hostname varchar(64),
+                PRIMARY KEY (id),
+		INDEX unique_traps (hostip, trapname, reason, time, id),
+		INDEX time (time)
+		# constraints do not work on MyISAM tables, so ignore for now
+		#INDEX hostname (hostname),
+		#CONSTRAINT snmptrapexceptions_hostname_fk FOREIGN KEY (hostname) REFERENCES opsview.hosts(name)
+        ) ENGINE=InnoDB;
+
+	CREATE TABLE snmptrapdebug (
+		id int AUTO_INCREMENT,
+		starttime int,
+		duration float,
+		packet text,
+		PRIMARY KEY (id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE snmptrapruledebug (
+		id int AUTO_INCREMENT,
+		trap int NOT NULL DEFAULT 0,
+		servicecheck int NOT NULL DEFAULT 0,
+		expandedrule text,
+		result int,	# 0 fail, 1 pass, null error
+		PRIMARY KEY (id),
+		INDEX (trap),
+		CONSTRAINT snmptrapruledebug_trap_fk FOREIGN KEY (trap) REFERENCES snmptrapdebug(id)
+	) ENGINE=InnoDB;
+
+	# No need to AUTO_INCREMENT id as this table is a copy of opsview.hostgroups, which will constrain
+	# everything correctly
+	# On slaves, this is ignored
+        CREATE TABLE opsview_hostgroups (
+                id int,
+                parentid int DEFAULT 1,
+                name varchar(128) NOT NULL DEFAULT "",
+		lft int,
+		rgt int,
+		matpath TEXT NOT NULL,
+		matpathid TEXT NOT NULL DEFAULT "",
+                PRIMARY KEY (id),
+                INDEX (parentid)
+        ) ENGINE=InnoDB;
+
+    CREATE TABLE opsview_contacts (
+        id INT,
+        contact_object_id INT,
+        name varchar(128) NOT NULL,
+        PRIMARY KEY (id),
+        INDEX (contact_object_id, id)
+    ) ENGINE=InnoDB;
+
+	CREATE TABLE opsview_contact_hosts (
+		contactid int,
+		host_object_id int,
+		INDEX (contactid),
+		INDEX (host_object_id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE opsview_contact_services (
+		contactid int NOT NULL,
+		service_object_id int NOT NULL,
+		INDEX contactid_service_object_id (contactid, service_object_id),
+		INDEX (service_object_id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE opsview_contact_objects (
+		contactid int NOT NULL,
+		object_id int NOT NULL,
+		INDEX contactid_object_id (contactid, object_id),
+		INDEX (object_id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE opsview_hostgroup_hosts (
+		hostgroup_id int,
+		host_object_id int,
+		INDEX (hostgroup_id),
+		INDEX (host_object_id)
+	) ENGINE=InnoDB;
+
+    CREATE TABLE opsview_servicechecks (
+        id int PRIMARY KEY, # Same as Opsview servicecheckid
+        name varchar(64) DEFAULT '' NOT NULL,
+        description varchar(128) DEFAULT '' NOT NULL,
+        multiple BOOLEAN DEFAULT 0 NOT NULL,
+        active BOOLEAN DEFAULT 0 NOT NULL,
+        markdown_filter BOOLEAN DEFAULT 0 NOT NULL,
+        cascaded_from INT DEFAULT 0 NOT NULL,
+        servicegroup_id INT DEFAULT 0 NOT NULL
+    ) ENGINE=InnoDB;
+
+    CREATE TABLE opsview_servicegroups (
+        id int PRIMARY KEY, # Same as Opsview servicegroupid
+        name varchar(128) DEFAULT '' NOT NULL
+    ) ENGINE=InnoDB;
+
+	CREATE TABLE opsview_host_services (
+		host_object_id int NOT NULL DEFAULT 0,
+		hostname varchar(64) NOT NULL DEFAULT '',
+		service_object_id int NOT NULL DEFAULT 0,
+		servicename varchar(128) NOT NULL DEFAULT '',
+		perfdata_available BOOLEAN NOT NULL DEFAULT 0,
+        markdown_filter BOOLEAN DEFAULT 0 NOT NULL,
+        servicecheck_id int DEFAULT 0 NOT NULL,
+        servicegroup_id int DEFAULT 0 NOT NULL,
+		icon_filename varchar(128),
+        PRIMARY KEY (service_object_id),
+        INDEX hostname_servicename_service_object_id (hostname, servicename, service_object_id),
+		INDEX (host_object_id),
+        INDEX covering_index (host_object_id,service_object_id,hostname,servicename,perfdata_available,markdown_filter)
+	) ENGINE=InnoDB;
+
+	# Need this table in order for a simple join between opsview_hostgroups and all objects in nagios_statehistory
+	CREATE TABLE opsview_host_objects (
+		host_object_id int DEFAULT 0 NOT NULL,
+		hostname varchar(64) NOT NULL DEFAULT '',
+		object_id int DEFAULT 0 NOT NULL,	# This could be a service, or it could be the host object itself
+		name2 varchar(128),		# This is the service name, or NULL for the host
+        perfdata_available BOOLEAN DEFAULT 0 NOT NULL,
+        markdown_filter BOOLEAN DEFAULT 0 NOT NULL,
+        servicecheck_id int DEFAULT 0 NOT NULL,
+        servicegroup_id int DEFAULT 0 NOT NULL,
+        PRIMARY KEY (object_id),
+		INDEX object_lookup_idx (object_id, host_object_id, name2, hostname),
+		INDEX host_object_id_idx (host_object_id),
+        INDEX covering_index (host_object_id, object_id, hostname, name2, perfdata_available, markdown_filter),
+        INDEX events_view_index (object_id, hostname, name2, markdown_filter)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE opsview_viewports (
+		viewportid int NOT NULL DEFAULT 0,
+		keyword varchar(128) NOT NULL DEFAULT '',
+		hostname varchar(64) NOT NULL DEFAULT '',
+		servicename varchar(128) DEFAULT NULL,    # Can be NULL for host object
+		host_object_id int NOT NULL DEFAULT 0,
+		object_id int NOT NULL DEFAULT 0,
+		INDEX (viewportid),
+		INDEX (object_id),
+        INDEX keyword_host_object_id_object_id (keyword,host_object_id,object_id)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE opsview_hosts (
+		id int NOT NULL DEFAULT 0 PRIMARY KEY,		# This is nagios_objects.id = host_object_id
+		opsview_host_id int NOT NULL DEFAULT 0,
+		name varchar(64) NOT NULL DEFAULT '',
+		ip varchar(255) NOT NULL DEFAULT '',
+		alias varchar(255) NOT NULL DEFAULT '',
+		icon_filename varchar(128) NOT NULL DEFAULT '',
+		hostgroup_id int NOT NULL DEFAULT 0,		# Links to leaf hostgroup
+		monitored_by int NOT NULL DEFAULT 0, 		# Links to opsview_monitoringservers
+		primary_node int,		# Links to opsview_monitoringclusternodes
+		secondary_node int,
+		num_interfaces INT NOT NULL DEFAULT 0,
+		num_services INT DEFAULT 0 NOT NULL,
+		num_children INT DEFAULT 0 NOT NULL,
+		INDEX (opsview_host_id),
+		INDEX (name),
+		INDEX hostgroup_idx (id, hostgroup_id),
+		INDEX id_num_interfaces_num_services_alias_icon_filename (id, num_interfaces,num_services,alias,icon_filename),
+		INDEX (num_children)
+	) ENGINE=InnoDB;
+
+	CREATE TABLE opsview_monitoringservers (
+		id int NOT NULL DEFAULT 0,
+		name varchar(64) NOT NULL DEFAULT '',
+		activated BOOLEAN DEFAULT 1 NOT NULL,
+		passive BOOLEAN DEFAULT 0 NOT NULL,
+		nodes TEXT NOT NULL,
+		PRIMARY KEY (id)
+	) ENGINE=InnoDB COMMENT="Runtime list of monitoring servers";
+
+	CREATE TABLE opsview_monitoringclusternodes (
+		id int NOT NULL DEFAULT 0 PRIMARY KEY,
+		name varchar(64) NOT NULL DEFAULT '',	# This will be the hostname of the node
+		ip varchar(255) NOT NULL DEFAULT ''
+	) ENGINE=InnoDB COMMENT="Runtime list of monitoring cluster nodes";
+
+    # Set primary key for t/78configdumpend.t test
+    # Primary has to be auto increment id because service_object_id is 0 and calculated afterwards
+    # and names could be in filesystem in different cases
+	CREATE TABLE opsview_performance_metrics (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+		service_object_id INT DEFAULT 0,
+		hostname varchar(64) NOT NULL DEFAULT '',
+		servicename varchar(128) NOT NULL DEFAULT '',
+		metricname varchar(128) NOT NULL DEFAULT '',
+		uom varchar(64) DEFAULT NULL,
+		INDEX (service_object_id),
+		INDEX hostname (hostname),
+		INDEX servicename (servicename),
+		INDEX metricname (metricname)
+	) ENGINE=InnoDB;
+
+    CREATE TABLE opsview_topology_map (
+        id int unsigned NOT NULL auto_increment,
+        monitored_by INT(10) DEFAULT NULL,
+        object_id INT(10) NOT NULL,
+        host_id INT(10) NOT NULL,
+        opsview_host_id INT(10) NOT NULL,
+        name varchar(64) NOT NULL,
+        parent_id INT(10) DEFAULT NULL,
+        parent_object_id INT(10) DEFAULT NULL,
+        parent_name varchar(64) DEFAULT NULL,
+        child_id INT(10) DEFAULT NULL,
+        child_object_id INT(10) DEFAULT NULL,
+        child_name varchar(64) DEFAULT NULL,
+        PRIMARY KEY (id),
+        INDEX (monitored_by),
+        INDEX (opsview_host_id),
+        INDEX (name),
+        INDEX (parent_id),
+        INDEX (parent_name),
+        INDEX (child_id),
+        INDEX (child_name)
+    ) ENGINE=InnoDB;
+
+    CREATE TABLE opsview_hosts_matpaths (
+        id int unsigned NOT NULL auto_increment,
+        object_id INT(10) NOT NULL,
+        matpath TEXT NOT NULL,
+        depth INT UNSIGNED NOT NULL DEFAULT 0,
+        PRIMARY KEY (id),
+        INDEX (object_id)
+    ) ENGINE=InnoDB;
+
+	CREATE TABLE opsview_database_version (version varchar(10)) ENGINE=InnoDB;
+	INSERT opsview_database_version VALUES ('2.8.6');
+
+  -- Opsview portion of runtime database
+	CREATE TABLE schema_version (
+        major_release varchar(16), 
+        version varchar(16),
+        reason varchar(255),
+        created_at DATETIME,
+        duration INT,
+        PRIMARY KEY (major_release)
+    ) ENGINE=InnoDB;
+	INSERT INTO schema_version (major_release, version) VALUES ('2.10', '2');
+	INSERT INTO schema_version (major_release, version) VALUES ('2.11', '2');
+	INSERT INTO schema_version (major_release, version) VALUES ('2.12', '2');
+	INSERT INTO schema_version (major_release, version) VALUES ('2.14', '3');
+	INSERT INTO schema_version (major_release, version) VALUES ('3.0', '1');
+	INSERT INTO schema_version (major_release, version) VALUES ('3.3', '4');
+	INSERT INTO schema_version (major_release, version) VALUES ('3.5', '6');
+	INSERT INTO schema_version (major_release, version) VALUES ('3.6', '1');
+	INSERT INTO schema_version (major_release, version) VALUES ('3.7', '3');
+	INSERT INTO schema_version (major_release, version) VALUES ('3.9', '1');
+	INSERT INTO schema_version (major_release, version) VALUES ('3.11', '6');
+	INSERT INTO schema_version (major_release, version) VALUES ('3.13', '11');
+	INSERT INTO schema_version (major_release, version) VALUES ('3.15', '9');
+	INSERT INTO schema_version (major_release, version, created_at) VALUES ('20120925hstpths', 'install', NOW());
+	INSERT INTO schema_version (major_release, version, created_at) VALUES ('20121004hstdepth', 'install', NOW());
+	INSERT INTO schema_version (major_release, version, created_at) VALUES ('20121022bigints', 'install', NOW());
+
+  -- Nagios portion of runtime database
+	source $topdir/../bin/ndo_mysql.sql;
+	CREATE TABLE nagios_schema_version (major_release varchar(16), version varchar(16)) ENGINE=InnoDB;
+	INSERT INTO nagios_schema_version (major_release, version) VALUES ('2.10', '1');
+	INSERT INTO nagios_schema_version (major_release, version) VALUES ('3.0', '5');
+	INSERT INTO nagios_schema_version (major_release, version) VALUES ('3.3', '4');
+	INSERT INTO nagios_schema_version (major_release, version) VALUES ('3.9', '2');
+
+	# These two may have to be removed in future if NDO does this
+	ALTER TABLE nagios_objects MODIFY name1 varchar(128) COLLATE latin1_bin NOT NULL default '';
+	ALTER TABLE nagios_objects MODIFY name2 varchar(128) COLLATE latin1_bin default NULL;
+    ALTER TABLE nagios_objects DROP INDEX instance_id;
+
+	# Ditto this index
+	ALTER TABLE nagios_services ADD INDEX (host_object_id);
+
+	# We re-order these indexes to help with the regular deletes from the ndo2db daemon
+	ALTER TABLE nagios_timedevents DROP INDEX instance_id;
+	ALTER TABLE nagios_timedevents ADD UNIQUE KEY instance_id (scheduled_time, instance_id, event_type, object_id);
+
+	ALTER TABLE nagios_systemcommands DROP INDEX instance_id;
+	ALTER TABLE nagios_systemcommands ADD UNIQUE KEY instance_id (start_time, instance_id, start_time_usec);
+
+	ALTER TABLE nagios_servicechecks DROP INDEX instance_id;
+	ALTER TABLE nagios_servicechecks ADD INDEX start_time (start_time);
+	ALTER TABLE nagios_servicechecks ADD INDEX nagios_servicechecks_service_object_id_start_time (service_object_id, start_time);
+
+	ALTER TABLE nagios_hostchecks DROP INDEX instance_id;
+	ALTER TABLE nagios_hostchecks ADD INDEX start_time (start_time);
+	ALTER TABLE nagios_hostchecks ADD INDEX nagios_hostchecks_host_object_id_start_time (host_object_id, start_time);
+
+    ALTER TABLE nagios_logentries DROP INDEX instance_id, DROP INDEX logentry_time, DROP INDEX entry_time;
+
+	ALTER TABLE nagios_externalcommands DROP INDEX instance_id, ADD INDEX nagios_externalcommands_entry_time (entry_time);
+
+    ALTER TABLE nagios_statehistory DROP INDEX instance_id;
+	ALTER TABLE nagios_statehistory ADD INDEX nagios_statehistory_state_time (state_time);
+	ALTER TABLE nagios_statehistory ADD INDEX nagios_statehistory_object_id_state_time (object_id, state_time);
+	ALTER TABLE nagios_statehistory ADD INDEX nagios_statehistory_state_type_object_id (state_type, object_id);
+    ALTER TABLE nagios_statehistory ADD INDEX state_time_state_type_object_id (state_time, state_type, object_id);
+
+	ALTER TABLE nagios_downtimehistory 
+        ADD COLUMN was_logged BOOLEAN NOT NULL DEFAULT 0 AFTER was_cancelled,
+        ADD INDEX nagios_downtimehistory_object_id (object_id),
+        ADD INDEX nagios_downtimehistory_internal_downtime_id (internal_downtime_id);
+	ALTER TABLE nagios_acknowledgements DROP INDEX instance_id, ADD INDEX nagios_acknowledgements_entry_time (entry_time);
+
+	ALTER TABLE nagios_conninfo DROP INDEX instance_id, ADD INDEX nagios_conninfo_connect_time (connect_time);
+
+	ALTER TABLE nagios_contactnotificationmethods DROP INDEX instance_id;
+	ALTER TABLE nagios_contactnotificationmethods ADD UNIQUE INDEX instance_id (start_time, contactnotification_id, instance_id, start_time_usec);
+
+    ALTER TABLE nagios_contactstatus DROP INDEX instance_id;
+    ALTER TABLE nagios_customvariablestatus DROP INDEX instance_id, DROP INDEX object_id_2, ADD UNIQUE INDEX object_id_2 (object_id, varname);
+
+	# These two indexes speedup configdumpend insert of helper table opsview_contact_services
+	ALTER TABLE nagios_contactgroups ADD INDEX nagios_contactgroups_contactgroup_object_id_contactgroup_id (contactgroup_object_id, contactgroup_id);
+	ALTER TABLE nagios_services ADD INDEX nagios_services_config_type_service_id_service_object_id (config_type, service_id, service_object_id);
+
+	ALTER TABLE nagios_contacts DROP INDEX instance_id;
+	ALTER TABLE nagios_contacts ADD UNIQUE INDEX instance_id (contact_object_id, instance_id, config_type);
+
+	ALTER TABLE nagios_scheduleddowntime DROP INDEX instance_id;
+	ALTER TABLE nagios_scheduleddowntime ADD UNIQUE INDEX instance_id (object_id, instance_id, entry_time, internal_downtime_id);
+	ALTER TABLE nagios_scheduleddowntime ADD INDEX nagios_scheduleddowntime_object_id_was_started (object_id, was_started);
+
+    ALTER TABLE nagios_processevents DROP INDEX instance_id, DROP INDEX event_time;
+
+	# Extra indexes for import_runtime
+	ALTER TABLE nagios_contactnotificationmethods ADD INDEX nagios_contactnotificationsmethods_contactnotification_object (contactnotification_id, command_object_id);
+	ALTER TABLE nagios_contactnotifications ADD INDEX nagios_contactnotifications_contact_notification (contact_object_id, notification_id, contactnotification_id);
+	ALTER TABLE nagios_notifications ADD INDEX nagios_notifications_start_time (start_time, end_time, notification_id);
+
+	# Reorganise the nagios configuration tables
+	ALTER TABLE nagios_services DROP INDEX instance_id;
+	ALTER TABLE nagios_services ADD UNIQUE INDEX instance_id (service_object_id, config_type, instance_id);
+
+	ALTER TABLE nagios_hosts DROP INDEX instance_id;
+	ALTER TABLE nagios_hosts ADD UNIQUE INDEX instance_id (host_object_id, config_type, instance_id);
+
+	ALTER TABLE nagios_commands DROP INDEX instance_id;
+	ALTER TABLE nagios_commands ADD UNIQUE INDEX instance_id (object_id, config_type, instance_id);
+
+	ALTER TABLE nagios_comments DROP INDEX instance_id;
+	ALTER TABLE nagios_comments ADD UNIQUE INDEX instance_id (internal_comment_id, comment_time, instance_id);
+
+	ALTER TABLE nagios_commenthistory DROP INDEX instance_id;
+	ALTER TABLE nagios_commenthistory ADD UNIQUE INDEX instance_id (internal_comment_id, comment_time, instance_id);
+
+	ALTER TABLE nagios_servicedependencies DROP INDEX instance_id;
+	ALTER TABLE nagios_servicedependencies ADD UNIQUE INDEX instance_id (service_object_id, config_type, dependent_service_object_id, dependency_type, inherits_parent, fail_on_ok, fail_on_warning, fail_on_unknown, fail_on_critical, instance_id);
+
+	# Extra indexes to optimize latest update time queries
+	ALTER TABLE nagios_hoststatus ADD INDEX latest_update_time_idx (instance_id, status_update_time);
+	ALTER TABLE nagios_servicestatus ADD INDEX latest_update_time_idx (instance_id, status_update_time);
+
+	# Convert columns to bigints
+	ALTER TABLE nagios_servicechecks MODIFY COLUMN servicecheck_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT;
+	ALTER TABLE nagios_statehistory MODIFY COLUMN statehistory_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT;
+    ALTER TABLE nagios_statehistory 
+            ADD COLUMN scheduled_downtime_depth SMALLINT NOT NULL DEFAULT 0 AFTER last_hard_state,
+            ADD COLUMN downtimehistory_id INT DEFAULT NULL AFTER scheduled_downtime_depth,
+            ADD COLUMN problem_has_been_acknowledged BOOLEAN NOT NULL DEFAULT 0 AFTER downtimehistory_id,
+            ADD COLUMN eventtype SMALLINT DEFAULT 0 NOT NULL AFTER problem_has_been_acknowledged,
+            ADD COLUMN host_state SMALLINT NOT NULL DEFAULT 0 AFTER eventtype,
+            ADD COLUMN host_state_type SMALLINT NOT NULL DEFAULT 0 AFTER host_state;
+	ALTER TABLE nagios_hostchecks MODIFY COLUMN hostcheck_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT;
+
+
+    # Add constraint to nagios_instances
+    ALTER TABLE nagios_instances ADD UNIQUE INDEX instance_name (instance_name);
+
+    # Reorganise index. Speeds up ndoutils_configdumpend's opsview_contact_services population
+    ALTER TABLE nagios_service_contactgroups DROP INDEX instance_id, ADD UNIQUE INDEX instance_id (contactgroup_object_id,service_id);
+
+    ALTER TABLE nagios_flappinghistory DROP INDEX instance_id;
+    ALTER TABLE nagios_servicestatus DROP INDEX instance_id;
+    ALTER TABLE nagios_timedeventqueue DROP INDEX instance_id, DROP INDEX event_type, DROP INDEX scheduled_time;
+EOF
+}
+
+
+function db_backup {
+	if [ $TEST -eq 0 ] ; then
+		eval mysqldump $user_parms --databases $db
+	else
+        eval mysqldump $user_parms --skip-extended-insert -l --compatible=mysql40 --databases $db | egrep -v ^-- | egrep -v 'SET @saved_cs_client|SET character_set_client' | perl -pe 's/ AUTO_INCREMENT=\d+//; s/`'$db'`/`runtime`/g; s/PRIMARY KEY\s+\(/PRIMARY KEY \(/g; s/ auto_increment,/ AUTO_INCREMENT,/g; s/ default / DEFAULT /g; s/ TYPE=/ ENGINE=/;'
+	fi
+}
+
+function db_daily_backup {
+	# Only backup the database structure and the data in the nagios_objects table
+	# as this keeps the foreign keys consistent in ODW - everything else is repopulated
+	# automatically
+    # We need to keep the nagios_instances table too, otherwise an instance_id > 1 would be lost in a restore
+	eval mysqldump $user_parms --databases $db --no-data
+	eval mysqldump $user_parms $db nagios_objects opsview_database_version schema_version nagios_schema_version nagios_instances
+}
+
+function filter_test_db_restore {
+    perl -pe 's/`runtime`/`'$db'`/g'
+}
+
+function db_restore {
+	echo "Restoring database $db"
+
+	echo "DROP DATABASE IF EXISTS $db" | eval mysql $user_parms || die "Cannot drop db"
+
+    if [ $TEST -eq 1 ] ; then
+        filter_test_db_restore | eval mysql $user_parms || die "Cannot import"
+    else
+        eval mysql $user_parms || die "Cannot import"
+    fi
+
+	if [ $TEST -eq 0 ] ; then
+		# Check constraints is removed for tests because it takes too long to query
+		eval check_constraints.sh $user_parms $db | grep "|" > /dev/null
+		if [ $? -eq 0 ] ; then
+			echo "Error with constraints - use check_constraints.sh to see where problems and check restore file"
+			exit 1
+		fi
+	fi
+}
+
+# Returns 0 if database exists, otherwise 1
+function db_exists {
+        echo "exit" | eval mysql $user_parms $db
+}
+
+die() { echo "$*" >&2; exit 1; }
+
+topdir=${0%/db_runtime}
+eval `$topdir/../bin/opsview.sh`
+user=$RUNTIME_DBUSER
+if [ "x$user" = "x" ] ; then
+    die "Opsview variables not set"
+fi
+password="$RUNTIME_DBPASSWD"
+host=$RUNTIME_DBHOST
+db=$RUNTIME_DB
+
+TEST=0
+PATH=$PATH:$topdir:.
+while getopts ":th:" c ; do
+	case $c in
+		t) TEST=1;;
+        h) host=$OPTARG;;
+		\*) die "Error: unexpected option $c";;
+	esac
+done
+shift $((OPTIND - 1))
+
+user_parms="-u$user -p'$password' -h$host"
+
+[[ -z $1 ]] && die "Must specify a command"
+
+while [[ -n $1 ]] ; do
+	case "$1" in
+		db_export)
+			db_export
+			;;
+		db_export_test)
+			db_export_test
+			;;
+		db_import)
+			db_import
+			;;
+		db_install)
+			db_install
+			;;
+		db_backup)
+			db_backup
+			;;
+		db_daily_backup)
+			db_daily_backup
+			;;
+		db_restore)
+			db_restore
+			;;
+        db_exists)
+            db_exists
+            exit $?
+            ;;
+        dump_status)
+            dump_status
+            ;;
+		*)
+			die "Usage: $0 [-h <host>] {db_export|db_import|db_install}"
+			;;
+	esac
+	shift
+done
+
+# End of this script

@@ -1,0 +1,12 @@
+{
+  allrows => 12,
+  list    => [
+               { name => "cisco" },
+               { name => "cisco1" },
+               { name => "cisco2" },
+               { name => "cisco3" },
+               { name => "cisco4" },
+             ],
+  rows    => 5,
+  total   => 15,
+}

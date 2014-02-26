@@ -1,0 +1,229 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#   Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+use Nagios::Plugin;
+use Net::Amazon::EC2;
+use Data::Dump qw(dump);
+
+#valid states array
+my @valid_states = (
+    "pending",   "running", "shutting_down", "terminated",
+    " stopping", " stopped"
+);
+
+my $np = Nagios::Plugin->new(
+    shortname => "AMAZON EC2",
+    usage =>
+      "%s --accesskey=key --secretkey=key -i indexname [-w STATE_LIST] [-o STATE_LIST] [-r region]",
+    extra =>
+      "\nSTATE_LIST is a comma separate listed of states. Valid states are:\n  "
+      . join( ",", @valid_states )
+      . "\nIf actual state is not listed in -o and -w, will set to CRITICAL",
+    blurb => "Checks Amazon EC2 instance status",
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help =>
+      "-w, --warning=STATE_LIST. Warning if current instance state is in this warning list",
+);
+
+$np->add_arg(
+    spec => "ok|o=s",
+    help =>
+      "-o, --ok=STATE_LIST. Ok if current instance state is in this ok list",
+);
+$np->add_arg(
+    spec => "indexk|i=s",
+    help =>
+      "-i, --indexk=STRING. Index of the instance. Index of instance must be single quoted e.g. 'X-XXXXXXXX' ",
+    required => 0,
+);
+
+#mandatory argument access key
+$np->add_arg(
+    spec     => "accesskey|k=s",
+    help     => "-k, --accesskey=STRING. Access key for authorisation",
+    required => 1,
+);
+
+#mandatory argument secret access key
+$np->add_arg(
+    spec     => "secretkey|s=s",
+    help     => "-s, --secretkey=STRING. Secret key for authorisation ",
+    required => 1,
+);
+
+#optional argument, regions
+
+$np->add_arg(
+    spec => "region|r=s",
+    help =>
+      "-r, --region=amazon ec2 region to be monitored. By default region is set to 'us-east-1'",
+    required => 0,
+);
+
+$np->getopts;
+
+my $access_key        = $np->opts->accesskey;
+my $secret_access_key = $np->opts->secretkey;
+my $extra_options     = {};
+if ( $np->opts->region ) {
+    $extra_options->{region} = $np->opts->region;
+}
+if ( $np->opts->verbose ) {
+    $extra_options->{debug} = 1;
+}
+
+my $ec2 = Net::Amazon::EC2->new(
+    AWSAccessKeyId  => $access_key,
+    SecretAccessKey => $secret_access_key,
+    %$extra_options,
+);
+
+#it is array of all running instances
+
+my $running_instances;
+eval { $running_instances = $ec2->describe_instances; };
+if ($@) {
+    $np->nagios_exit( UNKNOWN, "$@" );
+}
+
+#print dump($running_instances);
+#print dump($running_instances{owner_id});
+
+#API return error message as HASH if authorisation failed
+if ( ref($running_instances) eq 'Net::Amazon::EC2::Errors' ) {
+    $np->nagios_exit( UNKNOWN,
+        "Authorisation failed - check access keys: "
+          . $running_instances->{errors}->[0]->{message}
+    );
+}
+if ( !$np->opts->indexk ) {
+    my @index_list;
+    foreach my $reservation (@$running_instances) {
+        foreach my $instance ( $reservation->instances_set ) {
+
+            #appending the each instance index at index list
+            unshift( @index_list, $instance->instance_id );
+
+            # print $instance->instance_id . "\n";
+        }
+    }
+
+    $np->nagios_exit( UNKNOWN,
+        "Instance index argument missing -i. Valid indices: "
+          . join( ",", @index_list )
+    );
+
+}
+
+my $indexk = $np->opts->indexk;
+if ( $np->opts->indexk ) {
+    my @index_list;
+    foreach my $reservation (@$running_instances) {
+        foreach my $instance ( $reservation->instances_set ) {
+
+            #appending the each instance index at index list
+            unshift( @index_list, $instance->instance_id );
+        }
+    }
+    my %index_list = map { ( $_ => 1 ) } @index_list;
+
+    # print dump(%index_list);
+    if ( !exists( $index_list{$indexk} ) ) {
+
+        # print dump(@index_list);
+        $np->nagios_exit( UNKNOWN,
+            "Instance index '$indexk' is not valid. Valid indices: @index_list"
+        );
+    }
+}
+
+# print dump(%valid_states);
+my $warning = $np->opts->warning || "";
+my $ok      = $np->opts->ok      || "";
+
+#if ( !$warning && !$ok ) {
+#    $np->nagios_exit( UNKNOWN, "warning_list (-w) and ok_list (-o) arguments missing. Valid states are: @valid_states" );
+#}
+#if ( !$warning ) {
+#    $np->nagios_exit( UNKNOWN, "warning_list (-w) argument missing. Valid states are: @valid_states" );
+#}
+#if ( !$ok ) {
+#    $np->nagios_exit( UNKNOWN, "ok_list (-o) argument missing. Valid states are: @valid_states" );
+#}
+
+#argument for the method describe instances
+my %arg = ( InstanceId => $indexk );
+$running_instances = $ec2->describe_instances(%arg);
+
+#print dump($running_instances);
+
+foreach my $instance ( $running_instances->[0]->instances_set ) {
+    my $instance_id                = $instance->instance_id;
+    my $instance_state             = $instance->instance_state->name;
+    my $instance_kernel            = $instance->kernel_id;
+    my $instance_type              = $instance->instance_type;
+    my $instance_monitoring_status = $instance->monitoring;
+    my $instance_launch_time       = $instance->launch_time;
+
+    if ( $np->opts->verbose ) {
+        print "instance_id         :- ", $instance->instance_id . "\n";
+        print "instance_state      :- ", $instance->instance_state->name . "\n";
+        print "Kernel              :- ", $instance->kernel_id . "\n";
+        print "instance_type:      :- ", $instance->instance_type . "\n";
+        print "ip_address:         :- ", $instance->ip_address . "\n";
+        print "private_ip_address  :- ", $instance->private_ip_address . "\n";
+        print "monitoring:         :- ", $instance->monitoring . "\n";
+        print "launch_time:        :- ", $instance->launch_time . "\n";
+        print "\n";
+    }
+    my $instance_details =
+      "Instance_id:$instance_id, instance_type:$instance_type, monitoring_status:$instance_monitoring_status, launch_time:$instance_launch_time";
+    my @warning = split( ",", $warning );
+
+    # print dump(@warning);
+
+    my @ok = split( ",", $ok );
+
+    # print dump(@ok);
+    #creating hash lists
+    my %warning_list = map { ( $_ => 'warning' ) } @warning;
+
+    # print dump(%warning_list);
+
+    my %ok_list = map { ( $_ => 'ok' ) } @ok;
+
+    # print dump(%ok_list);
+    #checking for valid states
+    my $text = "Current instance state is: $instance_state. $instance_details";
+    if ( exists( $warning_list{$instance_state} ) ) {
+        $np->nagios_exit( WARNING, $text );
+    }
+    if ( exists( $ok_list{$instance_state} ) ) {
+        $np->nagios_exit( OK, $text );
+    }
+    $np->nagios_exit( CRITICAL, $text );
+}

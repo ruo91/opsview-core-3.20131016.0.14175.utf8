@@ -1,0 +1,67 @@
+{
+   "attribute" : [],
+   "hosttemplate" : [
+      {
+         "description" : "Sensatronics",
+         "managementurls" : [],
+         "name" : "Infrastructure - Sensatronics",
+         "servicechecks" : [
+            {
+               "exception" : null,
+               "name" : "Sensatronics - Temperature",
+               "timed_exception" : null
+            }
+         ]
+      }
+   ],
+   "servicecheck" : [
+      {
+         "alert_from_failure" : "1",
+         "args" : "-n 1 -w 35 -c 50 -H $HOSTADDRESS$ -C $SNMP_COMMUNITY$ -v $SNMP_VERSION$ -p $SNMP_PORT$ -U $SNMPV3_USERNAME$ -P $SNMPV3_AUTHPASSWORD$ -a $SNMPV3_AUTHPROTOCOL$ -e $SNMPV3_PRIVPROTOCOL$ -x $SNMPV3_PRIVPASSWORD$",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Temperature sensor reading",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "Sensatronics - Temperature",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r,u,f",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_snmp_sensatronics_temp"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Data Centre - Environment"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      }
+   ],
+   "servicegroup" : [
+      {
+         "name" : "Data Centre - Environment"
+      }
+   ]
+}

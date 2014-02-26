@@ -1,0 +1,84 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+#   set_module --name={name} --enabled={0|1} --description={value} --url={url} --access={access} --namespace={namespace}
+#
+# DESCRIPTION:
+#   Used to install Opsview Enterprise modules and enable menu links to display appropriately
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin", "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+use Opsview::Schema;
+use Getopt::Long;
+
+my ( $name, $enabled, $installed, $description, $url, $access, $namespace,
+    $mversion );
+
+my $result = GetOptions(
+    "name=s"        => \$name,
+    "enabled=i"     => \$enabled,
+    "installed=i"   => \$installed,
+    "description=s" => \$description,
+    "url=s"         => \$url,
+    "access:s"      => \$access,
+    "namespace=s"   => \$namespace,
+    "version=s"     => \$mversion,
+);
+
+die "Must specify a name"         unless defined $name;
+die "Must specify enabled or not" unless defined $enabled;
+
+unless ($namespace) {
+    $namespace = "thirdparty." . lc($name);
+}
+
+if ( $namespace =~ /^com\.opsera\./ ) {
+    print
+      "Ignoring this module as it is not compatible with Opsview v4: $namespace\n";
+    exit 0;
+}
+
+my $schema = Opsview::Schema->my_connect;
+
+my $module =
+  $schema->resultset("Modules")->find_or_new( { namespace => $namespace } );
+unless ( $module->in_storage ) {
+    print "Module $name does not exist\n";
+    die "Must specify URL" unless $url;
+    $module->name($name);
+    $module->url($url);
+    $module->insert;
+}
+$module->name($name)               if defined $name;
+$module->url($url)                 if defined $url;
+$module->enabled($enabled)         if defined $enabled;
+$module->description($description) if defined $description;
+$module->access($access)           if defined $access;
+$module->version($mversion)        if defined $mversion;
+$module->installed( defined $installed ? $installed : 1 );
+$module->update;
+
+print "Module $name updated\n";
+exit 0;

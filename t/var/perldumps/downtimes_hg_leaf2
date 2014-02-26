@@ -1,0 +1,38 @@
+{
+  list => [
+    {
+      author => "admin",
+      comment => "Hostgroup 'Leaf2': in the future <script>alert(\"badness\")</script>",
+      objects => {
+        hosts => [{ hostname => "monitored_by_slave", id => 136 }],
+        services => [
+          { hostname => "monitored_by_slave", id => 5, servicename => "VNC" },
+          { hostname => "monitored_by_slave", id => 193, servicename => "/" },
+          {
+            hostname => "monitored_by_slave",
+            id => 194,
+            servicename => "Check Loadavg",
+          },
+          {
+            hostname => "monitored_by_slave",
+            id => 195,
+            servicename => "Check Memory",
+          },
+          { hostname => "monitored_by_slave", id => 196, servicename => "SSH" },
+        ],
+      },
+      scheduled_end_time => "2017-11-20 16:34:47",
+      start_time => "2017-11-20 14:34:47",
+      started => 0,
+    },
+  ],
+  summary => {
+    allrows => 13,
+    num_hosts => 1,
+    num_services => 5,
+    page => 1,
+    rows => 6,
+    totalpages => 1,
+    totalrows => 6,
+  },
+}

@@ -1,0 +1,215 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#       Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+use Storable qw(lock_store lock_retrieve);
+use File::Path;
+
+my $oid_testoid =
+  ".1.3.6.1.4.1.140.625.10.1.0"; # Used to check whether SNMP is responding
+
+my $Script = "check_snmp_weblogic_jmsqueuelength";
+my $np     = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => "WEBLOGIC",
+    version   => "2.0",
+    blurb =>
+      "Checks the length (current messages) of a particular JMS queue by name",
+    snmp => {
+        "snmp-timeout"   => 2,
+        "snmp-check-oid" => $oid_testoid,
+        "v1-fallback"    => 1,
+    },
+);
+
+$np->add_arg(
+    spec => "server|s=s",
+    help => qq{-s, --server=SERVERNAME
+   Server name. Will append to end of community string},
+);
+
+$np->add_arg(
+    spec => "queue|q=s",
+    help => qq{-q, --queue=QUEUENAME
+   Queue name to check number of items in},
+    default => "not_specified",
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w, --warning=INTEGER
+   Minimum and maximum number of allowable result, outside of which a
+   warning will be generated (default: 0)},
+    default => 0,
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c, --critical=INTEGER
+   Minimum and maximum number of the generated result, outside of
+   which a critical will be generated (default: 0) },
+    default => 0,
+);
+
+$np->getopts;
+
+my $store_dir = "$Bin/../var/plugins/${Script}";
+my $store;
+my $max_use = 10 + int( rand(10) ); # random number between 10 and 20
+
+if ( !-d $store_dir ) {
+    mkpath($store_dir) || die "Unable to create $store_dir directory: $!", $/;
+}
+
+# Performance data
+my $perfdata = "";
+
+# SNMP variables
+my $queuename_base_oid = ".1.3.6.1.4.1.140.625.220.1.15";
+my $queue_length_oid   = ".1.3.6.1.4.1.140.625.220.1.40";
+my $queue_oid          = 0;
+my $s;
+
+# Command line arguments
+my $hostname  = $np->opts->hostname;
+my $community = $np->opts->rocommunity;
+if ( defined $np->opts->server ) {
+    $community .= '@' . $np->opts->server;
+}
+my $queue_name = $np->opts->queue;
+
+my $warning  = $np->opts->warning;
+my $critical = $np->opts->critical;
+
+my $store_file = $store_dir . "/${hostname}_${queue_name}.dat";
+
+if ( -f $store_file ) {
+
+    # if lock_retrieve fails, file is corrupt - just carry on with empty store
+    eval { $store = lock_retrieve($store_file); };
+}
+
+# Call this when you know you'll get a single value back
+sub get_oid_value {
+    our ( $oid, $result, $status, $returnstring );
+
+    $oid = shift(@_);
+
+    if ( !defined( $s->get_request($oid) ) ) {
+        if ( !defined( $s->get_request($oid_testoid) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return -1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return -1;
+        }
+    }
+
+    foreach ( $s->var_bind_names() ) {
+        $result = $s->var_bind_list()->{$_};
+    }
+
+    return $result;
+}
+
+# Create the SNMP session
+$s = $np->snmp( { rocommunity => $community } );
+
+# Increase size of SNMP max message buffer
+if ( !defined $s->max_msg_size(65535) ) {
+    print "SNMP Error: ", $s->error, $/;
+    exit 3;
+}
+
+# Finds the sub oid for a particular queue by its name
+sub get_suboid_by_name {
+    my $name = shift(@_);
+    my $key;
+    my $results;
+
+    $s->get_table($queuename_base_oid);
+    $results = $s->var_bind_list();
+
+    foreach $key ( keys %$results ) {
+
+        if ( $results->{$key} eq $name ) {
+            $key =~ s/^$queuename_base_oid//;
+            return $key;
+        }
+    }
+
+    # Couldn't find name -> undef
+}
+
+if ( ref $store->{$queue_name} ) {
+    $queue_oid = $store->{$queue_name}->{oid};
+    $store->{$queue_name}->{count}++;
+    if ( $store->{$queue_name}->{count} > $store->{$queue_name}->{max_use} ) {
+        delete( $store->{$queue_name} );
+    }
+}
+else {
+
+    # Get the sub OID for this particular queue
+    $queue_oid = get_suboid_by_name($queue_name);
+
+    if ( $queue_oid eq "" ) {
+        print "UNKNOWN - Could not find specified queue $queue_name\n";
+        exit 3;
+    }
+    $store->{$queue_name}            = {};
+    $store->{$queue_name}->{oid}     = $queue_oid;
+    $store->{$queue_name}->{count}   = 0;
+    $store->{$queue_name}->{max_use} = $max_use;
+}
+
+lock_store( $store, $store_file );
+
+my $queue_length = get_oid_value( "$queue_length_oid$queue_oid" );
+
+if ( $queue_length eq "" ) {
+    print "UNKNOWN - SNMP request for queue length failed!\n";
+    exit 3;
+}
+
+$perfdata = "queue_length=$queue_length;$warning;$critical;";
+
+if ( $queue_length > $critical ) {
+    print "CRITICAL - Queue length is $queue_length|$perfdata\n";
+    exit 2;
+}
+elsif ( $queue_length > $warning ) {
+    print "WARNING - Queue length is $queue_length|$perfdata\n";
+    exit 1;
+}
+else {
+    print "OK - Queue length is $queue_length|$perfdata\n";
+    exit 0;
+}

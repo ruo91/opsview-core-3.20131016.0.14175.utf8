@@ -1,0 +1,57 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+#	rotate_async_log [-n] {logfile} {targetdir}
+#
+# DESCRIPTION:
+#	Moves /usr/local/nagios/var/{logfile} into /usr/local/nagios/var/{targetdir} for import_ndologs
+#   or import_perfdatarrd daemon to asynchronously update db
+#   Will then overwrite existing log file
+#   -n means do not rotate zero bytes files
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+use File::Copy;
+use Time::HiRes qw( gettimeofday );
+
+my $ignore_zero_files;
+if ( $ARGV[0] eq "-n" ) {
+    $ignore_zero_files = 1;
+    shift @ARGV;
+}
+
+my $var       = "/usr/local/nagios/var";
+my $logfile   = "$var/" . shift @ARGV;
+my $newlogdir = "$var/" . shift @ARGV;
+
+my @time = gettimeofday();
+
+my $dest = sprintf( "$newlogdir/%d.%06d", $time[0], $time[1] );
+
+if ( !$ignore_zero_files || ( -s $logfile > 0 ) ) {
+    move( $logfile, $dest );
+}
+
+umask 077;
+open( F, ">", $logfile );
+close F;

@@ -1,0 +1,46 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#	hostips
+#
+# DESCRIPTION:
+#	Lookup host ips and return JSON encoded array
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#
+
+use strict;
+use warnings;
+use FindBin qw($Bin);
+use lib "$Bin", "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+use Net::hostent qw(gethost);
+use Socket qw(inet_ntoa);
+use JSON qw(encode_json);
+
+my $hostname = $ARGV[0] or die "Usage:\n\t$0 HOST_NAME\n";
+
+print encode_json( hostip($hostname) );
+
+# based on Opsview::Schema::Hosts
+sub hostip {
+    my $address = shift;
+
+    if ( $address =~ /^\d+\.\d+\.\d+\.\d+$/ ) {
+        return [$address];
+    }
+
+    $_ = gethost($address);
+    unless ($_) {
+        return [];
+    }
+    my @addresses = ();
+    for my $addr ( @{ $_->addr_list } ) {
+        push @addresses, inet_ntoa($addr);
+    }
+    return \@addresses;
+}

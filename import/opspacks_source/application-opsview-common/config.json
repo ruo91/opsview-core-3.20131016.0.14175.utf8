@@ -1,0 +1,348 @@
+{
+   "attribute" : [],
+   "hosttemplate" : [
+      {
+         "description" : "Opsview application monitors for Opsview Master or Slaves",
+         "managementurls" : [],
+         "name" : "Application - Opsview Common",
+         "servicechecks" : [
+            {
+               "exception" : null,
+               "name" : "Nagios Core Processes",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "Nagios Core Startup",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "Nagios Core Stats",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "Opsview Agent",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "Opsview Housekeeping Cronjob Monitor",
+               "timed_exception" : null
+            },
+            {
+               "exception" : null,
+               "name" : "Opsview HTTP",
+               "timed_exception" : null
+            }
+         ]
+      }
+   ],
+   "keyword" : [
+      {
+         "all_hosts" : "0",
+         "all_servicechecks" : "0",
+         "description" : "Opsview Components",
+         "enabled" : "1",
+         "name" : "opsview-components",
+         "public" : "0",
+         "style" : "group_by_host"
+      }
+   ],
+   "servicecheck" : [
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Checks Opsview agent is running",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "keywords" : [],
+         "label" : null,
+         "level" : 1,
+         "markdown_filter" : "0",
+         "name" : "Opsview Agent",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_nrpe"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Application - Opsview"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -c check_procs -a '-C nagios -w 1:60 -c 1:100'",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [
+            {
+               "name" : "Opsview Agent"
+            }
+         ],
+         "description" : "Checks nagios processes",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "keywords" : [
+            {
+               "name" : "opsview-components"
+            }
+         ],
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "Nagios Core Processes",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_nrpe"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Application - Opsview"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : null,
+         "check_attempts" : "1",
+         "check_freshness" : "0",
+         "check_interval" : "60",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Checks time taken to startup Nagios Core",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "keywords" : [
+            {
+               "name" : "opsview-components"
+            }
+         ],
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "Nagios Core Startup",
+         "notification_interval" : null,
+         "notification_options" : null,
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_nagios_startup"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Application - Opsview"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : null,
+         "check_attempts" : "1",
+         "check_freshness" : "0",
+         "check_interval" : "15",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Returns performance data about Nagios Core",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "keywords" : [
+            {
+               "name" : "opsview-components"
+            }
+         ],
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "Nagios Core Stats",
+         "notification_interval" : null,
+         "notification_options" : null,
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_nagios_stats"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Application - Opsview"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "-H $HOSTADDRESS$ -w 5 -c 10",
+         "attribute" : null,
+         "calculate_rate" : "no",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "5",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Checks for valid HTTP response on TCP port 80",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "keywords" : [
+            {
+               "name" : "opsview-components"
+            }
+         ],
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "Opsview HTTP",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_http"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Application - Opsview"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      },
+      {
+         "alert_from_failure" : "1",
+         "args" : "",
+         "attribute" : null,
+         "calculate_rate" : "",
+         "cascaded_from" : null,
+         "check_attempts" : "3",
+         "check_freshness" : "0",
+         "check_interval" : "720",
+         "checktype" : {
+            "name" : "Active Plugin"
+         },
+         "critical_comparison" : null,
+         "critical_value" : null,
+         "dependencies" : [],
+         "description" : "Monitors how long it has been since housekeeping cronjob was successfully run",
+         "event_handler" : "",
+         "flap_detection_enabled" : "1",
+         "freshness_type" : "renotify",
+         "invertresults" : "0",
+         "keywords" : [
+            {
+               "name" : "opsview-components"
+            }
+         ],
+         "label" : null,
+         "level" : 0,
+         "markdown_filter" : "0",
+         "name" : "Opsview Housekeeping Cronjob Monitor",
+         "notification_interval" : null,
+         "notification_options" : "w,c,r,u,f",
+         "oid" : null,
+         "plugin" : {
+            "name" : "check_opsview_cronjobs"
+         },
+         "retry_check_interval" : "1",
+         "sensitive_arguments" : "1",
+         "servicegroup" : {
+            "name" : "Application - Opsview"
+         },
+         "stale_state" : "0",
+         "stale_text" : "",
+         "stale_threshold_seconds" : "3600",
+         "stalking" : null,
+         "volatile" : "0",
+         "warning_comparison" : null,
+         "warning_value" : null
+      }
+   ],
+   "servicegroup" : [
+      {
+         "name" : "Application - Opsview"
+      }
+   ]
+}

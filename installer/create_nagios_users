@@ -1,0 +1,189 @@
+#!/bin/bash
+# 
+#
+# SYNTAX:
+#	create_nagios_user [-d]
+#
+# DESCRIPTION:
+#	Most of these tasks are done as part of a package preinstall script
+#	and not through this script - however can use this as a template
+#	Creates the nagios group and nagios user and the SSH keys
+#	No nagcmd group because not required on master
+#	If -d specified, will only show the commands that would be run
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+SCRIPT=${0}
+SCRIPTDIR=$(cd ${SCRIPT%/*} 1>/dev/null ; pwd)
+SCRIPTNM=${0##*/}
+
+# Routine to add sourcing of nagios/bin/profile is now in postinstall
+
+function create_users_for_linux {
+	# Check for nagios group
+	grep "^nagios:" /etc/group > /dev/null 2>&1
+	rc=$?
+	if [[ $rc -eq 1 ]] ; then
+		run groupadd nagios 
+	elif [[ $rc -ne 0 ]] ; then
+		die "Problem with grep of /etc/group"
+	fi
+
+	# Check for nagios user
+	grep "^nagios:" /etc/passwd > /dev/null 2>&1
+	rc=$?
+	if [[ $rc -eq 1 ]] ; then
+		run useradd -g nagios -d /var/log/nagios -c "Nagios user" -m nagios
+	elif [[ $rc -ne 0 ]] ; then
+		die "Problem with grep of /etc/passwd"
+	fi
+	run su - nagios -c "$SCRIPTDIR/set_profile /var/log/nagios"
+
+	# Add webserver group to nagios group
+	webuser=$(ps -ef | egrep "apache|apache2|httpd" | grep -v root | grep -v grep | awk '{print $1}'| sort | uniq)
+	if [[ -n $webuser ]] ; then
+		run usermod -G nagios $webuser
+		echo "Must restart webserver to pick up new group settings"
+	else
+		echo "No webserver user identified - must add webserver user to nagios group manually"
+	fi
+
+}
+
+function create_users_for_solaris {
+	# Check for nagios group
+	grep "^nagios:" /etc/group > /dev/null 2>&1
+	rc=$?
+	if [[ $rc -eq 1 ]] ; then
+		run /usr/sbin/groupadd nagios 
+	elif [[ $rc -ne 0 ]] ; then
+		die "Problem with grep of /etc/group"
+	fi
+
+	# Check for nagios user
+	grep "^nagios:" /etc/passwd > /dev/null 2>&1
+	rc=$?
+	if [[ $rc -eq 1 ]] ; then
+		run /usr/sbin/useradd -g nagios -d /var/log/nagios -c "Nagios user" -s /usr/bin/bash -m nagios
+		run passwd -N nagios
+	elif [[ $rc -ne 0 ]] ; then
+		die "Problem with grep of /etc/passwd"
+	fi
+	run su - nagios -c "$SCRIPTDIR/set_profile /var/log/nagios"
+
+	# Add webserver group to nagios group
+	webuser=$(ps -ef | egrep "apache|apache2|httpd" | grep -v root | grep -v grep | awk '{print $1}'| sort | uniq)
+	if [[ -n $webuser ]] ; then
+		run /usr/sbin/usermod -G nagios $webuser
+		echo "Must restart webserver to pick up new group settings"
+	else
+		echo "No webserver user identified - must add webserver user to nagios group manually"
+	fi
+}
+
+function create_users_for_darwin {
+	# Check for nagios group
+	niutil -read / /groups/nagios > /dev/null 2>&1
+	rc=$?
+	if [[ $rc -eq 105 ]] ; then
+		run niutil -create / /groups/nagios
+		run niutil -createprop / /groups/nagios gid 147
+		niutil -appendprop / /groups/nagios users www	# Allow web user to run nagios commands
+		netstat -an | grep "\*\.80 " > /dev/null 2>&1
+		if [[ $rc -eq 0 ]] ; then
+			echo "Must restart webserver to pick up new group settings"
+		fi
+	elif [[ $rc -ne 0 ]] ; then
+		die "Problem with nagios group"
+	fi
+
+	# Check for nagios user
+	niutil -read / /users/nagios > /dev/null 2>&1
+	rc=$?
+	if [[ $rc -eq 105 ]] ; then
+		run niutil -create / /users/nagios
+		run niutil -createprop / /users/nagios shell /bin/sh
+		run niutil -createprop / /users/nagios realname "Nagios user"
+		run niutil -createprop / /users/nagios uid 147
+		run niutil -createprop / /users/nagios gid 147
+		run niutil -createprop / /users/nagios home /home/nagios
+		# Need to set passwd to "*" to remove from the MacOSX login window
+		run niutil -createprop / /users/nagios passwd "*"
+		run niutil -createprop / /users/nagios expire 0
+		mkdir -p /home/nagios
+		chown nagios:nagios /home/nagios
+		niutil -createprop / /users/nagios _shadow_passwd "*"
+	elif [[ $rc -ne 0 ]] ; then
+		die "Problem with nagios user"
+	fi
+}
+
+function create_nagios_ssh_keys {
+	if [[ -f ~nagios/.ssh/id_dsa ]]; then
+		echo "SSH DSA key already exists"
+		return 0
+	fi
+
+	echo "Generating SSH DSA key for nagios user"
+	run su - nagios -c "ssh-keygen -t dsa -N '' -f \$HOME/.ssh/id_dsa"
+	echo "Adding new key to authorized_keys file"
+	run su - nagios -c "cat \$HOME/.ssh/id_dsa.pub >> \$HOME/.ssh/authorized_keys"
+  run su - nagios -c "chmod 0640 \$HOME/.ssh/authorized_keys"
+	echo "Testing connection"
+	run su - nagios -c "ssh -o StrictHostKeyChecking=no localhost hostname"
+}
+
+function run {
+	if [[ $debug -eq 1 ]] ; then
+		echo "Would run: $@"
+	else
+		"$@" || die "Cannot run: $*"
+	fi
+}
+
+function die { echo $* >&2; exit 1; }
+
+debug=0
+while getopts "d" c; do
+	case $c in
+		d) debug=1;;
+	esac
+done
+shift $((OPTIND-1))
+
+id | grep "^uid=0(" 1>/dev/null
+if [ $? -ne 0 ]; then
+	die "Must be run with as root"
+fi
+
+os=`uname -s`
+
+if [[ $os = "Linux" ]] ; then
+	create_users_for_linux
+elif [[ $os = "SunOS" ]] ; then
+	create_users_for_solaris
+elif [[ $os = "Darwin" ]] ; then
+	create_users_for_darwin
+else
+	die "OS $os not supported for nagios user creation"
+fi
+
+create_nagios_ssh_keys

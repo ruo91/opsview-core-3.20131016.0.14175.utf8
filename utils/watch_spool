@@ -1,0 +1,185 @@
+#!/usr/bin/perl
+#
+# monitor 3 spool directories for following up on performance issues
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use strict;
+use warnings;
+
+use lib '/opt/opsview/perl/lib/perl5';
+use lib '/usr/local/nagios/lib';
+
+#use Term::ReadKey; # easy but not available everywhere
+use Opsview::Config;
+use File::stat;
+use File::Basename;
+use POSIX qw( strftime );
+
+my $interval = 3;
+
+my $ndologs      = '/usr/local/nagios/var/ndologs';
+my $checkresults = Opsview::Config->check_result_path;
+my $rrdupdates   = '/usr/local/nagios/var/perfdatarrd';
+
+my $clear_screen  = `clear`;
+my $header_rows   = 6;
+my $header_format = '|%-8s c:%-5s t-%6s';
+my $row_format    = '|%-11s %7s %5s';    # 22
+
+while (1) {
+    my ( $total_cols, $total_rows ) = get_cols_rows();
+    die "Terminal must be at least 80 columns wide (currently $total_cols)", $/
+      if ( $total_cols < 80 );
+    die "Terminal must be at least 20 rows deep (currently $total_rows)", $/
+      if ( $total_rows < 20 );
+
+    print $clear_screen;
+
+    {
+        my $update_string = 'Updated: ' . scalar localtime;
+        my $update_length = length($update_string);
+
+        my $interval_string = "Interval: $interval";
+        my $interval_length = length($interval_string);
+
+        my $padding = $total_cols - $update_length - $interval_length;
+
+        #        print $update_string, ' ' x $padding, $interval_string, $/;
+        print $interval_string, ' ' x $padding, $update_string, $/;
+    }
+
+    print '=' x $total_cols, $/;
+
+    my $remaining_rows = $total_rows - $header_rows;
+
+    my $col1 = get_dir_info( $remaining_rows, $ndologs );
+    my $col2 = get_dir_info( $remaining_rows, $checkresults );
+    my $col3 = get_dir_info( $remaining_rows, $rrdupdates );
+
+    printf $header_format, 'ndologs', $col1->{total_files}, time_ago($col1);
+    printf $header_format, 'ckrslts', $col2->{total_files}, time_ago($col2);
+    printf $header_format, 'rrdupds', $col3->{total_files}, time_ago($col3);
+    print '|', $/;
+    print '-' x $total_cols, $/;
+    for my $row ( 0 .. $remaining_rows ) {
+        my $col1row = $col1->{files}->[$row];
+        my $col2row = $col2->{files}->[$row];
+        my $col3row = $col3->{files}->[$row];
+
+        print_row($col1row);
+        print_row($col2row);
+        print_row($col3row);
+        print '|', $/;
+    }
+
+    sleep $interval;
+}
+
+sub get_cols_rows {
+    require 'sys/ioctl.ph';
+    die "no TIOCGWINSZ " unless defined &TIOCGWINSZ;
+    open( my $tty_fh, "+</dev/tty" ) or die "No tty: $!";
+    my $winsize;
+    unless ( ioctl( $tty_fh, &TIOCGWINSZ, $winsize = '' ) ) {
+        die sprintf "$0: ioctl TIOCGWINSZ (%08x: $!)\n", &TIOCGWINSZ;
+    }
+    my ( $row, $col, $xpixel, $ypixel ) = unpack( 'S4', $winsize );
+
+    return ( $col, $row );
+}
+
+sub time_ago {
+    my ($data) = @_;
+
+    return '' if ( !$data );
+
+    my $file;
+    foreach my $f ( @{ $data->{files} } ) {
+        if ( $f->{stat} ) {
+            $file = $f;
+            last;
+        }
+    }
+
+    return '' if ( !$file );
+
+    my $epoch = $file->{stat}->ctime;
+
+    my $diff = time - $epoch;
+
+    #my $days = int( $diff / ( 24 * 60 * 60 ) );
+    #my $hours = ( $diff / ( 60 * 60 ) ) % 24;
+    my $hours = ( $diff / ( 60 * 60 ) );
+    my $minutes = ( $diff / 60 ) % 60;
+
+    #return sprintf "%dd%0.2dh%0.2dm", $days, $hours, $minutes;
+    return sprintf "%0.2dh%0.2dm", $hours, $minutes;
+}
+
+sub prettySizeBytes {
+    my ($stat) = @_;
+    if ( !$stat ) {
+        return 'N/A';
+    }
+    my $size = $stat->size;
+
+    foreach ( 'b', 'Kb', 'Mb', 'Gb', 'Tb', 'Pb' ) {
+        return sprintf( "%.1f", $size ) . "$_" if $size < 1024;
+        $size /= 1024;
+    }
+}
+
+sub prettyTime {
+    my ($stat) = @_;
+    if ( !$stat ) {
+        return 'N/A';
+    }
+    my $time = $stat->ctime;
+    return strftime( '%H:%M', localtime $time );
+}
+
+sub print_row {
+    my ($row) = @_;
+
+    if ( $row && $row->{name} ) {
+        printf $row_format, '..' . substr( $row->{name}, -9, 9 ),
+          prettySizeBytes( $row->{stat} ), prettyTime( $row->{stat} );
+    }
+    else {
+        printf $row_format, '', '', '', '', '';
+    }
+}
+
+sub get_dir_info {
+    my ( $entry_count, $directory ) = @_;
+
+    my $data = {};
+
+    my @files = grep { !m/\.ignored/ } glob( $directory . '/*' );
+
+    $data->{total_files} = scalar @files;
+    $data->{files}       = ();
+
+    for my $i ( 0 .. $entry_count ) {
+        last if ( !$files[$i] );
+        $data->{files}->[$i]->{name} = basename( $files[$i] );
+        $data->{files}->[$i]->{stat} = stat( $files[$i] );
+    }
+    return $data;
+
+}

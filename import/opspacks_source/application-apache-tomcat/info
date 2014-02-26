@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.application_apache_tomcat
+VERSION=1.0
+ALIAS=Application - Apache Tomcat
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

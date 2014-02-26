@@ -1,0 +1,63 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+# 	dump_servicechecks
+#
+# DESCRIPTION:
+# 	Takes the current servicechecks and dumps into a
+# 	colon separated file for initial import if required
+#
+# LICENCE:
+# 	GPL v2
+#
+# AUTHOR:
+# 	Ton Voon after James Peel
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin/../lib", "$Bin/../etc";
+use Opsview::Host;
+
+my @sc_attributes =
+  qw(name plugin args category description invertresults notification_options check_interval retry_check_interval check_attempts);
+
+open DUMP, "> $Bin/../lib/servicechecks.db"
+  or die "Cannot write to servicechecks.db";
+
+my $it =
+  Opsview::Servicecheck->search( { category => "Standard Network Services" } );
+print DUMP "#", join( ":", @sc_attributes ), $/;
+while ( my $sc = $it->next ) {
+    print_row($sc);
+}
+
+my ($sc) = Opsview::Servicecheck->search( { name => "TCP/IP" } );
+print_row($sc);
+
+close DUMP;
+
+sub print_row {
+    my $obj    = shift;
+    my @values = ();
+    foreach my $attr (@sc_attributes) {
+        push @values, $obj->$attr;
+    }
+    print DUMP join( ":", @values ), $/;
+}

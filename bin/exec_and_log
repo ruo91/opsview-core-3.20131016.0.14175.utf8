@@ -1,0 +1,72 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+#	exec_and_log [-f] command...
+#
+# DESCRIPTION:
+#	Simple wrapper to run a command and log the stdout and stderr via Log4perl
+#	Invoked via opsviewd
+#	-f to fork, otherwise wait for response
+#	We use this instead of trying to invoke run_command within opsviewd because
+#	some destructors were being invoked by the child. This way keeps opsviewd as
+#	light as possible, delegating the logging of stdout/stderr to this script instead
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+use Opsview::Run;
+use Log::Log4perl;
+use Getopt::Std;
+
+my $opts = {};
+
+getopts( 'f', $opts ) || die( "Incorrect usage: $!\n" );
+
+Log::Log4perl::init( "$Bin/../etc/Log4perl.conf" );
+my $logger = Log::Log4perl->get_logger( "exec_and_log" );
+
+if ( $opts->{f} ) {
+    my $pid = fork;
+    exit if $pid;
+    $logger->logdie("Couldn't fork: $!") unless defined $pid;
+    POSIX::setsid() or $logger->logdie( "Cannot daemonize" );
+}
+
+my @command = @ARGV;
+$logger->logdie("No command specified") unless @command;
+
+$logger->debug( "About to execute command: @command" );
+
+my ( $rc, $stdout, $stderr ) = Opsview::Run->run_command(@command);
+
+$logger->logdie( $@ . "\n" ) if ($@);
+
+if ($stdout) {
+    $logger->info(@$stdout);
+}
+
+if ($stderr) {
+    $logger->warn(@$stderr);
+}
+
+$logger->debug( "Command completed with rc=$rc: @command" );

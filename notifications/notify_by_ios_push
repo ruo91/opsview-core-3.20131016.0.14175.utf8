@@ -1,0 +1,172 @@
+#!/usr/bin/env perl
+#
+# SYNTAX:
+#   notify_by_ios_push
+#
+# LICENSE:
+#   Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#   This file is part of Opsview
+#
+
+# Note: This script has a copy on the wiki (opsview4.0:notify_by_ios_push.pl).
+# If making a change, don't forget to update that copy, too.
+
+use strict;
+use warnings;
+use lib qw( /usr/local/nagios/lib /usr/local/nagios/perl/lib );
+use List::Util 'shuffle';
+use Time::HiRes 'gettimeofday';
+use Socket;
+
+# Change these if you don't have the notification profile set up in Opsview.
+my $opsview_system_uuid = '';
+my $ldap_username       = '';
+my $ldap_password       = '';
+my $proxy               = '';
+
+use vars qw( $pushserverip $dest_server );
+
+exit 1
+  unless $ENV{NAGIOS_HOSTNAME}
+  and $ENV{NAGIOS_CONTACTNAME};
+
+open my $fh, '>>', '/usr/local/nagios/var/log/notify_by_ios_push.log' or die $!;
+
+# Older versions of Opsview don't have the https module.
+eval { require LWP::Protocol::https };
+my $protocol = $@ ? 'http' : 'https';
+
+require Opsview::Config::Notifications;
+
+$dest_server = 'push.opsview.com';
+my $realm             = 'Opsview Centralised Account';
+my $config_vars       = Opsview::Config::Notifications->config_variables;
+my $notification_vars = Opsview::Config::Notifications->notification_variables(
+    'com.opsview.notificationmethods.iospush'
+);
+
+$opsview_system_uuid ||= $config_vars->{system}{uuid};
+$ldap_username       ||= $notification_vars->{IOSPUSH_USERNAME};
+$ldap_password       ||= $notification_vars->{IOSPUSH_PASSWORD};
+$proxy               ||= $notification_vars->{IOSPUSH_PROXY};
+
+die "Must specify UUID"                 unless $opsview_system_uuid;
+die "Must have an opsview.com username" unless $ldap_username;
+die "Must have an opsview.com password" unless $ldap_password;
+
+my $output =
+  ( $ENV{NAGIOS_SERVICEOUTPUT} ne '' )
+  ? $ENV{NAGIOS_SERVICEOUTPUT}
+  : $ENV{NAGIOS_HOSTOUTPUT};
+my $alert_message = "$ENV{NAGIOS_HOSTNAME}: $output";
+$alert_message = substr( $alert_message, 0, 190 );
+
+# Remove any profile information from contact name.
+my $contact_name = $ENV{NAGIOS_CONTACTNAME};
+$contact_name =~ s'/.*'';
+
+# Get a list of IPs to try. Use gethostbyname so that OS may cache it
+my ( undef, undef, undef, undef, @ips ) = gethostbyname($dest_server);
+@ips = map { inet_ntoa($_) } @ips;
+
+require LWP::UserAgent;
+
+LWP::Protocol::implementor( 'http', 'Opsview::LWP::UserAgent::Protocol::HTTP'
+);
+LWP::Protocol::implementor( 'https', 'Opsview::LWP::UserAgent::Protocol::HTTPS'
+);
+
+use HTTP::Request::Common qw(POST);
+
+# Send the request to each IP until one's successful.
+@ips = shuffle @ips;
+for my $ip (@ips) {
+
+    $pushserverip = $ip;
+    my $url = "$protocol://$dest_server/ios/api/api.php?_c=send_msg";
+    my $req = POST $url,
+      [
+        cmd      => 'send_msg',
+        uuid     => $opsview_system_uuid,
+        username => $contact_name,
+        msg      => $alert_message,
+      ];
+    $req->authorization_basic( $ldap_username, $ldap_password );
+
+    my $ua = LWP::UserAgent->new;
+    $ua->proxy( $protocol, $proxy ) if $proxy;
+    $ua->timeout(5);
+    $ua->ssl_opts( SSL_verifycn_name => $dest_server );
+
+    my $begin = gettimeofday();
+
+    my $res = $ua->request($req);
+
+    my ($message_count) = $res->content =~ /OK (\d+)/;
+    $message_count ||= 'N/A';
+    logit(
+            "[$ip] "
+          . $res->status_line
+          . " sent messages: $message_count and took "
+          . ( gettimeofday() - $begin )
+          . " seconds"
+    );
+
+    exit if $res->is_success;
+
+}
+
+exit 1;
+
+sub logit {
+    my $msg = shift;
+    chomp $msg;
+    my @time = localtime(time);
+    print $fh $time[5] + 1900, '-', sprintf( '%.2d', $time[4] + 1 ), '-',
+      sprintf( '%.2d', $time[3] ), ' ', sprintf( '%.2d', $time[2] ),
+      ':', sprintf( '%.2d', $time[1] ), ':', sprintf( '%.2d', $time[0] ), ' ',
+      $msg, "\n";
+}
+
+package Opsview::LWP::UserAgent::Protocol::HTTPS;
+
+use base qw(LWP::Protocol::https);
+
+sub _extra_sock_opts {
+    my ( $self, @opts ) = @_;
+    if ( $opts[0] eq $main::dest_server ) {
+        return (
+            $self->SUPER::_extra_sock_opts(@opts),
+            PeerAddr => $main::pushserverip,
+            Host     => $main::dest_server,
+        );
+    }
+    else {
+        return ( $self->SUPER::_extra_sock_opts(@opts) );
+    }
+}
+
+sub socket_class {'LWP::Protocol::https::Socket'}
+
+package Opsview::LWP::UserAgent::Protocol::HTTP;
+
+use base qw(LWP::Protocol::http);
+
+sub _extra_sock_opts {
+    my ( $self, @opts ) = @_;
+    if ( $opts[0] eq $main::dest_server ) {
+        return (
+            $self->SUPER::_extra_sock_opts(@opts),
+            PeerAddr => $main::pushserverip,
+            Host     => $main::dest_server,
+        );
+    }
+    else {
+        return ( $self->SUPER::_extra_sock_opts(@opts) );
+    }
+}
+
+sub socket_class {'LWP::Protocol::http::Socket'}
+
+1;

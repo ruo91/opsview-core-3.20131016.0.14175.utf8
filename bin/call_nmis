@@ -1,0 +1,69 @@
+#!/bin/bash
+# Small wrapper to nmis commands, so can be stopped if NMIS not used
+# 
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+cmd=$1
+shift
+
+# tidy up/kill collect processes that have a parent of init as these are
+# hung processes
+ps -u nagios -o pid,ppid,comm \
+    | awk '$2 == 1 && $NF ~ /nmis.pl.collect/ { print $1}' \
+    | xargs kill -9 1>/dev/null 2>/dev/null
+
+if [ -z $cmd ] ; then
+	echo 'Need $1 = nmis command'
+	exit 1
+fi
+run_nmis=0
+if [ -e /usr/local/nagios/etc/opsview.defaults ] ; then
+	# Master
+	if [ -s /usr/local/nagios/nmis/conf/master.csv ] ; then
+		run_nmis=1
+	fi
+elif [ -e /usr/local/nagios/nmis/conf/nodes.csv -a -s /usr/local/nagios/nmis/conf/nodes.csv ] ; then
+	# Slave
+	run_nmis=1
+fi
+if [ $run_nmis -eq 1 ]; then
+	. /usr/local/nagios/bin/profile
+
+    if [ ! -t 0 ]; then
+        exec 1>>/usr/local/nagios/nmis/logs/nmis.log
+        exec 2>&1
+        echo "$(date '+%d-%b-%Y %H:%M:%S'),$0: Running: $cmd $@"
+    fi
+
+    eval `/usr/local/nagios/bin/opsview.sh`
+    # only use configured maxthreads if not already provided on command line
+    echo "$@" | grep maxthreads 1>/dev/null
+    if [ $? != 0 ]; then
+        threads="maxthreads=$NMIS_MAXTHREADS"
+    fi
+
+    if [ cmd="run_reports.sh" ]
+    then
+        exec /usr/local/nagios/nmis/bin/$cmd $@
+    else
+        exec /usr/local/nagios/nmis/bin/$cmd $threads $@
+    fi
+fi

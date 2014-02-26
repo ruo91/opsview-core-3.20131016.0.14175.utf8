@@ -1,0 +1,27 @@
+#!/bin/sh
+
+##
+# Opsview
+##
+
+. /etc/rc.common
+
+StartService ()
+{
+    echo "Starting Opsview"
+    /usr/local/nagios/bin/rc.opsview start
+}
+
+StopService ()
+{
+    echo "Stopping Opsview"
+    /usr/local/nagios/bin/rc.opsview stop
+}
+
+RestartService ()
+{
+    echo "Restarting Opsview"
+    /usr/local/nagios/bin/rc.opsview restart
+}
+
+RunService "$1"

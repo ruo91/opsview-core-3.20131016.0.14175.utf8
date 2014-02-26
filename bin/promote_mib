@@ -1,0 +1,148 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#       promote_mib [-d] {oid}
+#
+# DESCRIPTION:
+# 	Used to discover which MIBs are missing
+# 	3 MIB storage areas:
+#	  /usr/share/snmp/mibs - default one. Do not touch
+#	  /usr/local/nagios/snmp/load - will be loaded by snmptrapd
+#	  /usr/local/nagios/snmp/all  - all mibs that we can find
+#
+# 	This script will discover which mib is missing and get
+# 	all dependencies and copy them from /all into /load
+#
+#	-d for debug - will not copy files
+#
+# RETURN CODES:
+#	0 - MIB(s) found and copied successfully into /usr/local/nagios/snmp/load
+#	0 - MIB(s) found, but nothing needs to be copied - a clash of MIBs? (this is left as 0 right now)
+#	1 - No mib found matching oid
+#
+# AUTHORS:
+#       Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin/../lib", "/usr/local/nagios/perl/lib";
+use SNMP;
+use Net::Dev::Tools::MIB::MIBLoadOrder;
+use Getopt::Std;
+use File::Copy;
+
+$| = 1;
+
+my $opts = {};
+getopts( "d", $opts ) or die "Incorrect options";
+
+my $oid = shift @ARGV;
+unless ($oid) {
+    die "Must specify an oid to find", $/;
+}
+
+print "Looking for $oid", $/;
+my $module;
+
+# Perl module on solaris doesnt search all MIB files correctly for some reason
+# so use a different method
+if ( $^O eq "solaris" ) {
+    my $mib =
+      `/usr/sfw/bin/snmptranslate -m ALL -M /etc/sma/snmp/mibs:/usr/local/nagios/snmp/load:/usr/local/nagios/snmp/all -OS -IR $oid`;
+    chomp($mib);
+    ( $module = $mib ) =~ s/::.*//;
+    $mib =~ s/.*:://;
+    if ($module) {
+        print "Found in module $module as $mib\n";
+        print "FQN=${module}::$mib\n";
+    }
+}
+else {
+
+    # Load all modules
+    &SNMP::addMibDirs( "/usr/local/nagios/snmp/load" );
+    &SNMP::addMibDirs( "/usr/local/nagios/snmp/all" );
+    &SNMP::loadModules( 'ALL' );
+
+    # Find the module required for the oid given
+    my $s = $SNMP::MIB{$oid};
+    $module = $s->{moduleID};
+
+    if ($module) {
+        print "Found in module $module as " . $s->{label}, $/;
+        print "FQN=${module}::", $s->{label}, $/;
+    }
+}
+if ( !$module ) {
+    print "Cannot find OID in any MIB", $/;
+    exit 1;
+}
+
+# Use Net::Dev::Tools::MIB::MIBLoadOrder to load the MIBs
+my ( $load, $warn, $error ) = mib_load(
+    StandardMIBs =>
+      [qw(/usr/share/snmp/mibs /etc/sma/snmp/mibs /usr/local/nagios/snmp/load)],
+    EnterpriseMIBs => [qw(/usr/local/nagios/snmp/all)],
+    Extensions     => [qw(txt my mib MIB)],
+    -emptydirok    => 1,
+);
+
+die "Problem loading mib files: $error" unless $load;
+
+my $mibs = mib_load_definitions();
+
+# Get a list of all MIBs that are required for the oid
+my %need_to_copy;
+add_enterprise_mibs($module);
+
+if ( $opts->{d} ) {
+    print "need_to_copy = ", join( " ", keys %need_to_copy ), $/;
+    exit;
+}
+
+if ( scalar keys %need_to_copy == 0 ) {
+    print "No MIBS needed to copy", $/;
+    exit 0; # See comments. This may need to be changed in future
+}
+else {
+
+    # Copy these files into /usr/local/nagios/snmp/load
+    foreach my $mibfile ( keys %need_to_copy ) {
+        ( $_ = $mibfile ) =~ s%.*/%%;
+        print "Copying $_", $/;
+        copy( $mibfile, "/usr/local/nagios/snmp/load" );
+    }
+}
+exit;
+
+# Recursive function to find out all the mibs that need to be copied
+sub add_enterprise_mibs {
+    my $name = shift;
+
+    # Remove test for an enterprise type as some required mibs may be
+    # outside of this area
+    #    if ( $mibs->{$name}->{type} eq "Enterprise" ) {
+    $need_to_copy{ $mibs->{$name}->{file} }++;
+    foreach my $m ( @{ $mibs->{$name}->{imports} } ) {
+        add_enterprise_mibs($m);
+    }
+
+    #    }
+}

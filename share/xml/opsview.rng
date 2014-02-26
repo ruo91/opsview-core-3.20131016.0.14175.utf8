@@ -1,0 +1,551 @@
+<!--
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+-->
+<grammar xmlns="http://relaxng.org/ns/structure/1.0" datatypeLibrary="http://www.w3.org/2001/XMLSchema-datatypes">
+ <start>
+  <element name="opsview">
+   <choice>
+    <ref name="actionContent"/>
+    <ref name="resultContent"/>
+    <ref name="statusContent"/>
+   </choice>
+  </element>
+ </start>
+
+ <define name="foreign">
+  <choice>
+   <element name="id"><data type="integer"/></element>
+   <element name="name"><text/></element>
+  </choice>
+ </define>
+
+ <define name="myReference">
+  <choice>
+  <attribute name="by_name"><text/></attribute>
+  <attribute name="by_id"><data type="integer"/></attribute>
+  </choice>
+ </define>
+   
+ <define name="actionChoice">
+  <optional>
+  <choice>
+  <attribute name="action">
+   <value>create</value>
+  </attribute>
+  <group>
+   <attribute name="action">
+    <value>delete</value>
+   </attribute>
+   <ref name="myReference"/>
+  </group>
+  </choice>
+  </optional>
+ </define>
+
+ <define name="actionContent">
+  <optional>
+   <ref name="authenticationContent"/>
+  </optional>
+  <choice>
+    <ref name="hostContent"/>
+    <ref name="hostgroupContent"/>
+    <ref name="systemContent"/>
+    <ref name="monitoringclusterContent"/>
+  </choice>
+ </define>
+
+ <define name="resultContent">
+  <element name="result">
+   <optional>
+    <element name="config_output"><text/></element>
+   </optional>
+   <optional>
+    <zeroOrMore>
+     <element name="detail"><text/></element>
+    </zeroOrMore>
+   </optional>
+   <element name="status"><text/></element>
+  </element>
+ </define>
+
+ <define name="authenticationContent">
+  <element name="authentication">
+   <element name="username"><text/></element>
+   <element name="password"><text/></element>
+  </element>
+ </define>
+
+ <define name="downtimeContent">
+  <attribute name="start"><text/></attribute>
+  <attribute name="end"><text/></attribute>
+  <attribute name="comment"><text/></attribute>
+ </define>
+
+ <define name="hostgroupContent">
+  <element name="hostgroup">
+   <choice>
+    <attribute name="action">
+     <value>change</value>
+    </attribute>
+   </choice>
+   <ref name="myReference"/>
+   <choice>
+    <element name="notifications">
+     <choice>
+      <value>enable</value>
+      <value>disable</value>
+     </choice>
+    </element>
+    <element name="downtime">
+     <choice>
+      <value>disable</value>
+      <group>
+       <value>enable</value>
+       <ref name="downtimeContent"/>
+      </group>
+     </choice>
+    </element>
+   </choice>
+  </element>
+ </define>
+
+ <define name="systemContent">
+  <element name="system">
+   <attribute name="action">
+    <value>reload</value>
+   </attribute>
+  </element>
+ </define>
+
+ <define name="hostContent">
+  <element name="host">
+  <ref name="actionChoice"/>
+  <interleave>
+   <optional>
+    <element name="clone">
+     <ref name="foreign"/>
+    </element>
+   </optional>
+   <optional>
+    <element name="name"><text/></element>
+   </optional>
+   <optional>
+    <element name="ip"><text/></element>
+   </optional>
+   <optional>
+    <element name="alias"><text/></element>
+   </optional>
+   <optional>
+    <element name="check_command">
+     <ref name="foreign"/>
+    </element>
+   </optional>
+   <optional>
+    <element name="hostgroup">
+     <ref name="foreign"/>
+    </element>
+   </optional>
+   <optional>
+    <element name="check_period">
+     <ref name="foreign"/>
+    </element>
+   </optional>
+   <optional>
+    <element name="check_interval"><text/></element>
+   </optional>
+   <optional>
+    <element name="retry_check_interval"><text/></element>
+   </optional>
+   <optional>
+    <element name="check_attempts"><text/></element>
+   </optional>
+   <optional>
+    <element name="hosttemplates">
+     <zeroOrMore>
+      <element name="hosttemplate">
+       <ref name="foreign"/>
+      </element>
+     </zeroOrMore>
+    </element>
+   </optional>
+   <optional>
+    <element name="icon">
+     <element name="name"><text/></element>
+    </element>
+   </optional>
+   <optional>
+    <element name="keywords">
+     <zeroOrMore>
+      <element name="keyword">
+       <ref name="foreign"/>
+      </element>
+     </zeroOrMore>
+    </element>
+   </optional>
+   <optional>
+    <element name="use_nmis"><text/></element>
+   </optional>
+   <optional>
+    <element name="monitored_by">
+     <ref name="foreign"/>
+    </element>
+   </optional>
+   <optional>
+    <element name="nmis_node_type"><text/></element>
+   </optional>
+   <optional>
+    <element name="notification_interval"><text/></element>
+   </optional>
+   <optional>
+    <element name="notification_options"><text/></element>
+   </optional>
+   <optional>
+    <element name="notification_period">
+     <ref name="foreign"/>
+    </element>
+   </optional>
+   <optional>
+    <element name="flap_detection_enabled"><text/></element>
+   </optional>
+   <optional>
+    <element name="other_addresses"><text/></element>
+   </optional>
+   <optional>
+    <element name="parents">
+     <zeroOrMore>
+      <element name="parent">
+       <ref name="foreign"/>
+      </element>
+     </zeroOrMore>
+    </element>
+   </optional>
+   <optional>
+    <element name="servicecheckexceptions">
+     <zeroOrMore>
+      <element name="servicecheckexception">
+       <ref name="foreign"/>
+      </element>
+     </zeroOrMore>
+    </element>
+   </optional>
+   <optional>
+    <element name="servicechecks">
+     <zeroOrMore>
+      <element name="servicecheck">
+       <ref name="foreign"/>
+      </element>
+     </zeroOrMore>
+    </element>
+   </optional>
+   <optional>
+    <element name="servicechecktimedoverrideexceptions">
+     <zeroOrMore>
+      <element name="servicechecktimedoverride">
+       <ref name="foreign"/>
+      </element>
+     </zeroOrMore>
+    </element>
+   </optional>
+   <optional>
+    <element name="enable_snmp"><text/></element>
+   </optional>
+   <optional>
+    <element name="event_handler"><text/></element>
+   </optional>
+   <optional>
+    <element name="snmp_community"><text/></element>
+   </optional>
+   <optional>
+    <element name="snmp_version"><text/></element>
+   </optional>
+   <optional>
+    <element name="snmp_port"><text/></element>
+   </optional>
+   <optional>
+    <element name="snmpinterfaces">
+     <zeroOrMore>
+      <element name="snmpinterface">
+       <ref name="foreign" />
+      </element>
+     </zeroOrMore>
+    </element>
+   </optional>
+   <optional>
+    <element name="snmptrap_tracing"><text/></element>
+   </optional>
+   <optional>
+    <element name="snmpv3_authpassword"><text/></element>
+   </optional>
+   <optional>
+    <element name="snmpv3_privpassword"><text/></element>
+   </optional>
+   <optional>
+    <element name="snmpv3_username"><text/></element>
+   </optional>
+   <optional>
+    <element name="use_rancid"><text/></element>
+   </optional>
+   <optional>
+    <element name="rancid_autoenable"><data type="integer"/></element>
+   </optional>
+   <optional>
+    <element name="rancid_username"><text/></element>
+   </optional>
+   <optional>
+    <element name="rancid_password"><text/></element>
+   </optional>
+   <optional>
+    <element name="rancid_vendor">
+     <ref name="foreign"/>
+    </element>
+   </optional>
+   <optional>
+    <element name="rancid_connection_type">
+     <choice>
+      <value>ssh</value>
+      <value>telnet</value>
+     </choice>
+    </element>
+   </optional>
+   <optional>
+    <element name="use_mrtg"><text/></element>
+   </optional>
+  </interleave>
+  </element>
+ </define>
+
+ <define name="monitoringclusterContent">
+  <element name="monitoringcluster">
+   <!-- Only deletes supported at moment -->
+   <attribute name="action">
+    <value>delete</value>
+   </attribute>
+   <ref name="myReference"/>
+  </element>
+ </define>
+
+ <define name="statusContent">
+  <element name="data">
+   <choice>
+    <ref name="statusServiceContent"/>
+    <ref name="statusHostContent"/>
+    <ref name="statusHostgroupContent"/>
+    <ref name="errorContent"/>
+   </choice>
+  </element>
+ </define>
+
+
+ <define name="statusContentSummary">
+  <element name="summary">
+   <attribute name="handled"><text/></attribute>
+   <attribute name="unhandled"><text/></attribute>
+   <attribute name="total"><text/></attribute>
+   <element name="host">
+    <attribute name="handled"><text/></attribute>
+    <attribute name="unhandled"><text/></attribute>
+    <attribute name="total"><text/></attribute>
+    <optional>
+     <attribute name="up"><text/></attribute>
+    </optional>
+    <optional>
+     <attribute name="down"><text/></attribute>
+    </optional>
+    <optional>
+     <attribute name="unreachable"><text/></attribute>
+    </optional>
+   </element>
+   <element name="service">
+    <attribute name="handled"><text/></attribute>
+    <attribute name="unhandled"><text/></attribute>
+    <attribute name="total"><text/></attribute>
+    <optional>
+     <attribute name="ok"><text/></attribute>
+    </optional>
+    <optional>
+     <attribute name="warning"><text/></attribute>
+    </optional>
+    <optional>
+     <attribute name="critical"><text/></attribute>
+    </optional>
+    <optional>
+     <attribute name="unknown"><text/></attribute>
+    </optional>
+   </element>
+  </element>
+ </define>
+
+ <define name="statusServiceContent">
+  <attribute name="name"><value>service</value></attribute>
+  <zeroOrMore>
+   <element name="list">
+    <attribute name="name"><text/></attribute>
+    <attribute name="alias"><text/></attribute>
+    <attribute name="current_check_attempt"><text/></attribute>
+    <attribute name="downtime"><text/></attribute>
+    <optional><attribute name="downtime_comment"><text/></attribute></optional>
+    <optional><attribute name="downtime_username"><text/></attribute></optional>
+    <attribute name="icon"><text/></attribute>
+    <attribute name="last_check"><text/></attribute>
+    <attribute name="max_check_attempts"><text/></attribute>
+    <attribute name="output"><text/></attribute>
+    <attribute name="state"><text/></attribute>
+    <attribute name="state_type"><text/></attribute>
+    <attribute name="unhandled"><text/></attribute>
+    <attribute name="num_services"><text/></attribute>
+    <attribute name="num_interfaces"><text/></attribute>
+    <optional><attribute name="comments"><text/></attribute></optional>
+    <optional><attribute name="flapping"><text/></attribute></optional>
+    <optional><attribute name="acknowledged"><text/></attribute></optional>
+    <optional><attribute name="state_duration"><text/></attribute></optional>
+    <zeroOrMore>
+     <element name="services">
+      <attribute name="name"><text/></attribute>
+      <attribute name="output"><text/></attribute>
+      <attribute name="perfdata_available"><text/></attribute>
+      <attribute name="service_object_id"><text/></attribute>
+      <attribute name="state"><text/></attribute>
+      <attribute name="state_type"><text/></attribute>
+      <attribute name="unhandled"><text/></attribute>
+      <attribute name="last_check"><text/></attribute>
+      <attribute name="current_check_attempt"><text/></attribute>
+      <attribute name="markdown"><text/></attribute>
+      <attribute name="max_check_attempts"><text/></attribute>
+      <optional><attribute name="comments"><text/></attribute></optional>
+      <optional><attribute name="downtime"><text/></attribute></optional>
+      <optional><attribute name="downtime_comment"><text/></attribute></optional>
+      <optional><attribute name="downtime_username"><text/></attribute></optional>
+      <optional><attribute name="flapping"><text/></attribute></optional>
+      <optional><attribute name="acknowledged"><text/></attribute></optional>
+      <optional><attribute name="acknowledged_author"><text/></attribute></optional>
+      <optional><attribute name="acknowledged_comment"><text/></attribute></optional>
+      <optional><attribute name="state_duration"><text/></attribute></optional>
+     </element>
+    </zeroOrMore>
+    <element name="summary">
+     <attribute name="handled"><text/></attribute>
+     <attribute name="unhandled"><text/></attribute>
+     <attribute name="total"><text/></attribute>
+     <optional><attribute name="computed_state"><text/></attribute></optional>
+     <optional><attribute name="ok"><text/></attribute></optional>
+     <optional><attribute name="warning"><text/></attribute></optional>
+     <optional><attribute name="critical"><text/></attribute></optional>
+     <optional><attribute name="unknown"><text/></attribute></optional>
+    </element>
+   </element>
+  </zeroOrMore>
+  <ref name="statusContentSummary"/>
+ </define>
+
+ <define name="statusHostContent">
+  <attribute name="name"><value>host</value></attribute>
+  <ref name="statusContentSummary"/>
+ </define>
+
+ <define name="statusHostgroupContent">
+  <attribute name="name"><value>hostgroup</value></attribute>
+  <zeroOrMore>
+   <element name="list">
+    <attribute name="name"><text/></attribute>
+    <attribute name="downtime"><text/></attribute>
+    <attribute name="hostgroup_id"><text/></attribute>
+    <attribute name="computed_state"><text/></attribute>
+    <element name="hosts">
+     <attribute name="handled"><text/></attribute>
+     <attribute name="total"><text/></attribute>
+     <attribute name="unhandled"><text/></attribute>
+     <interleave>
+      <optional>
+       <element name="down">
+        <optional><attribute name="handled"><text/></attribute></optional>
+        <optional><attribute name="unhandled"><text/></attribute></optional>
+        <optional><attribute name="total"><text/></attribute></optional>
+       </element>
+      </optional>
+      <optional>
+       <element name="up">
+        <optional><attribute name="handled"><text/></attribute></optional>
+        <optional><attribute name="unhandled"><text/></attribute></optional>
+        <optional><attribute name="total"><text/></attribute></optional>
+       </element>
+      </optional>
+      <optional>
+       <element name="unreachable">
+        <optional><attribute name="handled"><text/></attribute></optional>
+        <optional><attribute name="unhandled"><text/></attribute></optional>
+       </element>
+      </optional>
+     </interleave>
+    </element>
+    <element name="services">
+     <attribute name="handled"><text/></attribute>
+     <attribute name="computed_state">
+      <choice>
+       <value>ok</value>
+       <value>warning</value>
+       <value>critical</value>
+       <value>unknown</value>
+      </choice>
+     </attribute>
+     <attribute name="total"><text/></attribute>
+     <attribute name="unhandled"><text/></attribute>
+     <interleave>
+      <optional>
+       <element name="ok">
+        <optional><attribute name="handled"><text/></attribute></optional>
+        <optional><attribute name="unhandled"><text/></attribute></optional>
+        <optional><attribute name="total"><text/></attribute></optional>
+       </element>
+      </optional>
+      <optional>
+       <element name="warning">
+        <optional><attribute name="handled"><text/></attribute></optional>
+        <optional><attribute name="unhandled"><text/></attribute></optional>
+        <optional><attribute name="total"><text/></attribute></optional>
+       </element>
+      </optional>
+      <optional>
+       <element name="critical">
+        <optional><attribute name="handled"><text/></attribute></optional>
+        <optional><attribute name="unhandled"><text/></attribute></optional>
+        <optional><attribute name="total"><text/></attribute></optional>
+       </element>
+      </optional>
+      <optional>
+       <element name="unknown">
+        <optional><attribute name="handled"><text/></attribute></optional>
+        <optional><attribute name="unhandled"><text/></attribute></optional>
+        <optional><attribute name="total"><text/></attribute></optional>
+       </element>
+      </optional>
+     </interleave>
+    </element>
+   </element>
+  </zeroOrMore>
+  <ref name="statusContentSummary"/>
+ </define>
+
+ <define name="errorContent">
+   <attribute name="error"><text/></attribute>
+ </define>
+
+</grammar>

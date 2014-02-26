@@ -1,0 +1,97 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#   Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+use Nagios::Plugin;
+use Net::Amazon::S3;
+use Data::Dump qw(dump);
+use strict;
+use warnings;
+
+my $np = Nagios::Plugin->new(
+    shortname => "AMAZON S3",
+    usage     => "%s --accesskey=key --secretkey=key -n bucketname",
+    blurb =>
+      "Check Amazon S3 bucket status - alerts CRITICAL if bucket does not exist",
+);
+
+$np->add_arg(
+    spec     => "bucketname|n=s",
+    help     => "-n, --name=bucket name (case sensitive)",
+    required => 0,
+);
+
+#mandatory argument access key
+$np->add_arg(
+    spec     => "accesskey|k=s",
+    help     => "-k, --accesskey=access key for authorisation",
+    required => 1,
+);
+
+#mandatory argument secret access key
+$np->add_arg(
+    spec     => "secretkey|s=s",
+    help     => "-s, --secretkey=secret key for authorisation ",
+    required => 1,
+);
+
+$np->getopts;
+
+my $access_key        = $np->opts->accesskey;
+my $secret_access_key = $np->opts->secretkey;
+
+my $s3 = Net::Amazon::S3->new(
+    {
+        aws_access_key_id     => $access_key,
+        aws_secret_access_key => $secret_access_key,
+        retry                 => 1,
+    }
+);
+
+# list all buckets that i own
+my $response = $s3->buckets;
+if ( !$response ) {
+    $np->nagios_exit( UNKNOWN, "Authorisation failed, check access keys" );
+}
+my $bucket_name = $np->opts->bucketname;
+my @bucket_details;
+
+unless ($bucket_name) {
+    $np->nagios_exit( UNKNOWN,
+        "Bucket name required. Valid bucket names: "
+          . join( ",", map { $_->bucket } @{ $response->{buckets} } )
+    );
+}
+
+#print dump($response);
+foreach my $bucket ( @{ $response->{buckets} } ) {
+    if ( $bucket->bucket eq $bucket_name ) {
+        unshift( @bucket_details,
+                "Bucket name: "
+              . $bucket->bucket
+              . ", Creation date: "
+              . $bucket->creation_date
+              . ", Owner display name: "
+              . $response->{owner_displayname}
+        );
+        $np->nagios_exit( OK, "Bucket $bucket_name exists. @bucket_details" );
+    }
+}
+$np->nagios_exit( CRITICAL, "Bucket $bucket_name doesn't exist" );

@@ -1,0 +1,9 @@
+set showmode
+set shiftwidth=2
+set hardtabs=2
+set tabstop=2
+
+map #4 :!prove -v %
+map #5 :!perl -c %
+map #6 :!./%
+map #7 :%!perltidy -i=2 -q

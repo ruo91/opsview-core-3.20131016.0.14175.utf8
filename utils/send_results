@@ -1,0 +1,57 @@
+#!/usr/bin/perl
+# Quick script to push lots of host&service results into Nagios
+
+use warnings;
+use strict;
+
+my $iterations        = shift @ARGV || 1;
+my $hosts             = shift @ARGV || 1000;
+my $services_per_host = shift @ARGV || 15;
+
+my $file       = "/usr/local/nagios/var/rw/nagios.cmd";
+my $state      = 0;
+my $host_state = 0;
+my $runid      = $$;
+
+print STDERR "runid=$runid\n";
+
+my $process_file     = 1;
+my $process_filename = "/usr/local/nagios/var/process_file";
+my $nagios_cmd       = "/usr/local/nagios/var/rw/nagios.cmd";
+
+if ($process_file) {
+    open F, "> $process_filename";
+}
+else {
+    open F, "> $nagios_cmd";
+}
+
+while ( $iterations > 0 ) {
+    for ( my $s = 0; $s < $services_per_host; $s++ ) {
+        my $service   = "s$s";
+        my $time      = time;
+        my $nice_time = localtime($time);
+        for ( my $h = 0; $h < $hosts; $h++ ) {
+            my $host = "host$h";
+            print F
+              "[$time] PROCESS_SERVICE_CHECK_RESULT;$host;$service;$state;Dummy result $state at $nice_time runid=$runid"
+              . "\n";
+
+            if ( $s == 0 ) {
+                print F "[" 
+                  . time
+                  . "] PROCESS_HOST_CHECK_RESULT;$host;$host_state;Dummy host result $host_state at $nice_time runid=$runid"
+                  . "\n";
+            }
+        }
+    }
+    $iterations--;
+}
+
+close F;
+
+if ($process_file) {
+    open F, "> $nagios_cmd";
+    print F "[" . time . "] PROCESS_FILE;$process_filename;1\n";
+    close F;
+}

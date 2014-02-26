@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.os_windows_advanced
+VERSION=1.0
+ALIAS=OS - Windows Advanced
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

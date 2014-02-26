@@ -1,0 +1,94 @@
+#!/usr/bin/perl
+#
+# $Id$
+#
+# Quick script to enable all nagios disabled notifications
+# Run by hand to check output.  When satisfied, run as
+# $0 | sort -u > /usr/local/nagios/var/rw/nagios.cmd
+# Also requires global notifications to be enabled
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use warnings;
+use strict;
+
+use lib '/usr/local/nagios/perl/lib';
+use lib '/usr/local/nagios/lib';
+
+use Opsview::Config;
+
+my $ret = Opsview::Config->status_dat;
+
+open( RET, "<", $ret ) or die( "Failed to read $ret: $!\n" );
+
+my ( $host, $service, $enabled );
+
+while ( my $line = <RET> ) {
+    next unless ( $line =~ m/^\w+\s?{/ );
+    my @line = split( / /, $line );
+
+    SWITCH: foreach ( $line[0] ) {
+
+        m/^host$/ && do {
+            while ( ( my $read = <RET> ) !~ /}/ ) {
+                chomp($read);
+                my @read = split( /=/, $read );
+
+                #warn("0=$read[0] 1=$read[1]\n");
+                $host    = $read[1] if ( $read[0] =~ m/host_name/ );
+                $enabled = $read[1] if ( $read[0] =~ m/notifications_enabled/ );
+            }
+
+            #print "host=$host enabled=$enabled\n";
+            if ( $enabled == 0 ) {
+                print "[", time, "] ENABLE_HOST_NOTIFICATIONS;$host\n";
+            }
+            last SWITCH;
+        };
+
+        m/^service$/ && do {
+            while ( ( my $read = <RET> ) !~ /}/ ) {
+                chomp($read);
+                my @read = split( /=/, $read );
+
+                #warn("0=$read[0] 1=$read[1]\n");
+                $host    = $read[1] if ( $read[0] =~ m/host_name/ );
+                $service = $read[1] if ( $read[0] =~ m/service_description/ );
+                $enabled = $read[1] if ( $read[0] =~ m/notifications_enabled/ );
+            }
+
+            #print "host=$host enabled=$enabled\n";
+            if ( $enabled == 0 ) {
+                print "[", time, "] ENABLE_HOST_SVC_NOTIFICATIONS;$host\n";
+            }
+            last SWITCH;
+        };
+
+        do {
+
+            # print "skipping $_\n" ;
+            last SWITCH;
+          }
+    }
+
+}
+
+sub skip_stanza {
+    while ( ( my $read = <RET> ) !~ /}/ ) {
+        print "skipping $read";
+    }
+}

@@ -1,0 +1,159 @@
+#!/usr/bin/perl
+#
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+
+my $np = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => "check_snmp_fortigate_disk",
+    version   => "2.1.1",
+    blurb     => "Returns the current disk usage as %",
+    snmp      => {
+        "snmp-version" => 1,
+        "snmp-timeout" => 2,
+    },
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w, --warning=INTEGER
+    Warning threshold (as %)},
+    default => 80,
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c, --critical=INTEGER
+    Critical threshold (as %)},
+    default => 90,
+);
+
+$np->getopts;
+
+my $warning  = $np->opts->warning;
+my $critical = $np->opts->critical;
+
+my $s = $np->snmp;
+
+my $status       = 0;
+my $returnstring = "";
+
+my $oid_sysDescr     = ".1.3.6.1.2.1.1.1.0";
+my $oid_diskCapacity = "1.3.6.1.4.1.12356.1.11.0";
+my $oid_diskUsage    = "1.3.6.1.4.1.12356.1.12.0";
+
+main();
+
+# Close the session
+$s->close();
+
+if ( $returnstring eq "" ) {
+    $status = 3;
+}
+
+if ( $status == 0 ) {
+    print "Status is OK - $returnstring\n";
+
+    # print "$returnstring\n";
+}
+elsif ( $status == 1 ) {
+    print "Status is a WARNING level - $returnstring\n";
+}
+elsif ( $status == 2 ) {
+    print "Status is CRITICAL - $returnstring\n";
+}
+else {
+    print "Status is UNKNOWN\n";
+}
+
+exit $status;
+
+####################################################################
+# This is where we gather data via SNMP and return results         #
+####################################################################
+
+sub main {
+
+    my $capacity;
+    my $usage;
+    if ( !defined( $s->get_request($oid_diskCapacity) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $capacity = $s->var_bind_list()->{$_};
+    }
+
+    if ( !defined( $s->get_request($oid_diskUsage) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $usage = $s->var_bind_list()->{$_};
+    }
+
+    my $utilisation = ( ( 100 / $capacity ) * $usage );
+
+    if ( $utilisation >= $warning ) {
+        $status = 1;
+    }
+
+    if ( $utilisation >= $critical ) {
+        $status = 2;
+    }
+
+    my $temp = "Disk: $utilisation %";
+
+    append($temp);
+}
+
+####################################################################
+# Appends string to existing $returnstring                         #
+####################################################################
+
+sub append {
+    my $appendstring = $_[0];
+    $returnstring = "$returnstring$appendstring";
+}

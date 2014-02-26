@@ -1,0 +1,256 @@
+#!/usr/bin/perl
+
+#  Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#  W: http://www.opsview.com/
+#
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software
+#  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+use strict;
+
+use Getopt::Std;
+use IO::Socket;
+use Data::Dumper;
+
+$ENV{PATH} = "/bin:/sbin:/usr/bin:/usr/sbin";
+
+( my $script = $0 ) =~ s!.*/!!;
+my $VERSION = "1.7";
+
+my $warnings     = 0;
+my $criticals    = 0;
+my $returnstring = "";
+my $currentmax   = 0;
+my $totalinuse   = 0;
+my $totalidle    = 0;
+my $totalusr     = 0;
+my $totalsys     = 0;
+my $totalintr    = 0;
+my $totalcsw     = 0;
+my $averageinuse = 0;
+my $averageidle  = 0;
+my $averageusr   = 0;
+my $averagesys   = 0;
+my $averageintr  = 0;
+my $averagecsw   = 0;
+my %cpus;
+
+my @warningthresholds  = ( 0, 0, 0, 0, 0 );
+my @criticalthresholds = ( 0, 0, 0, 0, 0 );
+
+use vars qw/$opt_h $opt_w $opt_c $opt_v/;
+my $tempstring;
+
+# Do we have enough information?
+if ( @ARGV < 1 ) {
+    print "Too few arguments\n";
+    usage();
+}
+
+getopts( "hw:c:v" );
+if ($opt_v) {
+    die "$script version: $VERSION\n";
+}
+if ($opt_h) {
+    usage();
+}
+if ($opt_w) {
+
+    # $warning = $opt_w;
+    (
+        $warningthresholds[0], $warningthresholds[1], $warningthresholds[2],
+        $warningthresholds[3], $warningthresholds[4]
+    ) = split( /,/, $opt_w );
+}
+if ($opt_c) {
+
+    # $critical = $opt_c;
+    (
+        $criticalthresholds[0], $criticalthresholds[1],
+        $criticalthresholds[2], $criticalthresholds[3],
+        $criticalthresholds[4]
+    ) = split( /,/, $opt_c );
+}
+
+my @mpstat = `mpstat 1 2`;
+
+# my @mpstat = `./mpstat`;
+# CPU minf mjf xcal  intr ithr  csw icsw migr smtx  srw syscl  usr sys  wt idl
+# 128  112   1  251   296  193  180    2   13   43    0   140   12   4   1  84
+# 129   55   1  235     9    1  234    3   24   26    0   110    6   2   1  91
+# CPU minf mjf xcal  intr ithr  csw icsw migr smtx  srw syscl  usr sys  wt idl
+# 128 2112   0 1322   306  201  368   10   38   56    0 10236   40  19   0  42
+# 129    0   0    1    32    1   72   28    9    5    0   835   83   7   0  10
+
+foreach my $line (@mpstat) {
+    $line =~ s/^\s+//;
+    my @line = split( /\s+/, $line );
+
+    if ( $line =~ /CPU/ ) {
+        next;
+    }
+
+    # ignore the first set of results since they are since boot time
+    if ( !$cpus{ $line[0] } ) {
+        $cpus{ $line[0] }{found} = 1;
+        next;
+    }
+    $cpus{ $line[0] }{intr}  = $line[4];
+    $cpus{ $line[0] }{csw}   = $line[6];
+    $cpus{ $line[0] }{usr}   = $line[12];
+    $cpus{ $line[0] }{sys}   = $line[13];
+    $cpus{ $line[0] }{wt}    = $line[14];
+    $cpus{ $line[0] }{idle}  = $line[15];
+    $cpus{ $line[0] }{inuse} = 100 - $line[15];
+}
+
+my $cpus = scalar( keys(%cpus) );
+
+foreach my $cpu ( sort( keys(%cpus) ) ) {
+
+    # on multi CPU servers (i.e. > 16) the output is too long to also process performance data
+    # so remove the individual CPU information
+    if ( $cpus < 8 ) {
+        $returnstring
+          .= " CPU$cpu" . "("
+          . $cpus{$cpu}{usr} . "%,"
+          . $cpus{$cpu}{sys} . "%,"
+          . $cpus{$cpu}{idle} . "%,"
+          . $cpus{$cpu}{intr} . ","
+          . $cpus{$cpu}{csw} . ")";
+    }
+    $totalinuse = $totalinuse + $cpus{$cpu}{inuse};
+    $totalidle  = $totalidle + $cpus{$cpu}{idle};
+    $totalusr   = $totalusr + $cpus{$cpu}{usr};
+    $totalsys   = $totalsys + $cpus{$cpu}{sys};
+    $totalintr  = $totalintr + $cpus{$cpu}{intr};
+    $totalcsw   = $totalcsw + $cpus{$cpu}{csw};
+}
+
+$averageinuse = ( $totalinuse / $cpus );
+$averageusr   = ( $totalusr / $cpus );
+$averagesys   = ( $totalsys / $cpus );
+$averageidle  = ( $totalidle / $cpus );
+$averageintr  = ( $totalintr / $cpus );
+$averagecsw   = ( $totalcsw / $cpus );
+
+$returnstring =~ s/,$//;
+
+# tidy up plurals
+my $p = $cpus < 2 ? "" : "s";
+
+$returnstring =
+  sprintf "($cpus CPU$p: %.0f%%,%.0f%%,%.0f%%,%.0f,%.0f)$returnstring",
+  $averageusr, $averagesys, $averageidle, $averageintr, $averagecsw;
+$returnstring =
+  sprintf
+  "$returnstring (usr,sys,idle,intr,csw)|usr=%.0f%%;; sys=%.0f%%;; idle=%.0f%%;; intr=%.0f;; csw=%.0f;;",
+  $averageusr, $averagesys, $averageidle, $totalintr, $totalcsw;
+
+# We only need $warning to be > 0 so we'll use elsif
+if ( $averageusr >= $warningthresholds[0] ) {
+    if ( $warningthresholds[0] != "" ) {
+        $warnings++;
+    }
+}
+elsif ( $averagesys >= $warningthresholds[1] ) {
+    if ( $warningthresholds[1] != "" ) {
+        $warnings++;
+    }
+}
+elsif ( $averageidle <= $warningthresholds[2] ) {
+    if ( $warningthresholds[2] != "" ) {
+        $warnings++;
+    }
+}
+elsif ( $averageintr >= $warningthresholds[3] ) {
+    if ( $warningthresholds[3] != "" ) {
+        $warnings++;
+    }
+}
+elsif ( $averagecsw >= $warningthresholds[4] ) {
+    if ( $warningthresholds[4] != "" ) {
+        $warnings++;
+    }
+}
+
+# We only need $critical to be > 0 so we'll use elsif
+if ( $averageusr >= $criticalthresholds[0] ) {
+    if ( $criticalthresholds[0] != "" ) {
+        $criticals++;
+    }
+}
+elsif ( $averagesys >= $criticalthresholds[1] ) {
+    if ( $criticalthresholds[1] != "" ) {
+        $criticals++;
+    }
+}
+elsif ( $averageidle <= $criticalthresholds[2] ) {
+    if ( $criticalthresholds[2] != "" ) {
+        $criticals++;
+    }
+}
+elsif ( $averageintr >= $criticalthresholds[3] ) {
+    if ( $criticalthresholds[3] != "" ) {
+        $criticals++;
+    }
+}
+elsif ( $averagecsw >= $criticalthresholds[4] ) {
+    if ( $criticalthresholds[4] != "" ) {
+        $criticals++;
+    }
+}
+
+if ( $warnings > 0 ) {
+    if ( $criticals > 0 ) {
+        print "CRITICAL: $returnstring\n";
+        exit 2;
+    }
+    else {
+        print "WARNING: $returnstring\n";
+        exit 1;
+    }
+}
+else {
+    print "$returnstring\n";
+    exit 0;
+}
+
+exit 0;
+
+sub usage {
+    print << "USAGE";
+
+$script v$VERSION
+
+Checks CPU statistics for all CPU's (Solaris)
+
+Usage: $script -w <usr%,sys%,idle%,intr,csw> -c <usr%,sys%,idle%,intr,csw>
+
+Options: -w 		Warning thresholds 
+         -c 		Critical thresholds
+
+	Threshold comparisons:
+
+	usr		- % comparison against average for all CPUs 
+	sys		- % comparison against average for all CPUs
+	idle		- % comparison against average for all CPUs
+	intr		- aggregate for all CPUs
+	csw		- aggregate for all CPUs
+
+	Null values are permitted
+		 
+USAGE
+    exit 1;
+}

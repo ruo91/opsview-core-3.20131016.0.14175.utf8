@@ -1,0 +1,170 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+#	slave_node_resync
+#
+# DESCRIPTION:
+#   Run on master as event handler to Slave-node: checks
+#	If a slave node has just recovered, we create a new sync.dat file, send down to node and tell it to resync
+#   Runs in the background as event handlers block
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin/../lib",    "$Bin/../etc",    "$Bin/../perl/lib";
+use lib "$Bin/../../lib", "$Bin/../../etc", "$Bin/../../perl/lib";
+use Log::Log4perl;
+use IPC::Run qw(run);
+
+use Opsview::Utils::NagiosSyncStatus;
+use Opsview::Schema;
+use Opsview::Config;
+
+my $prefix = "/usr/local/nagios";
+my $vardir = "$prefix/var";
+my $tmpdir = "$prefix/tmp";
+
+Log::Log4perl::init( "$prefix/etc/Log4perl.conf" );
+my $log = Log::Log4perl->get_logger( "slave_node_resync" );
+
+$log->info( "Starting" );
+
+$SIG{__DIE__} = sub {
+    if ($^S) {
+
+        # In eval
+        return;
+    }
+    if ($log) {
+        $log->fatal(@_);
+    }
+    die @_;
+};
+
+END { $log->info("Finished") if $log }
+
+if ( $ENV{NAGIOS_SERVICESTATETYPE} ne "HARD" ) {
+    $log->info(
+        "Only running on HARD state change - currently $ENV{NAGIOS_SERVICESTATETYPE}"
+    );
+    exit;
+}
+
+if ( $ENV{NAGIOS_SERVICESTATE} ne "OK" ) {
+    $log->info(
+        "Only running when OK - state is currently $ENV{NAGIOS_SERVICESTATE}"
+    );
+    exit;
+}
+
+if ( $ENV{NAGIOS_LASTSERVICESTATE} eq "OK" ) {
+    $log->info( "Only running when a recovery occurs - last state was OK" );
+    exit;
+}
+
+my $pid = fork;
+if ($pid) {
+
+    # Parent
+    $log = undef;
+    exit;
+}
+die "Couldn't fork: $!" unless defined $pid;
+POSIX::setsid() or die "Cannot daemonize";
+
+my $schema = Opsview::Schema->my_connect;
+
+my $slavenodename = $ENV{NAGIOS_SERVICEDESC};
+$slavenodename =~ s/Slave-node: //;
+
+# Find which monitoring server this slave node belongs to
+my $slave_node =
+  $schema->resultset("Monitoringclusternodes")
+  ->search( { "host.name" => $slavenodename }, { join => "host" } )->first;
+unless ($slave_node) {
+    $log->logdie( "Cannot find monitoring server with node name $slavenodename"
+    );
+}
+
+# Find all hosts on this monitoring server
+my $host_to_slave = {};
+my $slavenode_ip;
+my $rs =
+  $schema->resultset("Hosts")
+  ->search( { monitored_by => $slave_node->monitoringcluster->id } );
+while ( my $host = $rs->next ) {
+    $host_to_slave->{ $host->name } = "";
+    $slavenode_ip = $host->ip if ( $host->name eq $slavenodename );
+}
+
+# Generate sync.dat
+my $sync        = Opsview::Utils::NagiosSyncStatus->new;
+my $status_file = Opsview::Config->status_dat;
+
+$sync->generate(
+    {
+        status_file  => $status_file,
+        targetdir    => $tmpdir,
+        slave_lookup => $host_to_slave,
+        suffix       => "$slavenodename",
+    }
+);
+
+# Transfer
+$log->info( "Transferring sync.dat to $slavenodename ($slavenode_ip)" );
+my $sync_file = "$tmpdir/sync.dat.$slavenodename";
+my @command   = (
+    "scp", "-B", $sync_file, $slavenode_ip . ":/usr/local/nagios/tmp/sync.dat"
+);
+$log->debug( "Command = @command" );
+
+my ( $in, $out, $err );
+run( \@command, \$in, \$out, \$err );
+
+my $rc = $?;
+
+if ( $rc == 0 ) {
+    $log->info( "Transfer successful" );
+}
+else {
+    $log->error( "Transfer failed. system() return code: $rc" );
+    $log->error( "out=$out" );
+    $log->error( "err=$err" );
+    exit;
+}
+
+# Tell nagios to read sync data
+@command = ( "ssh", $slavenode_ip, "$prefix/bin/sync_nagios_now" );
+run( \@command, \$in, \$out, \$err );
+$rc = $?;
+
+if ( $rc != 0 ) {
+    $log->error( "Sync command failed. system() return code: $rc" );
+    $log->error( "out=$out" );
+    $log->error( "err=$err" );
+    exit;
+}
+
+$log->info( "Sync command succeeded" );
+
+exit;

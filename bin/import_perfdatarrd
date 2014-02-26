@@ -1,0 +1,189 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#	import_perfdatarrd
+#
+# DESCRIPTION:
+#	Imports performance data into RRD files
+#	Allows Nagios to continue processing while this is asynchronously updating
+#	Will import files from the var/perfdatarrd directory
+#	in filename order (which should be timestamped)
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib $Bin, "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+use Log::Log4perl;
+use POSIX;
+use Time::HiRes qw(sleep gettimeofday);
+use Opsview::Utils::PerfdatarrdImporter;
+
+$0 = "import_perfdatarrd";
+
+my $rootdir    = "/usr/local/nagios";
+my $import_dir = "$rootdir/var/perfdatarrd";
+
+Log::Log4perl::init_and_watch( "$rootdir/etc/Log4perl.conf", 30 );
+
+my $logger = Log::Log4perl->get_logger( "import_perfdatarrd" );
+
+$logger->info( "Starting" );
+
+my $pidfile = "/usr/local/nagios/var/import_perfdatarrd.pid";
+if ( -e $pidfile ) {
+    open( my $fh, "< $pidfile" )
+      or $logger->logdie( "Cannot read pid file - is daemon running?" );
+    my $pid = <$fh>;
+    close $fh;
+    if ( kill 0, $pid ) {
+        $logger->logdie( "import_perfdatarrd already running as process $pid"
+        );
+    }
+    else {
+        $logger->warn( "Crash from previous run. Deleting pid file" );
+        unlink $pidfile or $logger->logdie( "Cannot delete pidfile" );
+    }
+}
+
+# Do cleanup on exit
+my $pid;
+END { cleanup() unless $pid }
+
+if (1) {
+    $pid = fork;
+    exit if $pid;
+    $logger->logdie("Couldn't fork: $!") unless defined $pid;
+    POSIX::setsid() or $logger->logdie( "Cannot daemonize" );
+
+    $logger->info( "Daemonised" );
+
+    open PID, "> $pidfile" or die "Could not write to pid file $pidfile";
+    print PID "$$";
+    close PID;
+
+    for my $handle ( *STDIN, *STDOUT, *STDERR ) {
+        open( $handle, "+<", "/dev/null" )
+          || die "can't reopen $handle to /dev/null: $!";
+    }
+}
+
+my $break = 0;
+$SIG{INT}  = \&catch_signals;
+$SIG{TERM} = \&catch_signals;
+
+my $importer = Opsview::Utils::PerfdatarrdImporter->new(
+    {
+        logger => $logger,
+        break  => \$break
+    }
+);
+
+my $log_duration_threshold = 12;
+
+chdir($import_dir) or $logger->logdie( "Cannot chdir: $!" );
+my $last_update = 0;
+my $c           = 0;
+MAINLOOP:
+until ($break) {
+
+    # Not sure why, but can't use IMPORT_DIR filehandle
+    my $dir_update = ( stat(".") )[9];
+    my $found      = 0;
+    if ( $dir_update != $last_update ) {
+        opendir( IMPORT_DIR, "." ) or $logger->logdie( "Cannot open dir: $!" );
+
+        # sorting required to get files in timestamped order
+        my @files = sort ( grep !/^\.\.?\z/, readdir IMPORT_DIR );
+        closedir IMPORT_DIR;
+        foreach my $file (@files) {
+            last MAINLOOP if ($break);
+
+            process_each_file($file);
+
+            $found = 1;
+        }
+        $last_update = $dir_update;
+    }
+
+    # Directory would have changed from our last import, so expect above if to succeed
+    # But allows a next check to run if more files have been added
+    sleep 0.25 unless $found;
+}
+
+sub cleanup {
+    $logger->info( "Stopping $0" );
+    unlink $pidfile;
+}
+
+sub process_each_file {
+    my $file      = shift;
+    my $start     = gettimeofday();
+    my $file_size = -s $file;
+
+    $logger->debug( "Processing $file, size $file_size" );
+
+    if ( $file_size == 0 ) {
+        unlink $file;
+        return;
+    }
+
+    unless ( open PERFDATA, $file ) {
+        $logger->error( "Error opening $file: $!" );
+        return;
+    }
+    my @data = <PERFDATA>;
+    close PERFDATA;
+
+    # Send the data to be imported
+    $importer->processdata( \@data );
+
+    if ( $logger->is_debug() ) {
+        my $debug_dir = "/usr/local/nagios/var/perfdatarrd.archive";
+        unless ( -d $debug_dir ) {
+            mkdir $debug_dir;
+        }
+        rename( $file, "$debug_dir/$file" );
+    }
+    else {
+        unlink $file;
+    }
+
+    my $duration = gettimeofday() - $start;
+    $logger->debug( "Finished $file. Duration=$duration" );
+    if ( $duration > $log_duration_threshold ) {
+        my $nice_duration = sprintf( "%0.2f", $duration );
+        $logger->warn(
+            "Import of $file, size=$file_size, took $nice_duration seconds > $log_duration_threshold seconds"
+        );
+    }
+}
+
+sub catch_signals {
+    if ( $break++ == 0 ) {
+        $logger->warn( "Received kill signal - gracefully shutting down" );
+    }
+    else {
+        $logger->logdie( "Received kill signal - forced death" );
+    }
+}

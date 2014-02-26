@@ -1,0 +1,5 @@
+NRPE_NT Plugin, Disk Load
+
+usage: diskload drive warning threshold(%) critical threshold(%)
+
+example: D: 77 90

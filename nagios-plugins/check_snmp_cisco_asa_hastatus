@@ -1,0 +1,230 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+use warnings;
+use strict;
+
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+
+my $np = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => "check_snmp_cisco_asa_hastatus",
+    version   => "1.1",
+    blurb     => "Checks status of Cisco CSS pair in HA mode",
+    snmp      => {
+        "snmp-version" => 1,
+        "snmp-timeout" => 2,
+    },
+);
+
+$np->getopts;
+
+my $s                              = $np->snmp;
+my $oid_sysDescr                   = ".1.3.6.1.2.1.1.1.0";
+my $oid_PrimaryStatusCode          = ".1.3.6.1.4.1.9.9.147.1.2.1.1.1.3.6";
+my $oid_SecondaryStatusCode        = ".1.3.6.1.4.1.9.9.147.1.2.1.1.1.3.7";
+my $oid_PrimaryStatusDescription   = ".1.3.6.1.4.1.9.9.147.1.2.1.1.1.4.6";
+my $oid_SecondaryStatusDescription = ".1.3.6.1.4.1.9.9.147.1.2.1.1.1.4.7";
+my $status                         = 0;
+my $returnstring                   = "";
+
+$status = main();
+
+# Close the session
+$s->close();
+
+if ( $returnstring eq "" ) {
+    $status = 3;
+}
+
+print "$returnstring\n";
+
+exit $status;
+
+####################################################################
+# This is where we gather data via SNMP and return results         #
+####################################################################
+
+# $oid_PrimaryStatusCode = ".1.3.6.1.4.1.9.9.147.1.2.1.1.1.3.6";
+# $oid_SecondaryStatusCode = ".1.3.6.1.4.1.9.9.147.1.2.1.1.1.3.7";
+# $oid_PrimaryStatusDescription = ".1.3.6.1.4.1.9.9.147.1.2.1.1.1.4.6";
+# $oid_SecondaryStatusDescription = ".1.3.6.1.4.1.9.9.147.1.2.1.1.1.4.7";
+
+sub main {
+
+    my $PrimaryStatusCode          = 99;
+    my $SecondaryStatusCode        = 99;
+    my $PrimaryStatusDescription   = "";
+    my $SecondaryStatusDescription = "";
+
+    #
+    # Gets status codes for primary and secondary
+    #
+    if ( !defined( $s->get_request($oid_PrimaryStatusCode) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $PrimaryStatusCode = $s->var_bind_list()->{$_};
+    }
+
+    if ( !defined( $s->get_request($oid_SecondaryStatusCode) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $SecondaryStatusCode = $s->var_bind_list()->{$_};
+    }
+
+    #
+    # Gets description codes for primary and secondary
+    #
+    if ( !defined( $s->get_request($oid_PrimaryStatusDescription) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $PrimaryStatusDescription = $s->var_bind_list()->{$_};
+    }
+
+    if ( !defined( $s->get_request($oid_SecondaryStatusDescription) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $SecondaryStatusDescription = $s->var_bind_list()->{$_};
+    }
+
+    my $status = 0;
+
+    if ( $PrimaryStatusCode == 9 ) {
+        if ( $SecondaryStatusCode == 10 ) {
+
+            # How it should be
+            $status = 0;
+        }
+        else {
+
+            #Primary okay but secondary has problems
+            $status = 1;
+        }
+    }
+
+    # Otherwise
+    else {
+        $status = 2;
+    }
+
+    my $PrimaryStatusCodeTranslated   = "";
+    my $SecondaryStatusCodeTranslated = "";
+
+    $PrimaryStatusCodeTranslated   = translatestatuscode($PrimaryStatusCode);
+    $SecondaryStatusCodeTranslated = translatestatuscode($SecondaryStatusCode);
+    $returnstring =
+      "Primary Unit: $PrimaryStatusDescription ($PrimaryStatusCodeTranslated), Secondary Unit: $SecondaryStatusDescription ($SecondaryStatusCodeTranslated) ";
+
+    return ($status);
+
+}
+
+####################################################################
+# Appends string to existing $returnstring                         #
+####################################################################
+
+sub append {
+    my $appendstring = $_[0];
+    $returnstring = "$returnstring$appendstring";
+}
+
+sub translatestatuscode {
+    my $value        = $_[0];
+    my $returnstring = "";
+
+    if ( $value eq "1" ) {
+        $returnstring = "other";
+    }
+    elsif ( $value eq "2" ) {
+        $returnstring = "up";
+    }
+    elsif ( $value eq "3" ) {
+        $returnstring = "down";
+    }
+    elsif ( $value eq "4" ) {
+        $returnstring = "error";
+    }
+    elsif ( $value eq "5" ) {
+        $returnstring = "over temp";
+    }
+    elsif ( $value eq "6" ) {
+        $returnstring = "busy";
+    }
+    elsif ( $value eq "7" ) {
+        $returnstring = "no media";
+    }
+    elsif ( $value eq "8" ) {
+        $returnstring = "backup";
+    }
+    elsif ( $value eq "9" ) {
+        $returnstring = "active";
+    }
+    elsif ( $value eq "10" ) {
+        $returnstring = "standby";
+    }
+    else {
+        $returnstring = "unknown";
+    }
+    return ($returnstring);
+}

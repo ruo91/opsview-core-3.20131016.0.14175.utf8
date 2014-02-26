@@ -1,0 +1,437 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+# 	check_reqs [-i] [slave|master|build|dev]
+#
+# DESCRIPTION:
+# 	Checks requirements for Opsview
+#	If -i specified, will also install CPAN modules into /usr/local/nagios
+#	If run with "slave", will check slave requirements
+#	Defaults to "master"
+#	If run with "build", will also check build requirements
+# 	If run with "dev", will also check development requirements
+#
+#	Number of required software:
+#	slave < master < build < dev
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+package main;
+
+#use lib "/usr/local/nagios/perl/lib";	# This line is required to get the modules as they are installed
+#$ENV{PERL5LIB}="/usr/local/nagios/perl/lib";
+#use CPAN;
+
+use 5.8.4;
+use strict;
+
+if ( $< == 0 ) {
+    die( "Should be run as the nagios user, not root\n" );
+}
+
+use Getopt::Std;
+
+my $opts = {};
+getopts( "i", $opts );
+
+my $install_cpan = $opts->{i} || 0;
+
+my @errs;
+my @libdirs = qw(/usr/lib);
+my @incdirs = qw(/usr/include);
+
+my $uname_s = `uname -s`;
+chomp $uname_s;
+my $uname_r = `uname -r`;
+chomp $uname_r;
+my $uname_i = `uname -i`;
+chomp $uname_i;
+
+if ( $uname_s eq "Darwin" ) {
+    push @libdirs, "/sw/lib",     "/usr/local/lib";
+    push @incdirs, "/sw/include", "/usr/local/include";
+}
+elsif ( $uname_s eq "Linux" ) {
+
+    # Debian doesn't have /usr/sbin or /sbin for non-root users
+    $ENV{PATH} = "$ENV{PATH}:/usr/sbin:/sbin";
+}
+elsif ( $uname_s eq "SunOS" ) {
+    push @libdirs, "/usr/local/lib", "/usr/sfw/lib",
+      "/usr/local/rrdtool-1.2.19/lib", "/usr/local/mysql/lib/mysql",
+      "/opt/sfw/lib";
+    push @incdirs, "/usr/include", "/usr/local/include", "/usr/sfw/include",
+      "/usr/local/rrdtool-1.2.19", "/usr/local/mysql/include",
+      "/usr/sfw/share/src/expat/lib", "/opt/sfw/include", "/usr/share/src/jpeg",
+      "/usr/share/src/libpng";
+}
+
+if ( $uname_i eq 'x86_64' ) {
+    push @libdirs, '/usr/lib64';
+}
+
+my $state = shift @ARGV || "master";
+unless ( $state =~ /^(slave|master|build|dev)$/ ) {
+    die "Must specify either slave, master, build or dev";
+}
+
+if ( system("which which > /dev/null") != 0 ) {
+    die "Do not have which command on this box";
+}
+
+if ( !$ENV{PERL5LIB} || $ENV{PERL5LIB} !~ m!/usr/local/nagios/perl/lib! ) {
+    push( @errs, "PERL5LIB is not set (has the user profile been set up ok?)"
+    );
+}
+else {
+    if ( $uname_s eq "SunOS" ) {
+        if ( $ENV{PERL5LIB} !~ m!/usr/local/rrdtool-! ) {
+            push( @errs,
+                "PERL5LIB does not contain path to RRD perl modules (/usr/local/rrdtool-x.x.xx/lib/perl/5.8.7/i86pc-solaris)"
+            );
+        }
+    }
+}
+
+#########################################
+# Slave
+#########################################
+unless (
+    check_lib(
+        "libexpat.so", 'libexpat.so.0', 'libexpat.so.1', "libexpat.dylib"
+    )
+  )
+{
+    push @errs, "libexpat not installed";
+}
+
+# All standard perl module checks should be in perl-install
+# Only exceptions to these should be in this file
+check_mods( { Module => "RRDs" }, );
+
+# Check for gd2
+unless ( check_lib( "libgd.so.2", "libgd.2.0.0.dylib" ) ) {
+    push @errs, "GD2 not installed";
+}
+
+unless ( check_lib( "libmcrypt.so.4", "libmcrypt.dylib" ) ) {
+    push @errs, "mcrypt not installed";
+}
+
+unless ( check_lib( "libldap-2.4.so.2", 'libldap.so.4', 'libldap.so' ) ) {
+    push @errs, "libldap2-2.4 not installed";
+}
+
+unless ( check_bin("ksh") ) {
+    push @errs, "ksh not installed";
+}
+my $tar_test;
+if ( check_bin("tar") ) {
+    my $first_line = `tar --version`;
+    if ( $first_line =~ /GNU tar/ ) {
+        $tar_test++;
+    }
+}
+unless ($tar_test) {
+    push @errs, "GNU tar not installed";
+}
+unless ( check_bin("rsync") ) {
+    push @errs, "rsync not installed";
+}
+
+unless ( check_bin("sudo") ) {
+    push @errs, "sudo not installed";
+}
+
+unless ( check_bin("mrtg") ) {
+    push @errs, "mrtg not installed";
+}
+
+unless ( check_bin("rrdtool") ) {
+    push @errs, "rrdtool not installed";
+}
+
+my $rrdtool_version = `rrdtool --version | awk '{print \$2; exit}'`;
+chomp($rrdtool_version);
+if ( !is_higher_version( $rrdtool_version, "1.0.33" ) ) {
+    push @errs, "rrdtool needs to be higher than 1.0.33";
+}
+
+unless ( check_bin("apachectl") or check_bin("apache2ctl") ) {
+    push @errs, "Apache or Apache2 not installed";
+}
+
+unless ( check_bin("snmpd") ) {
+    push @errs, "snmpd not installed";
+}
+
+unless (
+    check_lib(
+        'librrd.so.4', 'librrd.so', "librrd.so.2", "librrd.so.0",
+        "librrd.2.dylib"
+    )
+  )
+{
+    push @errs, "librrd not installed";
+}
+
+if ( !check_bin("gunzip") ) {
+    push @errs, "gunzip not installed";
+}
+
+if ( $uname_s eq "Linux" ) {
+    if ( !is_higher_version( $uname_r, "2.6.4" ) ) {
+        push @errs, "Need Linux kernel >= 2.6.4";
+    }
+}
+elsif ( $uname_s eq "Darwin" ) {
+    if ( !is_higher_version( $uname_r, "8.3.0" ) ) {
+        push @errs, "Need MacOSX >= 10.4.2";
+    }
+}
+elsif ( $uname_s eq "SunOS" ) {
+    if ( !is_higher_version( $uname_r, "5.8" ) ) {
+        push @errs, "Need Solaris >= 5.8";
+    }
+}
+else {
+    push @errs, "Not supported OS";
+}
+
+finished() if ( $state eq "slave" );
+
+##############################
+# Master
+##############################
+
+check_mods( { Module => "SNMP" }, );
+my $ssh = `ssh -V 2>&1`;
+if ( $? || $ssh !~ /OpenSSL/ ) {
+    push @errs, "ssh needs to be OpenSSL";
+}
+if ( !check_bin("mysql") ) {
+    push @errs, "mysql not installed";
+}
+else {
+    my $mysql = `mysql --version`;
+    my ($version) = ( $mysql =~ /Distrib (\d\.\d)/ );
+    if ( $version < 4.1 ) {
+        push @errs, "mysql needs to be at version 4.1";
+    }
+}
+
+if ( !check_bin("mysqld_safe") ) {
+    push @errs, "mysql server not installed";
+}
+
+if ( !check_bin("unzip") ) {
+    push @errs, "unzip not installed";
+}
+
+unless ( check_bin("dig") ) {
+    push @errs, "dnsutils/bind-utils not installed for dig command";
+}
+
+unless ( check_lib(qw(libxml2.so.2 libxml2.dylib)) ) {
+    push @errs, "libxml2 not installed";
+}
+
+if ( $uname_s eq "SunOS" ) {
+    if ( !is_higher_version( $uname_r, "5.10" ) ) {
+        push @errs, "Need Solaris >= 5.10";
+    }
+}
+
+unless ( check_bin("pkg-config") ) {
+    push @errs, "pkg-config not installed";
+}
+
+unless ( check_lib(qw(libcairo.so.2 libcairo.la libcairo.a)) ) {
+    push @errs, "libcairo not installed";
+}
+
+finished() if ( $state eq "master" );
+
+# dev server checks
+# Build
+# Catalyst::Test is always with Catalyst-Runtime
+check_mods(
+
+    #	{ Module => "Catalyst::Test" },
+    { Module => "version" },
+);
+unless ( check_bin("make") ) {
+    push @errs, "make not installed";
+}
+$_ = `make --version | head -1`;
+@_ = split;
+if ( $_[0] ne "GNU" ) {
+    push @errs, "Must use GNU make";
+}
+
+unless ( check_include("expat.h") ) {
+    push @errs, "libexpat-dev not installed";
+}
+unless ( check_lib(qw(libcairo.la libcairo.a)) ) {
+    push @errs, "libcairo-dev not installed";
+}
+unless ( check_lib(qw(libssl.so libssl.dylib)) ) {
+    push @errs, "SSL not installed";
+}
+unless ( check_bin("cc") ) {
+    push @errs, "cc not installed";
+}
+unless ( check_bin("openssl") ) {
+    push @errs, "openssl not installed";
+}
+unless ( check_bin("pngtogd2") ) {
+    push @errs, "gd tools not installed";
+}
+unless ( check_bin("convert") ) {
+    push @errs, "ImageMagick is not installed (imagemagick)";
+}
+unless ( check_bin("giftopnm") ) {
+    push @errs, "netpbm not installed";
+}
+unless ( check_bin("patch") ) {
+    push @errs, "patch not installed";
+}
+unless ( check_include("gd.h") ) {
+    push @errs, "libgd2-noxpm-dev not installed";
+}
+unless ( check_include("mcrypt.h") ) {
+    push @errs, "libmcrypt-dev not installed";
+}
+unless ( check_include("jpeglib.h") ) {
+    push @errs, "libjpeg-dev not installed";
+}
+unless ( check_include("png.h") ) {
+    push @errs, "libpng-dev not installed";
+}
+unless ( check_bin("xml2-config") ) {
+    push @errs, "libxml2-dev not installed";
+}
+unless ( check_include("ldap.h") ) {
+    push @errs, "libldap2-dev not installed";
+}
+if ( $uname_s ne "Darwin" ) {
+
+    # Don't need to check on MacOSX as mysql distribution includes headers
+    unless ( check_include("mysql/mysql.h") ) {
+        push @errs, "libmysqlclient12-dev not installed";
+    }
+}
+finished() if ( $state eq "build" );
+
+# Dev
+unless ( check_bin("perltidy") ) {
+    push @errs, "perltidy not installed";
+}
+unless ( check_bin("svn") ) {
+    push @errs, "subversion not installed";
+}
+unless ( check_bin("autoconf") ) {
+    push @errs, "autoconf not installed";
+}
+$_ = `automake --version | head -1`;
+@_ = split;
+if ( !is_higher_version( $_[3], "1.8" ) ) {
+    push @errs, "automake must be >= 1.8 (have $_[3])";
+}
+
+unless ( check_bin("m4") ) {
+    push @errs, "m4 not installed";
+}
+$_ = `m4 --version | head -1`;
+@_ = split;
+if ( $_[2] lt "1.4.2" ) {
+    push @errs, "m4 must be >= 1.4.2";
+}
+
+unless ( check_bin("dot") ) {
+    push @errs, "graphviz not installed";
+}
+
+finished();
+
+sub finished {
+    die join( $/, @errs ) . "\nExiting with errors\n" if @errs;
+    print "All requisites satisfied", $/;
+    exit;
+}
+
+use Carp;
+
+sub is_higher_version {
+    my ( @a, @b );
+    ( $_ = $_[0] ) =~ s/\-.*//;
+    @a = split( /\./, $_ );
+    @b = split( /\./, $_[1] );
+    croak "Cannot parse versions" unless @a && @b;
+    if ( ( $a[0] <=> $b[0] || $a[1] <=> $b[1] || $a[2] <=> $b[2] ) == -1 ) {
+        return 0;
+    }
+    else {
+        return 1;
+    }
+}
+
+sub check_lib {
+    foreach my $file (@_) {
+        foreach my $libdir (@libdirs) {
+            return 1 if -e "$libdir/$file";
+        }
+    }
+    return 0;
+}
+
+sub check_include {
+    foreach my $file (@_) {
+        foreach my $incdir (@incdirs) {
+            return 1 if -e "$incdir/$file";
+        }
+    }
+    return 0;
+}
+
+sub check_bin {
+    my $file = shift;
+    system("which $file > /dev/null 2>&1") == 0;
+}
+
+sub check_mods {
+    foreach my $mod (@_) {
+        my $name = $mod->{Module};
+        my $version = $mod->{Version} || "";
+        my $rc = system( "perl -e 'use $name $version' > /dev/null 2>&1" );
+        if ($rc) {
+            if ($install_cpan) {
+                install($name);
+            }
+            else {
+                my $err = "This script requires module '$name'";
+                $err .= " at version $version" if $version;
+                push @errs, $err;
+            }
+        }
+    }
+}

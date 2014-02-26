@@ -1,0 +1,2 @@
+#!/bin/bash
+perl -i -pe 's/runtimeton/runtime/' t/var/configs/Cluster*/ndo2db.cfg "t/var/configs/Master Monitoring Server/ndo2db.cfg"

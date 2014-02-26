@@ -1,0 +1,52 @@
+#!/usr/bin/perl
+#
+#
+# postinstall_root
+#
+#	This is postinstall script is run after every install
+#	Do OS specific tasks in here
+#   This must be idempotent, so nothing breaks if re-run lots of times
+#   Also need to make sure this works on all platforms
+#	Run as root user
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+print( "Running postinstall_root\n" );
+
+my $a2enmod = "/usr/sbin/a2enmod";
+
+# This part works for Debian, Ubuntu and SLES
+my @modules = qw(proxy proxy_http rewrite headers);
+if ( -x $a2enmod ) {
+    foreach my $module (@modules) {
+
+        # Need to redirect stderr because ubuntu displays a "This module does not exist" message for -q
+        if ( system("$a2enmod -q $module 2>/dev/null") != 0 ) {
+            (
+                system( $a2enmod, $module ) == 0
+                  or die "Cannot run a2enmod $module"
+            );
+        }
+    }
+    system( "/etc/init.d/apache2", "restart" );
+}
+
+# RHEL does not require any changes for apache modules

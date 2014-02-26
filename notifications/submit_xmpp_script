@@ -1,0 +1,102 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+my $usage = qq{
+submit_xmpp_script
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+Usage: submit_xmpp_script [-h] [-n]
+
+Where:
+  -h - this help test
+  -n - do not send acknowledgements
+
+Uses Nagios environment variables to construct the message to send and calls sendxmpp
+};
+
+#
+# DESCRIPTION:
+#	Wrapper for sendxmpp enabling you to send Jabber / Google Chat messages
+#	using the XMPP protocol
+#
+#	This script requires the 'sendxmpp' utility - http://sendxmpp.platon.sk/
+#	This should be available as a package for your preferred Linux distribution
+#
+#	Eg:
+#		apt-get install sendxmpp
+#		yum install sendxmpp
+#
+#	You should create ~/.sendxmpprc containing credentials for your xmpp service
+#	use 'man sendxmpp' for more details on how to do this
+#
+#
+#
+# LICENCE:
+#    Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+sub usage {
+    if ( $_ = shift ) { print "Error: $_\n" }
+    print $usage;
+    exit 1;
+}
+
+use strict;
+use lib '/usr/local/nagios/perl/lib';
+use strict;
+use Getopt::Std;
+
+my $command;
+if ( -x '/usr/bin/sendxmpp' ) {
+    $command = '/usr/bin/sendxmpp';
+}
+else {
+    $command = '/usr/local/bin/sendxmpp';
+}
+my $opts = {};
+
+getopts( 'hn', $opts );
+
+if ( $opts->{h} ) {
+    usage();
+    exit(0);
+}
+
+if ( $opts->{n} && $ENV{NAGIOS_NOTIFICATIONTYPE} eq 'ACKNOWLEDGEMENT' ) {
+    print 'Not sending acknowledgement', $/;
+    exit 0;
+}
+
+my $text;
+if ( $ENV{NAGIOS_SERVICEDESC} ) {
+    $text =
+      "$ENV{NAGIOS_NOTIFICATIONTYPE}: $ENV{NAGIOS_SERVICEDESC} on $ENV{NAGIOS_HOSTNAME} is $ENV{NAGIOS_SERVICESTATE}: $ENV{NAGIOS_SERVICEOUTPUT} ($ENV{NAGIOS_SHORTDATETIME})";
+}
+else {
+    $text =
+      "$ENV{NAGIOS_NOTIFICATIONTYPE}: $ENV{NAGIOS_HOSTNAME} is $ENV{NAGIOS_HOSTSTATE}: $ENV{NAGIOS_HOSTOUTPUT} ($ENV{NAGIOS_SHORTDATETIME})";
+}
+
+my $number = $ENV{NAGIOS_CONTACTPAGER}
+  || die "Must have CONTACTPAGER for this notification script\n";
+
+my $command = "/bin/echo '$text' | $command -t $number";
+print "Running $command\n";
+system($command) == 0 || die( 'Failed to run command: ', $!, $/ );

@@ -1,0 +1,343 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#	install_slave [-n] [-r] [-s] [-h]
+#
+# DESCRIPTION:
+#	This is run as root
+#	Installs the tar file into /usr/local/nagios
+#	and other install tasks
+#	-h for help, just to display some program abilities
+#	-n is for the usual "master invoked" tasks - this is a full install
+#	-r means "restart opsview-slave"
+#	-s means 'call system("/usr/local/nagios/bin/snmpd reload")'
+#	-p means do no restarts and do no startup script checks
+#	otherwise assume run on command line by root first time
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use Getopt::Std;
+use File::Copy;
+
+# We use mkpath and rmtree here. This is because the OS's File::Path may not be the
+# latest and we can't be sure that opsview-perl's version will be used, so stick to
+# basic usage
+use File::Path qw(mkpath rmtree);
+
+my @SAVED_ARGS = @ARGV;
+my $opts       = {};
+getopts( "pnrshN", $opts ) or die "Incorrect options";
+
+my $full_install = 0;
+$full_install = 1 if $opts->{n};
+
+if ( $opts->{h} ) {
+
+    # Print version number
+    print "2";
+    exit 0;
+}
+
+if ( ( $opts->{r} || $opts->{s} ) && $opts->{p} ) {
+    die( "Option '-p' cannot be used with '-s' or '-r'\n" );
+}
+
+my $nagios_dir = "/usr/local/nagios";
+
+# Make sure required directories are all present
+my ( $nagios_id, $nagios_gid ) = ( getpwnam("nagios") )[ 2, 3 ];
+my $nagcmd_gid = getgrnam( "nagcmd" );
+
+my $dirs = {
+    $nagios_dir       => { mode => 755, },
+    "$nagios_dir/etc" => {
+        group => $nagcmd_gid,
+        mode  => 750,
+    },
+    "$nagios_dir/tmp"                    => { mode  => 750, },
+    "$nagios_dir/var"                    => { mode  => 775, },
+    "$nagios_dir/var/archives"           => { mode  => 775, },
+    "$nagios_dir/var/rrd"                => {},
+    "$nagios_dir/var/mrtg"               => { group => $nagcmd_gid, },
+    "$nagios_dir/var/log"                => { mode  => 775 },
+    "$nagios_dir/var/plugins"            => { mode  => 775 },
+    "$nagios_dir/var/spool"              => { mode  => 775 },
+    "$nagios_dir/var/spool/checkresults" => { mode  => 775 },
+    "$nagios_dir/var/rw"                 => {
+        group => $nagcmd_gid,
+        mode  => 2770
+    },
+    "$nagios_dir/share"      => {},
+    "$nagios_dir/share/mrtg" => {
+        group => $nagcmd_gid,
+        mode  => 2775
+    },
+    "$nagios_dir/nmis"                    => {},
+    "$nagios_dir/nmis/var"                => {},
+    "$nagios_dir/nmis/logs"               => {},
+    "$nagios_dir/nmis/database"           => {},
+    "$nagios_dir/nmis/database/health"    => {},
+    "$nagios_dir/nmis/database/interface" => {},
+    "$nagios_dir/nmis/database/metrics"   => {},
+    "$nagios_dir/nmis/database"           => {},
+    "$nagios_dir/nmis/conf"               => {},
+    "/var/lib/mrtg"                       => { group => 'root', },
+};
+
+check_dirs();
+
+# touch files if they dont already exist
+my $touch_nmis_files = {
+    $nagios_dir . '/nmis/conf/slave.csv'  => {},
+    $nagios_dir . '/nmis/conf/slaves.csv' => {},
+    $nagios_dir . '/nmis/logs/cisco.log'  => {},
+};
+
+foreach my $nmis_file ( sort keys %$touch_nmis_files ) {
+    my $mode  = oct( $touch_nmis_files->{$nmis_file}->{mode} ) || 0755;
+    my $group = $touch_nmis_files->{$nmis_file}->{group}       || $nagios_gid;
+
+    open my $nmis_file_fh, '>>', $nmis_file,
+      or die "Cannot touch $nmis_file $!\n";
+    close $nmis_file_fh;
+}
+
+# Expect opsview.tar.gz files in nagios's tmp dir
+# We've removed the check in the home directory as this is a very old location
+my $tarball;
+foreach my $possible ("$nagios_dir/tmp/opsview.tar.gz") {
+    my $file = ( glob($possible) )[0];
+    if ( -r $file ) {
+        $tarball = $file;
+        last;
+    }
+}
+die "No opsview tarballs found in $nagios_dir/tmp" unless $tarball;
+my $flag = "";
+if ( $tarball =~ /\.gz$/ ) {
+    $flag = "--gzip";
+}
+
+chdir($nagios_dir) or die "Cannot change into directory";
+
+# Only from -n. Need -N to stop an infinite recursion
+if ( $full_install && !$opts->{N} ) {
+
+    # Extract install_slave from tarball and copy into correct location
+    system("tar $flag -xf $tarball bin/install_slave") == 0
+      or die "Cannot extract new install_slave";
+    exec "$nagios_dir/bin/install_slave", "-N", @SAVED_ARGS;
+    die "Should never get here";
+}
+
+# We delete the perl directory. If this is old style perl, then the tarball will contain all
+# the files from the master. If this is new style perl, then there are only symlinks which
+# will get recreated
+# This might fail if there are root owned files within here
+if ($full_install) {
+    rmtree( "perl" );
+}
+
+#protect nrpe.cfg
+move( "etc/nrpe.cfg", "etc/nrpe.cfg.bk" ) if ( -f "etc/nrpe.cfg" );
+if ( system("tar $flag -xf $tarball") != 0 ) {
+    die "Cannot untar $tarball";
+}
+move( "etc/nrpe.cfg.bk", "etc/nrpe.cfg" ) if ( -f "etc/nrpe.cfg" );
+
+unlink $tarball or die "Cannot unlink $tarball";
+
+# If /usr/local/nagios/opt/opsview/perl exists, assume this belongs in /opt and copy it there
+# Use tar to overwrite previous entries
+if ( -d "opt/opsview/perl" ) {
+    mkpath( "/opt/opsview" );
+    system("tar -cf - -C opt/opsview perl | tar -xf - -C /opt/opsview") == 0
+      or die "Cannot run tar for perl directory";
+    rmtree( "opt" );
+}
+
+system("su - nagios -c '/usr/local/nagios/installer/set_profile'") == 0
+  or die "set_profile script failed";
+
+# fix permissions so apache can read relevant files
+{
+    my $nagcmd_id = getgrnam( "nagcmd" );
+    die("Group nagcmd doesn't exist on server\n") if ( !$nagcmd_id );
+    system( "chgrp -R nagcmd $nagios_dir/sbin" );
+
+    # Allow nagios CGIs to write to nagios.log
+    # Need to append in case file doesn't already exist for initial installs
+    open F, ">> $nagios_dir/var/nagios.log"
+      or die "Cannot append to nagios.log";
+    close F;
+    chmod 0664, "$nagios_dir/var/nagios.log" or die "Cannot chmod nagios.log";
+    chown $nagios_id, $nagcmd_id, "$nagios_dir/var/nagios.log"
+      or die "Cannot chown nagios.log";
+
+    # Ensure it exists and change
+    open F, ">> $nagios_dir/nmis/logs/nmis.log"
+      or die "Cannot append to nmis.log";
+    chmod 0664, "$nagios_dir/nmis/logs/nmis.log"
+      or die "Cannot chmod nmis/logs/nmis.log";
+    chown $nagios_id, $nagcmd_id, "$nagios_dir/nmis/logs/nmis.log"
+      or die "Cannot chown for nmis/logs/nmis.log";
+}
+
+# recheck perms on all dirs incase extracting the tarfile has set something
+# different
+check_dirs();
+
+exit if ( $opts->{p} );
+
+if ( $opts->{s} ) {
+    system("/usr/local/nagios/bin/snmpd reload") == 0
+      or die "Cannot restart snmp";
+    exit;
+}
+
+system("su - nagios -c '/usr/local/nagios/installer/postinstall slave'") == 0
+  or die "postinstall script failed";
+
+# depend on os type (debian/redhat/etc) update the startup scripts
+#
+# work out if update-rc.d or chkconfig by trying to find one on the PATH
+# else do it all by hand as a last resort
+my $type = "unknown";
+
+# Ensure sbin dirs are specifically checked; there are not normally on PATH
+for my $dir ( '/sbin', '/usr/sbin', split( /:/, $ENV{PATH} ) ) {
+    $type = "$dir/update-rc.d" if ( -x "$dir/update-rc.d" );
+    $type = "$dir/chkconfig"   if ( -x "$dir/chkconfig" );
+}
+
+# now act appropriately
+for my $file (qw/ rc.opsview-agent rc.opsview rc.opsview-slave /) {
+    ( my $dest = $file ) =~ s/^rc.//;
+
+    if ( !-f "/usr/local/nagios/bin/$file" ) {
+        warn( "$file not found in /usr/local/nagios/bin\n" );
+        next;
+    }
+
+    # manually ensure all old startup scripts are cleared out as some old ones
+    # have been left on some systems
+    for my $r (qw/ s S 0 1 2 3 4 5 6 /) {
+        system( "rm -f /etc/rc${r}.d/*${dest}" );
+    }
+
+    # Hacky, hacky, hacky!
+    # The slave startup cannot contain mysql as a dependency because slaves do not necessarily have it installed
+    if ( $file eq "rc.opsview" ) {
+        unless ( open INIT_SCRIPT, "/usr/local/nagios/bin/$file" ) {
+            warn( "Error opening $file" );
+            next;
+        }
+        my @contents = map { /^(# Required-\w+:.*)(mysql)/ ? $_ = "$1\n" : $_ }
+          <INIT_SCRIPT>;
+        close INIT_SCRIPT;
+        unless ( open INIT_SCRIPT, ">", "/usr/local/nagios/bin/$file" ) {
+            warn( "Error writing $file" );
+            next;
+        }
+        print INIT_SCRIPT @contents;
+        close INIT_SCRIPT;
+    }
+
+    if ( -e "/etc/init.d/$dest" ) {
+        unlink("/etc/init.d/$dest")
+          || die( "unlink of /etc/init.d/$dest failed: $!\n" );
+    }
+    copy( "/usr/local/nagios/bin/$file", "/etc/init.d/$dest" )
+      || die(
+        "copy of /usr/local/nagios/bin/$file to /etc/init.d/$dest failed: $!\n"
+      );
+    chmod( 0755, "/etc/init.d/$dest" )
+      || die( "Failed to chmod 0755 /etc/init.d/$dest: $!\n" );
+
+    SWITCH: {
+        foreach ($type) {
+            m/update-rc.d$/ && do {
+                print( "$type $dest defaults 90", $/ );
+                system("$type $dest defaults 90") == 0
+                  || warn( "$type $dest defaults 90 failed: $!\n" );
+                last SWITCH;
+            };
+            m/chkconfig$/ && do {
+                system("$type --add $dest") == 0
+                  || warn( "$type --add $dest failed: $!\n" );
+                last SWITCH;
+            };
+            do {
+
+                # do it by hand
+                for my $r (qw/ s S 0 1 2/) {
+                    link( "/etc/init.d/$dest", "/etc/rc${r}.d/K90$dest" )
+                      if ( -d "/etc/rc${r}.d" );
+                }
+                for my $r (qw/ 3 /) {
+                    link( "/etc/init.d/$dest", "/etc/rc${r}.d/S90$dest" )
+                      if ( -d "/etc/rc${r}.d" );
+                }
+                last SWITCH;
+            };
+        }
+    }
+}
+
+# This is the last thing to do as the tunnel could close during this restart causing this script to fail
+# if the slave is setup as reverse SSH.
+# We also have to run this in the background as we don't care about the result
+# Also add a sleep at the beginning so it gives time for this script to end
+if ( $opts->{r} ) {
+
+    # Restart (or start) the agent - code may have changed here
+    system( "/etc/init.d/opsview-agent", "restart" );
+
+    # Set a flag that an install_slave has run
+    # This allows the slave reload process to actually do a restart instead
+    my $flag = "/usr/local/nagios/var/install_slave.flag";
+    unless ( open F, ">", $flag ) {
+        print "ERROR: Cannot set install_slave flag - continuing: $!\n";
+    }
+    chown $nagios_id, $nagios_gid, $flag;
+    close F;
+
+    print "Restarting reverse SSH slave tunnels in background\n";
+    for my $handle ( *STDIN, *STDOUT, *STDERR ) {
+        open( $handle, "+<", "/dev/null" )
+          || die "can't reopen $handle to /dev/null: $!";
+    }
+    system( "sleep 5 && /usr/local/nagios/bin/rc.opsview-slave restart &" );
+}
+
+sub check_dirs {
+    foreach my $dir ( sort keys %$dirs ) {
+        if ( !-d $dir ) {
+            mkdir $dir or die "Cannot create $dir";
+        }
+        my $mode = oct( $dirs->{$dir}->{mode} ) || 0755;
+        chmod $mode, $dir or die "Cannot chmod $dir";
+        my $group = $dirs->{$dir}->{group} || $nagios_gid;
+        chown $nagios_id, $group, $dir or die "Cannot chown $dir";
+    }
+}

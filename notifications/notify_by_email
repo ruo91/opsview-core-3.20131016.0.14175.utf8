@@ -1,0 +1,94 @@
+#!/usr/bin/perl -w
+#
+#
+# SYNTAX:
+#   notify_by_email [-t] [-d]
+#
+# DESCRIPTION:
+#	Sends email using template
+#   -t for test mode, so just print out the email. Use utils/test_notifications to set envvars
+#   -d for debug to print all environment variables to a temporary file for debugging purposes
+#
+# LICENCE:
+#    Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+
+BEGIN {
+
+    # If not run from a terminal (e.g. by Nagios) then process can appear
+    # to time out due to writing to STDOUT/STDERR.  This is probably because
+    # either nagios doesnt read from the process or blocks the output which
+    # can cause a hang.  To cope with this redirect output to /dev/null
+    # We also ignore if HUDSON_URL is set for automated testing
+    if ( !( -t || $ENV{HUDSON_URL} ) ) {
+        open( STDERR, '>', '/dev/null' );
+        open( STDOUT, '>', '/dev/null' );
+    }
+}
+
+use lib "/usr/local/nagios/lib", "/usr/local/nagios/perl/lib";
+
+use Opsview::Utils::NotificationTemplate;
+use Getopt::Std;
+
+my $opts = {};
+getopts( "tde:", $opts ) or die "Invalid args";
+
+if ( $opts->{d} ) {
+    open D, ">>", "/tmp/notify_by_email.debug";
+    print D scalar localtime, $/;
+    print D $_ . "=" . $ENV{$_} . $/ for sort keys %ENV;
+    print D $/;
+    close D;
+}
+
+die "Need NAGIOS_CONTACTEMAIL to send emails" unless $ENV{NAGIOS_CONTACTEMAIL};
+
+my $output         = "";
+my $error          = "";
+my $email_template = $opts->{e} || "com.opsview.notificationmethods.email.tt";
+
+my $ok =
+  Opsview::Utils::NotificationTemplate->process( $email_template, \$output,
+    \$error );
+
+if ( !$ok ) {
+    print "Error: $error\n";
+    die;
+}
+
+if ( $opts->{t} ) {
+    print "TESTING OUTPUT\n";
+    print $output;
+    exit;
+}
+
+# Use first line as subject
+my $subject;
+($subject) = ( $output =~ /^(.+)$/m );
+
+open EMAIL, "|-", "/usr/bin/Mail", "-s", $subject, $ENV{NAGIOS_CONTACTEMAIL};
+print EMAIL $output;
+close EMAIL;
+
+print "Sent email!\n";
+exit;

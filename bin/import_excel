@@ -1,0 +1,372 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+# 	import_excel [-h] [-y] {-o output_file} {file}
+#
+# DESCRIPTION:
+# 	Imports into Opsview via Excel
+#	Use template spreadsheet in share/files/import_excel.xls
+#	Writes results to output_file
+#   -y required to actually make the changes
+#   -h for help file
+#
+# LIMITATIONS:
+#   No service exceptions or timed exceptions or event handler
+#   No interface information as query_host helper not available
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+
+use Opsview::Schema;
+
+use Getopt::Std;
+use Spreadsheet::ParseExcel;
+use Spreadsheet::ParseExcel::SaveParser;
+
+use Log::Log4perl;
+Log::Log4perl::init( "$Bin/../etc/Log4perl.conf" );
+my $logger = Log::Log4perl->get_logger( "import_excel" );
+$logger->info( "Starting Excel import" );
+
+sub print_help {
+    print <<EOF;
+
+import_excel
+
+This script imports data into Opsview based on a spreadsheet. The
+initial spreadsheet can be found at /usr/local/nagios/installer/import_excel.xls.
+
+To do the import, run as the nagios user:
+
+/usr/local/nagios/bin/import_excel -y -o /tmp/results.xls /tmp/import_excel.xls
+
+EOF
+    exit;
+}
+
+print_help if ( scalar @ARGV == 0 );
+
+my $opts = {};
+getopts( "o:yh", $opts );
+
+print_help if $opts->{h};
+
+my $output_file = $opts->{o} || die "Must specify an output Excel file";
+
+my $file = shift @ARGV || die "Must specify an input Excel file";
+
+if ( !-r $file ) {
+    die "Cannot read $file";
+}
+
+open F, ">", $output_file or die "Cannot write to $output_file: $!";
+close F;
+unlink $output_file;
+
+my $parser   = Spreadsheet::ParseExcel::SaveParser->new();
+my $workbook = $parser->Parse($file);
+
+# Miss out 1st page
+my ( $intro, $worksheet ) = $workbook->worksheets();
+
+my ( $row_min, $row_max ) = $worksheet->row_range();
+my ( $col_min, $col_max ) = $worksheet->col_range();
+
+# Get index of all column headers. This allows extra columns to be added over time
+my $column_headers = [];
+
+# Setup column headings to object attributes
+my $headings_to_attributes = {
+    host                       => "name",
+    "hostname or ip"           => "ip",
+    "other addresses"          => "other_addresses",
+    "description"              => "alias",
+    "parents"                  => "parents",
+    "host group"               => "hostgroup",
+    "host check command"       => "check_command",
+    "icon"                     => "icon",
+    "keywords"                 => "keywords",
+    "notification options"     => "notification_options",
+    "notification period"      => "notification_period",
+    "re-notification interval" => "notification_interval",
+    "check period"             => "check_period",
+    "check interval"           => "check_interval",
+    "maximum check attempts"   => "check_attempts",
+    "retry interval"           => "retry_check_interval",
+    "host templates"           => "hosttemplates",
+    "enable snmp"              => "enable_snmp",
+    "snmp version"             => "snmp_version",
+    "snmp port"                => "snmp_port",
+    "snmp community"           => "snmp_community",
+    "snmp username"            => "snmpv3_username",
+    "snmp auth protocol"       => "snmpv3_auth_protocol",
+    "snmp auth password"       => "snmpv3_auth_password",
+    "snmp priv protocol"       => "snmpv3_priv_protocol",
+    "snmp priv password"       => "snmpv3_priv_password",
+    "use mrtg"                 => "use_mrtg",
+    "use nmis"                 => "use_nmis",
+    "nmis node type"           => "nmis_node_type",
+    "service checks"           => "servicechecks",
+    "monitored by"             => "monitored_by",
+
+    # These last ones are special cases - add them here for validation
+    "excluded service checks" => "excludedservicechecks",
+    "action"                  => "action",
+    "import status"           => "import status",
+    "import comments"         => "import comments",
+};
+
+# Find Action, Import status and Import comments columns
+my $ignore_attributes = {
+    "import status"   => undef,
+    "import comments" => undef,
+};
+my $rewriteable_columns = {
+    action => undef,
+    %$ignore_attributes,
+};
+
+# List of "allowed to be NULL" columns
+my $allow_nulls = { check_command => 1, };
+
+my ( $action_col, $import_status_col, $import_comments_col );
+for my $col ( $col_min .. $col_max ) {
+    my $cell = $worksheet->get_cell( 0, $col );
+    unless ($cell) {
+        $logger->logdie( "Header cells must be set. Column number $col not set"
+        );
+    }
+    my $value = $cell->value;
+
+    push @$column_headers, $value;
+
+    unless ( exists $headings_to_attributes->{ lc $value } ) {
+        $logger->logdie( "No heading_to_attributes found for $value" );
+    }
+    if ( exists $rewriteable_columns->{ lc $value } ) {
+        $rewriteable_columns->{ lc $value } = $col;
+    }
+}
+
+# Check all rewriteable columns exist
+for my $col ( keys %$rewriteable_columns ) {
+    my $v = $rewriteable_columns->{$col};
+    if ( !defined $v ) {
+        $logger->logdie(
+            "Cannot find $col in spreadsheet - must be on first line"
+        );
+    }
+    $logger->debug( "Found $col in column $v" );
+}
+
+my @inputs;
+
+# Read all data
+for my $row ( $row_min + 1 .. $row_max ) {
+
+    my $host = {};
+
+    for my $col ( $col_min .. $col_max ) {
+        my $cell = $worksheet->get_cell( $row, $col );
+
+        # We consider empty cells, or with contents set to blank as the attribute not set
+        if ( !$cell || $cell->value eq "" ) {
+            next;
+        }
+
+        my $heading = $column_headers->[$col];
+        unless ($heading) {
+            $logger->logdie( "No heading found for column $col" );
+        }
+
+        next if exists $ignore_attributes->{ lc $heading };
+
+        my $attribute_name = $headings_to_attributes->{ lc $heading };
+        unless ($attribute_name) {
+            $logger->logdie(
+                "No attribute name found for header $heading - dying!"
+            );
+        }
+
+        my $value = $cell->value;
+        if ( $value eq "null" ) {
+            $value = "";
+        }
+        $host->{data}->{$attribute_name} = $value;
+    }
+
+    if ( scalar keys %$host ) {
+        $host->{row}    = $row;
+        $host->{action} = delete $host->{data}->{action};
+        if ( defined $host->{action} ) {
+            push @inputs, $host;
+        }
+    }
+}
+
+if ( $logger->is_debug ) {
+    require Data::Dump;
+    print "Spreadsheet data:\n";
+    print Data::Dump::dump(@inputs);
+    print $/, $/;
+}
+
+# Resolve any foreign objects
+my @update_hosts;
+
+foreach my $host (@inputs) {
+
+    next unless ( defined $host->{action} && $host->{action} eq "update" );
+
+    push @update_hosts, $host;
+
+    my $data = $host->{data};
+
+    # Setup foreign references
+    foreach my $attribute (
+        qw(keywords hosttemplates servicechecks excludedservicechecks parents))
+    {
+        if ( exists $data->{$attribute} ) {
+            if ( !defined $data->{$attribute}
+                || $data->{$attribute} =~ /^\s*$/ )
+            {
+
+                # If only spaces or undefined in the spreadsheet, assume is mistake and remove this attribute from the update
+                delete $data->{$attribute};
+            }
+            else {
+                my @a = ();
+
+                # If column says NONE, then that means we'll reset to no objects
+                if ( $data->{$attribute} ne "NONE" ) {
+                    @a = split( /\s*,\s*/, $data->{$attribute} );
+                }
+                $data->{$attribute} = [ map { { name => $_ } } @a ];
+            }
+        }
+    }
+
+    foreach my $attribute (
+        qw(check_period notification_period icon check_command hostgroup monitored_by)
+      )
+    {
+        my $n = $data->{$attribute};
+        if ($n) {
+            if ( $n eq "NULL" && $allow_nulls->{$attribute} ) {
+                $data->{$attribute} = undef;
+            }
+            else {
+                $data->{$attribute} = { name => $n };
+            }
+        }
+    }
+
+}
+
+if ( $logger->is_debug ) {
+    print "After foreign keys:\n";
+    print Data::Dump::dump(@update_hosts);
+    print $/, $/;
+}
+
+unless ( $opts->{y} ) {
+    print "Will not import without -y flag\n";
+    exit;
+}
+
+my $schema = Opsview::Schema->my_connect;
+my $rs     = $schema->resultset( "Hosts" );
+
+my $results = {
+    success => 0,
+    failed  => 0
+};
+
+foreach my $host (@update_hosts) {
+    my $data = $host->{data};
+
+    # Pass to Opsview::ResultSet::Host->synchronise
+    # with user object (audit)
+    eval { $rs->synchronise($data) };
+
+    # Get status result
+    my $action          = "";
+    my $status          = "Success";
+    my $import_comments = "";
+    if ($@) {
+        $action          = "update";
+        $status          = "Error";
+        $import_comments = $@;
+        chomp $import_comments;
+        print $data->{name} . " failed: $import_comments\n";
+        $results->{failed}++;
+    }
+    else {
+        print $data->{name} . " succeeded\n";
+        $results->{success}++;
+    }
+
+    # Update spreadsheet. Use the update_text routine as it restores the original formatting
+    my $update_text = sub {
+        my ( $row, $col, $new_text ) = @_;
+        my $cell = $worksheet->get_cell( $row, $col );
+        my $format_number = $cell->{FormatNo};
+        $worksheet->AddCell( $row, $col, $new_text, $format_number );
+    };
+    $update_text->( $host->{row}, $rewriteable_columns->{"action"}, $action );
+    $update_text->(
+        $host->{row}, $rewriteable_columns->{"import status"}, $status
+    );
+    $update_text->(
+        $host->{row}, $rewriteable_columns->{"import comments"},
+        $import_comments
+    );
+
+}
+
+# Write results spreadsheet
+$workbook->SaveAs($output_file);
+
+# Get overall status result
+print "\n";
+print "Import complete\n";
+print "Success: " . $results->{success} . "\n";
+print "Failed: " . $results->{failed} . "\n";
+print "\n";
+
+if ( $results->{failed} == 0 ) {
+    $logger->info( "Excel import finished with errors: " . $results->{failed}
+    );
+    exit 1;
+}
+else {
+    $logger->info( "Excel import finished successfully" );
+    exit 0;
+}
+
+# Test:
+# Export of test db gives expected spreadsheet
+# Change a few values in test. Import. Check results spreadsheet

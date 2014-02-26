@@ -1,0 +1,22 @@
+#!/usr/bin/perl
+
+# This needs runtime to be populated - not sure how to test this automatically
+# Also, at moment, manually look in nagios.log to see if the external command
+# has been written to correctly
+
+use Test::More tests => 6;
+
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin/../lib", "$Bin/../etc";
+use Runtime;
+use Runtime::Hostgroup;
+
+my @hg = Runtime::Hostgroup->search( { name => "UK" } );
+isa_ok( $hg[0], "Runtime::Hostgroup" );
+isa_ok( $hg[1], "Runtime::Hostgroup" );
+
+is( $hg[0]->notifications("enable"),  "", "Notifications enabled" );
+is( $hg[1]->notifications("enable"),  "", "Notifications enabled" );
+is( $hg[0]->notifications("disable"), "", "Notifications disabled" );
+is( $hg[1]->notifications("disable"), "", "Notifications disabled" );

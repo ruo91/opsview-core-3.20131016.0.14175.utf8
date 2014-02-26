@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.network_services_ldap
+VERSION=1.0
+ALIAS=Network Services - LDAP
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

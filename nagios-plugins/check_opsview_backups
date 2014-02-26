@@ -1,0 +1,62 @@
+#!/usr/bin/perl
+
+#  Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#  W: http://www.opsview.com/
+#
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; either version 2 of the License, or
+#  (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software
+#  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+use warnings;
+use strict;
+use lib '/usr/local/nagios/perl/lib', '/usr/local/nagios/lib';
+use Nagios::Plugin;
+use Opsview::Config;
+
+my $np = Nagios::Plugin->new(
+    usage     => "Usage: %s {environment}",
+    shortname => "OPSVIEW",
+    blurb     => "Checks that opsview's backup job has run successfully",
+);
+
+# Checks that there is an opsview backup within the last 24 hours
+my $lower_threshold = time - ( 24 * 60 * 60 );
+
+$np->getopts;
+
+my $latest_nagios_files = 0;
+my $latest_nagios_db    = 0;
+
+my $dir = Opsview::Config->backup_dir;
+
+opendir( DIR, $dir ) or $np->nagios_die( "Cannot open $dir: $!" );
+my @files = grep !/^\.\.?\z/, readdir DIR;
+closedir DIR;
+foreach my $file (@files) {
+    $_ = ( stat "$dir/$file" )[9];
+    if ( $file =~ /^opsview-files/ && $_ > $latest_nagios_files ) {
+        $latest_nagios_files = $_;
+    }
+    elsif ( $file =~ /^opsview-db/ && $_ > $latest_nagios_db ) {
+        $latest_nagios_db = $_;
+    }
+}
+
+if ( $latest_nagios_files < $lower_threshold ) {
+    $np->nagios_exit( CRITICAL, "Opsview files not backed up" );
+}
+if ( $latest_nagios_db < $lower_threshold ) {
+    $np->nagios_exit( CRITICAL, "Opsview database not backed up" );
+}
+
+$np->nagios_exit( OK, "All Opsview backups run within last 24 hours" );

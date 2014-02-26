@@ -1,0 +1,205 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#    Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use strict;
+use warnings;
+
+use FindBin qw($Bin $Script);
+use lib '/usr/local/nagios/perl/lib';
+use lib $Bin. '/../lib';
+
+use Getopt::Long qw(:config no_ignore_case bundling no_auto_abbrev);
+use Pod::Usage;
+use Opsview::Config;
+
+my $VERSION = '0.01';
+
+my %options = (
+    'help|h|?'      => 0,
+    'man'           => 0,
+    'version|V'     => 0,
+    'debug:+'       => 0,
+    'latency|l=i'   => 0,
+    'execution|e=i' => 0,
+);
+
+GetOptions( \%options, keys(%options) ) || pod2usage( -verbose => 1 );
+
+die("Version: $VERSION\n") if ( $options{version} );
+pod2usage( -verbose => 1 ) if ( $options{'?'}  || $options{help} );
+pod2usage( -verbose => 2 ) if ( $options{HELP} || $options{man} );
+
+$options{debug} ||= 0;
+$options{debug} = 8 if ( $options{debug} > 8 );
+$options{latency}   ||= 30;
+$options{execution} ||= 30;
+
+sub logmsg($@) {
+    my ( $level, @text ) = @_;
+    print @text, $/ if ( $level <= $options{debug} );
+}
+
+my $vardir         = Opsview::Config->root_dir . '/var';
+my $retention_file = $vardir . '/retention.dat';
+
+logmsg( 1, "Script $Script is running out of $Bin" );
+
+logmsg( 1, "Opening $retention_file" );
+
+open( my $retention_fh, '<', $retention_file )
+  || die "Unable to open $retention_file for reading: $!", $/;
+
+my $in_stanza   = 0;
+my $stanza_type = undef;
+my $object      = {};
+
+while ( my $line = <$retention_fh> ) {
+    chomp($line);
+    if ( $line =~ m/^(\w+) {/ ) {
+        $in_stanza   = 1;
+        $stanza_type = $1;
+        $object      = {};
+
+        logmsg( 4, "Found stanza: $stanza_type" );
+        next;
+    }
+    if ( $line =~ m/^}/ ) {
+        $in_stanza = 0;
+        check_service_stanza($object) if ( $stanza_type eq 'service' );
+        next;
+    }
+
+    my ( $var, $val ) = split( /=/, $line, 2 );
+    $object->{$var} = $val;
+}
+
+close($retention_fh) || die( "Unable to close $retention_file: $!", $/ );
+
+sub check_service_stanza {
+    my ($service) = @_;
+
+    if ( $service->{check_latency} > $options{latency} ) {
+        print join( ' ',
+            'NOTE:',                         $service->{service_description},
+            'on',                            $service->{host_name},
+            'has latency of',                $service->{check_latency},
+            'seconds which is greater than', $options{latency} ),
+          'seconds', $/;
+    }
+    if ( $service->{check_execution_time} > $options{execution} ) {
+        print join( ' ',
+            'NOTE:',                         $service->{service_description},
+            'on',                            $service->{host_name},
+            'has an execution time of',      $service->{check_execution_time},
+            'seconds which is greater than', $options{execution},
+            'seconds latency' ),
+          $/;
+    }
+}
+
+exit 0;
+
+__END__
+
+=head1 NAME
+
+<script name>
+
+=head1 SYNOPSIS
+
+S<< parse_retention [-?hV] [-l <i>] [-e <i>] >>
+
+=head1 DESCRIPTION
+
+Parse the retention.dat file looking for high latency or high execution 
+plugins.  Use retnion.dat so can also be run on slaves, not just the 
+master server.
+
+=head1 OPTIONS
+
+=over
+
+=item --help, -?, -h
+
+Display basic help 
+
+=item --man
+
+Display man page
+
+=item --debug [0-9], --debug [--debug [...]]
+
+Enable debugging mode (using more than once increases verbosity, or specify
+a level explicitly to a maximum of level 8) 
+
+=item --version, -V
+
+Show version information
+
+=item -l 30, --latency 30
+
+Set the latency limit over which checks will be reported (default: 30 seconds)
+
+=item -e 30, --execution 30
+
+Set the execution time limit over which checks will be reported (default: 30 seconds)
+
+=back
+
+=head1 ARGUMENTS
+
+N/A
+
+=head1 NOTES
+
+N/A
+
+=head1 FILES
+
+N/A
+
+=head1 AUTHOR AND COPYRIGHT
+
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This software is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Opsview; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+=head1 KNOWN BUGS
+
+None known at this time.
+
+=head1 SEE ALSO
+
+L<perl>
+
+=cut

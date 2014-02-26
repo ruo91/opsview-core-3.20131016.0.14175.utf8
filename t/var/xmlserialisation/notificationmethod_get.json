@@ -1,0 +1,33 @@
+{
+      "namespace" : "com.opsview.notificationmethods.aql",
+      "master" : "0",
+      "name" : "AQL",
+      "active" : "1",
+      "notificationprofiles" : [
+         {
+            "ref" : "/rest/config/notificationprofile/3",
+            "name" : "Default"
+         },
+         {
+            "ref" : "/rest/config/notificationprofile/8",
+            "name" : "Default"
+         },
+         {
+            "ref" : "/rest/config/notificationprofile/9",
+            "name" : "Default"
+         },
+         {
+            "ref" : "/rest/config/notificationprofile/12",
+            "name" : "Non work hours sms"
+         },
+         {
+            "ref" : "/rest/config/notificationprofile/13",
+            "name" : "High priority"
+         }
+      ],
+      "id" : "1",
+      "uncommitted" : "0",
+      "command" : "submit_sms_aql -u '' -p '' -P ''",
+      "contact_variables" : "PAGER"
+   }
+

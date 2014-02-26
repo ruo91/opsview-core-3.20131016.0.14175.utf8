@@ -1,0 +1,46 @@
+{
+  list => [
+    {
+      actual_start_time => "2007-11-07 13:02:15",
+      author => "admin",
+      comment => "Service 'Coldstart': testing again",
+      objects => {
+        services => [
+          { hostname => "cisco2", id => 155, servicename => "Coldstart" },
+        ],
+      },
+      scheduled_end_time => "2007-11-20 16:34:47",
+      start_time => "2007-11-20 14:34:47",
+      started => 1,
+    },
+    {
+      author => "admin",
+      comment => "Hostgroup 'Leaf': in the future",
+      objects => {
+        services => [
+          { hostname => "cisco2", id => 154, servicename => "Another exception" },
+        ],
+      },
+      scheduled_end_time => "2007-11-20 16:34:47",
+      start_time => "2017-11-20 14:34:47",
+      started => 0,
+    },
+    {
+      author => "admin",
+      comment => "Hostgroup 'Leaf': in the future",
+      objects => { hosts => [{ hostname => "cisco2", id => 118 }] },
+      scheduled_end_time => "2017-11-20 16:34:47",
+      start_time => "2017-11-20 14:34:47",
+      started => 0,
+    },
+  ],
+  summary => {
+    allrows => 13,
+    num_hosts => 1,
+    num_services => 2,
+    page => 1,
+    rows => 3,
+    totalpages => 1,
+    totalrows => 3,
+  },
+}

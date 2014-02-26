@@ -1,0 +1,467 @@
+# type owner:group mode file_dest [file_source]
+# type=d(ir), f(ile), c(onfig file)
+# owner can be "owner:group", "owner.group" or "owner" (group defaults to bin)
+
+# Allow everyone to execute rc.opsview to get status. File permissions will stop
+# anyone else from doing anything distructive
+# If /usr/local/nagios is the nagios user's home directory, it cannot be 0775
+# as sshd will complain about loose permissions and disallow authorized_keys
+d nagios:nagios 0755 /usr/local/nagios
+d nagios:nagios 0755 /usr/local/nagios/bin
+f nagios:nagios 0755 /usr/local/nagios/bin/rc.opsview bin/rc.opsview
+f nagios:nagios 0755 /usr/local/nagios/bin/rc.opsview-agent bin/rc.opsview-agent
+f nagios:nagios 0755 /usr/local/nagios/bin/rc.opsview-slave bin/rc.opsview-slave
+f nagios:nagios 0750 /usr/local/nagios/bin/db_dump bin/db_dump
+f nagios:nagios 0750 /usr/local/nagios/bin/db_mysql bin/db_mysql
+f nagios:nagios 0750 /usr/local/nagios/bin/db_opsview bin/db_opsview
+f nagios:nagios 0750 /usr/local/nagios/bin/db_runtime bin/db_runtime
+f nagios:nagios 0750 /usr/local/nagios/bin/dosh       bin/dosh
+f nagios:nagios 0750 /usr/local/nagios/bin/check_constraints.sh bin/check_constraints.sh
+f nagios:nagios 0750 /usr/local/nagios/bin/exec_and_log         bin/exec_and_log
+f nagios:nagios 0750 /usr/local/nagios/bin/generate_slave_sync_status bin/generate_slave_sync_status
+f nagios:nagios 0750 /usr/local/nagios/bin/import_agentinfo bin/import_agentinfo
+f nagios:nagios 0750 /usr/local/nagios/bin/import_excel        bin/import_excel
+f nagios:nagios 0750 /usr/local/nagios/bin/import_json         bin/import_json
+f nagios:nagios 0750 /usr/local/nagios/bin/import_ndoconfigend bin/import_ndoconfigend
+f nagios:nagios 0750 /usr/local/nagios/bin/import_ndologsd     bin/import_ndologsd
+f nagios:nagios 0750 /usr/local/nagios/bin/import_perfdatarrd  bin/import_perfdatarrd
+f nagios:nagios 0750 /usr/local/nagios/bin/import_slaveresultsd bin/import_slaveresultsd
+f nagios:nagios 0750 /usr/local/nagios/bin/ndoutils_configdumpend bin/ndoutils_configdumpend
+f nagios:nagios 0750 /usr/local/nagios/bin/nlcat               bin/nlcat
+f nagios:nagios 0750 /usr/local/nagios/bin/nrd                 bin/nrd
+f nagios:nagios 0750 /usr/local/nagios/bin/opsview_api bin/opsview_api
+f nagios:nagios 0750 /usr/local/nagios/bin/opsview_rest bin/opsview_rest
+f nagios:nagios 0750 /usr/local/nagios/bin/opsview_diag             bin/opsview_diag
+f nagios:nagios 0750 /usr/local/nagios/bin/opsview_master_housekeep bin/opsview_master_housekeep
+f nagios:nagios 0750 /usr/local/nagios/bin/install_all_opspacks bin/install_all_opspacks
+#f nagios:nagios 0550 /usr/local/nagios/bin/opsview_housekeep bin/opsview_housekeep
+# Keep this for now, to keep backwards compatibility
+f nagios:nagios 0750 /usr/local/nagios/bin/opsview_cronjobs  bin/opsview_cronjobs
+f nagios:nagios 0750 /usr/local/nagios/bin/opsview_sync_ldap bin/opsview_sync_ldap
+f nagios:nagios 0444 /usr/local/nagios/bin/profile bin/profile
+f nagios:nagios 0750 /usr/local/nagios/bin/populate_db.pl bin/populate_db.pl
+f nagios:nagios 0750 /usr/local/nagios/bin/hosticon_admin bin/hosticon_admin
+f nagios:nagios 0750 /usr/local/nagios/bin/recheck_all_hosts_services bin/recheck_all_hosts_services
+f nagios:nagios 0750 /usr/local/nagios/bin/reset_uncommitted bin/reset_uncommitted
+f nagios:nagios 0750 /usr/local/nagios/bin/retrieve_opsview_info bin/retrieve_opsview_info
+f nagios:nagios 0750 /usr/local/nagios/bin/rotate_async_log bin/rotate_async_log
+# The rotate_ndo_log is left for moment, but is not used anymore with rotate_async_log in preference
+# Need to leave in for moment, because an upgrade may remove it while Nagios is running. Around 4.1 can be removed
+f nagios:nagios 0750 /usr/local/nagios/bin/rotate_ndo_log bin/rotate_ndo_log
+f nagios:nagios 0750 /usr/local/nagios/bin/rsync_nmis_database bin/rsync_nmis_database
+f nagios:nagios 0750 /usr/local/nagios/bin/opsviewd bin/opsviewd
+f nagios:nagios 0750 /usr/local/nagios/bin/send_nrd         bin/send_nrd
+f nagios:nagios 0750 /usr/local/nagios/bin/send_opsview_cmd bin/send_opsview_cmd
+f   root:nagios 0550 /usr/local/nagios/bin/install_slave bin/install_slave
+f   root:nagios 0540 /usr/local/nagios/bin/snmpd bin/snmpd
+f nagios:nagios 0750 /usr/local/nagios/bin/send2slaves bin/send2slaves
+f nagios:nagios 0750 /usr/local/nagios/bin/sendcmd2slaves bin/sendcmd2slaves
+f nagios:nagios 0750 /usr/local/nagios/bin/create_and_send_configs bin/create_and_send_configs
+f nagios:nagios 0750 /usr/local/nagios/bin/create_opspack     bin/create_opspack
+f nagios:nagios 0750 /usr/local/nagios/bin/call_nmis    bin/call_nmis
+f nagios:nagios 0750 /usr/local/nagios/bin/install_opspack    bin/install_opspack
+f nagios:nagios 0750 /usr/local/nagios/bin/ocsp_command bin/ocsp_command
+f nagios:nagios 0750 /usr/local/nagios/bin/ochp_command bin/ochp_command
+f nagios:nagios 0750 /usr/local/nagios/bin/process-cache-data bin/process-cache-data
+f nagios:nagios 0750 /usr/local/nagios/bin/set_to_stale bin/set_to_stale
+f nagios:nagios 0750 /usr/local/nagios/bin/sync_cluster_node_status  bin/sync_cluster_node_status
+f nagios:nagios 0750 /usr/local/nagios/bin/sync_nagios_now           bin/sync_nagios_now
+f nagios:nagios 0640 /usr/local/nagios/bin/sync.tt                   bin/sync.tt
+f nagios:nagios 0755 /usr/local/nagios/bin/check_file_state bin/check_file_state
+f nagios:nagios 0755 /usr/local/nagios/bin/collect_traps bin/collect_traps
+f nagios:nagios 0750 /usr/local/nagios/bin/process_configs bin/process_configs
+f nagios:nagios 0750 /usr/local/nagios/bin/promote_mib bin/promote_mib
+f nagios:nagios 0750 /usr/local/nagios/bin/refresh_state bin/refresh_state
+f nagios:nagios 0750 /usr/local/nagios/bin/register_module bin/register_module
+f nagios:nagios 0750 /usr/local/nagios/bin/return_file bin/return_file
+f nagios:nagios 0750 /usr/local/nagios/bin/insert.pl bin/insert.pl
+f nagios:nagios 0750 /usr/local/nagios/bin/hostips bin/hostips
+
+
+f nagios:nagios 0750 /usr/local/nagios/bin/query_host bin/query_host
+f nagios:nagios 0750 /usr/local/nagios/bin/aql_check_credits bin/aql_check_credits
+
+f nagios:nagios 0750 /usr/local/nagios/bin/opsview.sh bin/opsview.sh
+
+d nagios:nagios 0755 /usr/local/nagios/doc
+f nagios:nagios 0644 /usr/local/nagios/doc/COPYING doc/COPYING
+f nagios:nagios 0644 /usr/local/nagios/doc/README doc/README
+
+# To be used for modules
+d nagios:nagios 0755 /usr/local/nagios/modules
+
+# etc is not created by a make install from source/nagios-*
+# Files in etc must be readable by webserver as config is required by CGIs
+d nagios:nagios 0750 /usr/local/nagios/configs
+d nagios:nagcmd 0755 /usr/local/nagios/etc
+f nagios:nagios 0440 /usr/local/nagios/etc/opsview.defaults	etc/opsview.defaults
+c nagios:nagios 0640 /usr/local/nagios/etc/Log4perl.conf	etc/Log4perl.conf
+c nagios:nagios 0640 /usr/local/nagios/etc/Log4perl-slave.conf	etc/Log4perl-slave.conf
+f nagios:nagios 0440 /usr/local/nagios/etc/logrotate.conf	etc/logrotate.conf
+c nagios:nagios 0640 /usr/local/nagios/etc/nagiosgraph.conf	etc/nagiosgraph.conf
+f nagios:nagios 0440 /usr/local/nagios/etc/map	                etc/map
+f nagios:nagios 0440 /usr/local/nagios/etc/opsview_build_os     etc/opsview_build_os
+
+d nagios:nagios 0750 /usr/local/nagios/snmp
+d nagios:nagios 0770 /usr/local/nagios/snmp/load
+d nagios:nagios 0770 /usr/local/nagios/snmp/all
+
+d nagios:nagios 0755 /usr/local/nagios/import
+d nagios:nagios 0755 /usr/local/nagios/import/agents
+d nagios:nagios 0755 /usr/local/nagios/import/agents/solaris import/agents/solaris
+f nagios:nagios 0444 /usr/local/nagios/import/agents/solaris/check_cpu_solaris.txt             import/agents/solaris/check_cpu_solaris.txt
+f nagios:nagios 0444 /usr/local/nagios/import/agents/solaris/check_disksuite.txt               import/agents/solaris/check_disksuite.txt
+f nagios:nagios 0444 /usr/local/nagios/import/agents/solaris/check_memory_solaris.txt          import/agents/solaris/check_memory_solaris.txt
+f nagios:nagios 0444 /usr/local/nagios/import/agents/solaris/agent.yml                         import/agents/solaris/agent.yml
+f nagios:nagios 0444 /usr/local/nagios/import/agents/solaris/check_tcpconnections_solaris.txt  import/agents/solaris/check_tcpconnections_solaris.txt
+d nagios:nagios 0755 /usr/local/nagios/import/agents/windows
+f nagios:nagios 0444 /usr/local/nagios/import/agents/windows/win32_cpuload.txt                 import/agents/windows/win32_cpuload.txt
+f nagios:nagios 0444 /usr/local/nagios/import/agents/windows/win32_eventlog.txt                import/agents/windows/win32_eventlog.txt
+f nagios:nagios 0444 /usr/local/nagios/import/agents/windows/win32_memload.txt                 import/agents/windows/win32_memload.txt
+f nagios:nagios 0444 /usr/local/nagios/import/agents/windows/win32_service.txt                 import/agents/windows/win32_service.txt
+f nagios:nagios 0444 /usr/local/nagios/import/agents/windows/win32_systeminfo.txt              import/agents/windows/win32_systeminfo.txt
+f nagios:nagios 0444 /usr/local/nagios/import/agents/windows/win32_tcpconnections.txt          import/agents/windows/win32_tcpconnections.txt
+f nagios:nagios 0444 /usr/local/nagios/import/agents/windows/win32_wmi.txt                     import/agents/windows/win32_wmi.txt
+f nagios:nagios 0444 /usr/local/nagios/import/agents/windows/agent.yml                         import/agents/windows/agent.yml
+f nagios:nagios 0444 /usr/local/nagios/import/agents/windows/win32_diskspace.txt               import/agents/windows/win32_diskspace.txt
+d nagios:nagios 0755 /usr/local/nagios/import/agents/linux
+f nagios:nagios 0444 /usr/local/nagios/import/agents/linux/agent.yml                           import/agents/linux/agent.yml
+d nagios:nagios 0755 /usr/local/nagios/import/agents/macosx
+f nagios:nagios 0444 /usr/local/nagios/import/agents/macosx/agent.yml                          import/agents/macosx/agent.yml
+f nagios:nagios 0444 /usr/local/nagios/import/hosticons.db                                     import/hosticons.db
+f nagios:nagios 0444 /usr/local/nagios/import/servicechecks.db                                 import/servicechecks.db
+f nagios:nagios 0444 /usr/local/nagios/import/initial_opsview.sql                              import/initial_opsview.sql
+
+# opspacks
+d nagios:nagios 0755 /usr/local/nagios/import/opspacks
+f nagios:nagios 0750 /usr/local/nagios/import/opsview_master_post_opspacks import/opsview_master_post_opspacks
+f nagios:nagios 0440 /usr/local/nagios/import/opsview_master.def import/opsview_master.def
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/application-apache-http-server.tar.gz import/opspacks/application-apache-http-server.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/application-apache-tomcat.tar.gz import/opspacks/application-apache-tomcat.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/application-atlassian.tar.gz import/opspacks/application-atlassian.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/application-http.tar.gz import/opspacks/application-http.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/application-jasperreports.tar.gz import/opspacks/application-jasperreports.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/application-jboss.tar.gz import/opspacks/application-jboss.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/application-lotus-domino.tar.gz import/opspacks/application-lotus-domino.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/application-microsoft-active-directory.tar.gz import/opspacks/application-microsoft-active-directory.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/application-microsoft-exchange.tar.gz import/opspacks/application-microsoft-exchange.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/application-microsoft-iis.tar.gz import/opspacks/application-microsoft-iis.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/application-microsoft-sql-server.tar.gz import/opspacks/application-microsoft-sql-server.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/application-opensim-grid.tar.gz import/opspacks/application-opensim-grid.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/application-opensim.tar.gz import/opspacks/application-opensim.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/application-opsview-common.tar.gz import/opspacks/application-opsview-common.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/application-opsview-master.tar.gz import/opspacks/application-opsview-master.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/application-weblogic.tar.gz import/opspacks/application-weblogic.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/application-wordpress.tar.gz import/opspacks/application-wordpress.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/business-sla-monitors.tar.gz import/opspacks/business-sla-monitors.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/database-db2.tar.gz import/opspacks/database-db2.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/database-mysql-server.tar.gz import/opspacks/database-mysql-server.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/database-oracle.tar.gz import/opspacks/database-oracle.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/database-postgresql.tar.gz import/opspacks/database-postgresql.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/infrastructure-apc.tar.gz import/opspacks/infrastructure-apc.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/infrastructure-netbotz.tar.gz import/opspacks/infrastructure-netbotz.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/infrastructure-sensatronics.tar.gz import/opspacks/infrastructure-sensatronics.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/management-puppet.tar.gz import/opspacks/management-puppet.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-base.tar.gz import/opspacks/network-base.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-cisco-advanced.tar.gz import/opspacks/network-cisco-advanced.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-cisco.tar.gz import/opspacks/network-cisco.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-foundry.tar.gz import/opspacks/network-foundry.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-juniper.tar.gz import/opspacks/network-juniper.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-linksys-wireless.tar.gz import/opspacks/network-linksys-wireless.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-netscaler.tar.gz import/opspacks/network-netscaler.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-services-corba.tar.gz import/opspacks/network-services-corba.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-services-dhcp.tar.gz import/opspacks/network-services-dhcp.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-services-dns.tar.gz import/opspacks/network-services-dns.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-services-email.tar.gz import/opspacks/network-services-email.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-services-ftp.tar.gz import/opspacks/network-services-ftp.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-services-iiop.tar.gz import/opspacks/network-services-iiop.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-services-jabber.tar.gz import/opspacks/network-services-jabber.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-services-kerberos.tar.gz import/opspacks/network-services-kerberos.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-services-ldap.tar.gz import/opspacks/network-services-ldap.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-services-nfs.tar.gz import/opspacks/network-services-nfs.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-services-nntp.tar.gz import/opspacks/network-services-nntp.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-services-ntp.tar.gz import/opspacks/network-services-ntp.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-services-radius.tar.gz import/opspacks/network-services-radius.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-services-ssh.tar.gz import/opspacks/network-services-ssh.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-services-tacacs.tar.gz import/opspacks/network-services-tacacs.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-services-telnet.tar.gz import/opspacks/network-services-telnet.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-services-tftp.tar.gz import/opspacks/network-services-tftp.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-services-vnc.tar.gz import/opspacks/network-services-vnc.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-vpn.tar.gz import/opspacks/network-vpn.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/network-wan.tar.gz import/opspacks/network-wan.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/os-opsview-agent.tar.gz import/opspacks/os-opsview-agent.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/os-linux-snmp.tar.gz import/opspacks/os-linux-snmp.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/os-unix-advanced.tar.gz import/opspacks/os-unix-advanced.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/os-unix-agentless.tar.gz import/opspacks/os-unix-agentless.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/os-unix-base.tar.gz import/opspacks/os-unix-base.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/os-windows-advanced.tar.gz import/opspacks/os-windows-advanced.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/os-windows-base.tar.gz import/opspacks/os-windows-base.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/os-windows-event-log.tar.gz import/opspacks/os-windows-event-log.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/service-provider-amazon.tar.gz import/opspacks/service-provider-amazon.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/service-provider-aql.tar.gz import/opspacks/service-provider-aql.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/service-provider-slicehost.tar.gz import/opspacks/service-provider-slicehost.tar.gz
+f nagios:nagios 0444 /usr/local/nagios/import/opspacks/snmp-mib-ii.tar.gz import/opspacks/snmp-mib-ii.tar.gz
+
+d nagios:nagios 0755 /usr/local/nagios/lib
+d nagios:nagios 0755 /usr/local/nagios/libexec
+d nagios:nagios 0755 /usr/local/nagios/libexec/eventhandlers
+d nagios:nagios 0755 /usr/local/nagios/libexec/notifications
+d nagios:nagios 0755 /usr/local/nagios/libexec/plugins.d
+
+
+
+# Note, this one below is slightly different. This is to avoid putting under libexec/ which is svn:ignored
+f nagios:nagios 0755 /usr/local/nagios/libexec/notifications/submit_sms_aql         notifications/submit_sms_aql
+f nagios:nagios 0755 /usr/local/nagios/libexec/notifications/submit_sms_script      notifications/submit_sms_script
+f nagios:nagios 0755 /usr/local/nagios/libexec/notifications/notify_by_email        notifications/notify_by_email
+f nagios:nagios 0644 /usr/local/nagios/libexec/notifications/com.opsview.notificationmethods.email.tt notifications/com.opsview.notificationmethods.email.tt
+f nagios:nagios 0755 /usr/local/nagios/libexec/notifications/notify_by_rss          notifications/notify_by_rss
+f nagios:nagios 0755 /usr/local/nagios/libexec/notifications/notify_by_googletalk   notifications/notify_by_googletalk
+f nagios:nagios 0755 /usr/local/nagios/libexec/notifications/notify_by_ios_push     notifications/notify_by_ios_push
+f nagios:nagios 0755 /usr/local/nagios/libexec/notifications/submit_xmpp_script     notifications/submit_xmpp_script
+
+# Same goes for event handlers
+f nagios:nagios 0755 /usr/local/nagios/libexec/eventhandlers/cluster_node_takeover_hosts  eventhandlers/cluster_node_takeover_hosts
+f nagios:nagios 0755 /usr/local/nagios/libexec/eventhandlers/slave_node_resync     eventhandlers/slave_node_resync
+
+# xs
+d nagios:nagios 0755 /usr/local/nagios/lib/auto
+d nagios:nagios 0755 /usr/local/nagios/lib/auto/Opsview
+d nagios:nagios 0755 /usr/local/nagios/lib/auto/Opsview/Utils
+d nagios:nagios 0755 /usr/local/nagios/lib/auto/Opsview/Utils/NDOLogsImporter
+d nagios:nagios 0755 /usr/local/nagios/lib/auto/Opsview/Utils/NDOLogsImporter/XS
+f nagios:nagios 0644 /usr/local/nagios/lib/auto/Opsview/Utils/NDOLogsImporter/XS/XS.bs opsview-perl-modules/Opsview-Utils-NDOLogsImporter-XS/blib/arch/auto/Opsview/Utils/NDOLogsImporter/XS/XS.bs
+f nagios:nagios 0755 /usr/local/nagios/lib/auto/Opsview/Utils/NDOLogsImporter/XS/XS.so opsview-perl-modules/Opsview-Utils-NDOLogsImporter-XS/blib/arch/auto/Opsview/Utils/NDOLogsImporter/XS/XS.so
+
+
+d nagios:nagios 0755 /usr/local/nagios/sbin
+f nagios:nagios 0550 /usr/local/nagios/sbin/query_host.cgi sbin/query_host.cgi
+f nagios:nagios 0550 /usr/local/nagios/sbin/mrtg-rrd.cgi sbin/mrtg-rrd.cgi
+
+d nagios:nagios 0755 /usr/local/nagios/opsview-plugins
+d nagios:nagios 0755 /usr/local/nagios/opsview-plugins/postinstall
+d nagios:nagios 0755 /usr/local/nagios/opsview-plugins/process_configs
+
+d nagios:nagios 0755 /usr/local/nagios/share
+d nagios:nagios 0755 /usr/local/nagios/share/javascript
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/ajaxdatatable.js share/javascript/ajaxdatatable.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/ajaxglobals.js share/javascript/ajaxglobals.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/ajaxgraph.js share/javascript/ajaxgraph.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/ajaxsparkline.js share/javascript/ajaxsparkline.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/ajaxtimegraph.js share/javascript/ajaxtimegraph.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/closing.js share/javascript/closing.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/destruction.js share/javascript/destruction.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/dump.js share/javascript/dump.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/events.js share/javascript/events.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/performancedataviewport.js share/javascript/performancedataviewport.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/forms.js share/javascript/forms.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/jquery.noConflict.js share/javascript/jquery.noConflict.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/jquery-1.7.1.min.js share/javascript/jquery-1.7.1.min.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/jquery.cookie.js share/javascript/jquery.cookie.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/jquery.placeholder.min.js share/javascript/jquery.placeholder.min.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/jquery-ui-1.8.18.custom.min.js share/javascript/jquery-ui-1.8.18.custom.min.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/opsviewgraphs.js share/javascript/opsviewgraphs.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/opsview_sidenav.js share/javascript/opsview_sidenav.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/opsview-common.js share/javascript/opsview-common.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/resizing.js share/javascript/resizing.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/serialization.js share/javascript/serialization.js
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/viewports.js share/javascript/viewports.js
+
+d nagios:nagios 0755 /usr/local/nagios/share/javascript/navmenu
+f nagios:nagios 0644 /usr/local/nagios/share/javascript/navmenu/navigation.js share/javascript/navmenu/navigation.js
+d nagios:nagios 0755 /usr/local/nagios/share/static
+d nagios:nagios 0755 /usr/local/nagios/share/stylesheets/navmenu
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/navmenu/navigation.css     share/stylesheets/navmenu/navigation.css
+d nagios:nagios 0755 /usr/local/nagios/share/stylesheets/navmenu/img
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/navmenu/img/arrow_down1.png   share/stylesheets/navmenu/img/arrow_down1.png
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/navmenu/img/arrow_down2.png   share/stylesheets/navmenu/img/arrow_down2.png
+d nagios:nagios 0755 /usr/local/nagios/share/stylesheets/navmenu/ie
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/navmenu/ie/ie_right2.png   share/stylesheets/navmenu/ie/ie_right2.png
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/navmenu/ie/ie.css          share/stylesheets/navmenu/ie/ie.css
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/navmenu/ie/ie_down1.png    share/stylesheets/navmenu/ie/ie_down1.png
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/navmenu/ie/ie_down2.png    share/stylesheets/navmenu/ie/ie_down2.png
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/navmenu/ie/ie_down1b.png   share/stylesheets/navmenu/ie/ie_down1b.png
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/navmenu/ie/ie_left1.png    share/stylesheets/navmenu/ie/ie_left1.png
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/navmenu/ie/csshover3.htc   share/stylesheets/navmenu/ie/csshover3.htc
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/navmenu/ie/ie_left2.png    share/stylesheets/navmenu/ie/ie_left2.png
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/navmenu/ie/ie_right1.png   share/stylesheets/navmenu/ie/ie_right1.png
+d nagios:nagios 0755 /usr/local/nagios/share/stylesheets/ui-opsview
+d nagios:nagios 0755 /usr/local/nagios/share/stylesheets/ui-opsview/images
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/ui-opsview/jquery-ui-1.8.18.custom.css share/stylesheets/ui-opsview/jquery-ui-1.8.18.custom.css
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/ui-opsview/images/ui-icons_222222_256x240.png share/stylesheets/ui-opsview/images/ui-icons_222222_256x240.png
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/ui-opsview/images/ui-bg_flat_0_aaaaaa_40x100.png share/stylesheets/ui-opsview/images/ui-bg_flat_0_aaaaaa_40x100.png
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/ui-opsview/images/ui-bg_flat_75_eaeaea_40x100.png share/stylesheets/ui-opsview/images/ui-bg_flat_75_eaeaea_40x100.png
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/ui-opsview/images/ui-bg_glass_55_fbf9ee_1x400.png share/stylesheets/ui-opsview/images/ui-bg_glass_55_fbf9ee_1x400.png
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/ui-opsview/images/ui-bg_glass_65_adacac_1x400.png share/stylesheets/ui-opsview/images/ui-bg_glass_65_adacac_1x400.png
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/ui-opsview/images/ui-bg_glass_75_adacaa_1x400.png share/stylesheets/ui-opsview/images/ui-bg_glass_75_adacaa_1x400.png
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/ui-opsview/images/ui-bg_glass_75_c5bccc_1x400.png share/stylesheets/ui-opsview/images/ui-bg_glass_75_c5bccc_1x400.png
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/ui-opsview/images/ui-bg_highlight-soft_75_cccccc_1x100.png share/stylesheets/ui-opsview/images/ui-bg_highlight-soft_75_cccccc_1x100.png
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/ui-opsview/images/ui-bg_inset-soft_95_fef1ec_1x100.png share/stylesheets/ui-opsview/images/ui-bg_inset-soft_95_fef1ec_1x100.png
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/ui-opsview/images/ui-icons_2e83ff_256x240.png share/stylesheets/ui-opsview/images/ui-icons_2e83ff_256x240.png
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/ui-opsview/images/ui-icons_454545_256x240.png share/stylesheets/ui-opsview/images/ui-icons_454545_256x240.png
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/ui-opsview/images/ui-icons_888888_256x240.png share/stylesheets/ui-opsview/images/ui-icons_888888_256x240.png
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/ui-opsview/images/ui-icons_cd0a0a_256x240.png share/stylesheets/ui-opsview/images/ui-icons_cd0a0a_256x240.png
+
+f nagios:nagios 0444 /usr/local/nagios/share/slave_index.html share/slave_index.html
+f nagios:nagios 0444 /usr/local/nagios/share/sidenav.html share/sidenav.html
+f nagios:nagios 0444 /usr/local/nagios/share/favicon.ico share/favicon.ico
+d nagios:nagios 0755 /usr/local/nagios/share/stylesheets
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/ajaxcommon.css share/stylesheets/ajaxcommon.css
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/ajaxgraph.css  share/stylesheets/ajaxgraph.css
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/events.css share/stylesheets/events.css
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/opsview.css share/stylesheets/opsview.css
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/opsview2.css share/stylesheets/opsview2.css
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/opsview2_ie6.css share/stylesheets/opsview2_ie6.css
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/opsview2_ie7.css share/stylesheets/opsview2_ie7.css
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/opsview2_ie8.css share/stylesheets/opsview2_ie8.css
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/opsviewgraphs.css share/stylesheets/opsviewgraphs.css
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/admin.css share/stylesheets/admin.css
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/sidenav.css share/stylesheets/sidenav.css
+f nagios:nagios 0644 /usr/local/nagios/share/stylesheets/mrtg.css share/stylesheets/mrtg.css
+c nagios:nagios 0644 /usr/local/nagios/share/stylesheets/custom.css share/stylesheets/custom.css
+d nagios:nagios 0755 /usr/local/nagios/share/xml
+f nagios:nagios 0444 /usr/local/nagios/share/xml/nagios.rng share/xml/nagios.rng
+f nagios:nagios 0444 /usr/local/nagios/share/xml/opsview.rng share/xml/opsview.rng
+
+f nagios:nagios 0444 /usr/local/nagios/share/media/state_change.wav share/media/state_change.wav
+
+d nagios:nagios 0755 /usr/local/nagios/share/error_pages
+f nagios:nagios 0444 /usr/local/nagios/share/error_pages/errordocuments.css share/error_pages/errordocuments.css
+f nagios:nagios 0444 /usr/local/nagios/share/error_pages/http502.html share/error_pages/http502.html
+f nagios:nagios 0444 /usr/local/nagios/share/error_pages/status-500.html share/error_pages/status-500.html
+f nagios:nagios 0555 /usr/local/nagios/share/error_pages/handle_error.cgi share/error_pages/handle_error.cgi
+
+# Location for mrtg images
+d nagios:nagios 0775 /usr/local/nagios/share/mrtg
+
+# Location of temporary files
+d nagios:nagios 0750 /usr/local/nagios/tmp
+
+# Location for perf graphs and rrd files
+# NOTE: If you add directories, update install_slave if it also needs to exist on slave
+d nagios:nagios 0755 /usr/local/nagios/var
+d nagios:nagios 0755 /usr/local/nagios/share/perfinfo
+d nagios:nagios 0750 /usr/local/nagios/var/backups
+d nagios:nagios 0755 /usr/local/nagios/var/perfdb
+d nagios:nagios 0755 /usr/local/nagios/var/mrtg
+d nagios:nagios 0775 /usr/local/nagios/var/log
+d nagios:nagios 2750 /usr/local/nagios/var/rrd
+d nagios:nagios 0755 /usr/local/nagios/var/ndoconfigend
+d nagios:nagios 0755 /usr/local/nagios/var/ndologs
+d nagios:nagios 0755 /usr/local/nagios/var/perfdatarrd
+d nagios:nagios 0775 /usr/local/nagios/var/plugins
+d nagios:nagios 0755 /usr/local/nagios/var/reports
+d nagios:nagios 0755 /usr/local/nagios/var/slaveresults
+d nagios:nagios 0775 /usr/local/nagios/var/spool
+d nagios:nagios 0775 /usr/local/nagios/var/spool/checkresults
+d nagios:nagios 0775 /usr/local/nagios/var/spool/opspacks
+# Need to create this file to get the right permissions
+f nagios:nagios 0644 /usr/local/nagios/var/opsview_proxy_audit.log installer/empty_file
+f nagios:nagios 0660 /usr/local/nagios/var/log/nagiosgraph.log installer/empty_file
+
+# Location for atom directory
+d nagios:nagios 0755 /usr/local/nagios/atom
+
+f nagios:nagios 0750 /usr/local/nagios/bin/mrtg_genstats.sh bin/mrtg_genstats.sh
+f nagios:nagios 0750 /usr/local/nagios/bin/mrtgconfgen.pl bin/mrtgconfgen.pl
+f nagios:nagios 0750 /usr/local/nagios/bin/nagconfgen.pl bin/nagconfgen.pl
+
+f nagios:nagios 0644 /usr/local/nagios/installer/apache_proxy.conf installer/apache_proxy.conf
+f nagios:nagios 0644 /usr/local/nagios/installer/apache_ssl.conf   installer/apache_ssl.conf
+f nagios:nagios 0644 /usr/local/nagios/installer/apache_opsview_slave.conf installer/apache_opsview_slave.conf
+f nagios:nagios 0555 /usr/local/nagios/installer/check_hostgroup_restrictions installer/check_hostgroup_restrictions
+f nagios:nagios 0555 /usr/local/nagios/installer/check_reqs        installer/check_reqs
+f nagios:nagios 0555 /usr/local/nagios/installer/clean_opsview_vm  installer/clean_opsview_vm
+f nagios:nagios 0555 /usr/local/nagios/installer/convert_servicecheck_categories installer/convert_servicecheck_categories
+f nagios:nagios 0555 /usr/local/nagios/installer/create_nagios_users installer/create_nagios_users
+f nagios:nagios 0444 /usr/local/nagios/installer/crontab-slave.nagios installer/crontab-slave.nagios
+f nagios:nagios 0444 /usr/local/nagios/installer/crontab.nagios      installer/crontab.nagios
+f nagios:nagios 0555 /usr/local/nagios/installer/import_excel.xls    installer/import_excel.xls
+f nagios:nagios 0444 /usr/local/nagios/installer/logrotate_opsview   installer/logrotate_opsview
+f nagios:nagios 0555 /usr/local/nagios/installer/migrate_nagios      installer/migrate_nagios
+f nagios:nagios 0555 /usr/local/nagios/installer/migrate_rrds        installer/migrate_rrds
+f nagios:nagios 0555 /usr/local/nagios/installer/nagios_3-4_servicechecks.pl        installer/nagios_3-4_servicechecks.pl
+f nagios:nagios 0555 /usr/local/nagios/installer/opsview_preupgrade_check installer/opsview_preupgrade_check
+f root:nagios   0550 /usr/local/nagios/installer/postinstall_root    installer/postinstall_root
+f nagios:nagios 0550 /usr/local/nagios/installer/postinstall         installer/postinstall
+f root:nagios   0555 /usr/local/nagios/installer/preremove           installer/preremove
+f nagios:nagios 0550 /usr/local/nagios/installer/rrd_check_metrics   installer/rrd_check_metrics
+f nagios:nagios 0550 /usr/local/nagios/installer/set_module          installer/set_module
+f nagios:nagios 0550 /usr/local/nagios/installer/set_profile         installer/set_profile
+f nagios:nagios 0555 /usr/local/nagios/installer/create_initial_opsview_conf installer/create_initial_opsview_conf
+f nagios:nagios 0555 /usr/local/nagios/installer/rrd_converter       installer/rrd_converter
+f nagios:nagios 0755 /usr/local/nagios/installer/update_opsview_conf installer/update_opsview_conf
+f nagios:nagios 0555 /usr/local/nagios/installer/upgradedb.pl        installer/upgradedb.pl
+f nagios:nagios 0555 /usr/local/nagios/installer/upgradedb_opsview.pl installer/upgradedb_opsview.pl
+f nagios:nagios 0555 /usr/local/nagios/installer/upgradedb_runtime.pl installer/upgradedb_runtime.pl
+
+d nagios:nagios 0755 /usr/local/nagios/utils
+f nagios:nagios 0555 /usr/local/nagios/utils/README utils/README
+f nagios:nagios 0755 /usr/local/nagios/utils/addevent utils/addevent
+f nagios:nagios 0755 /usr/local/nagios/utils/change_hostgroup_host utils/change_hostgroup_host
+f nagios:nagios 0755 /usr/local/nagios/utils/change_intervals utils/change_intervals
+f nagios:nagios 0755 /usr/local/nagios/utils/check_ai_count utils/check_ai_count
+f nagios:nagios 0755 /usr/local/nagios/utils/check_db_space utils/check_db_space
+f nagios:nagios 0755 /usr/local/nagios/utils/check_nagios_log utils/check_nagios_log
+f nagios:nagios 0755 /usr/local/nagios/utils/check_wrapper utils/check_wrapper
+f nagios:nagios 0755 /usr/local/nagios/utils/cleanout_config utils/cleanout_config
+f nagios:nagios 0755 /usr/local/nagios/utils/clone_host utils/clone_host
+f nagios:nagios 0755 /usr/local/nagios/utils/compare_ownerships utils/compare_ownerships
+f nagios:nagios 0755 /usr/local/nagios/utils/convert_db_remote utils/convert_db_remote
+f nagios:nagios 0755 /usr/local/nagios/utils/copy_host_attributes utils/copy_host_attributes
+f nagios:nagios 0755 /usr/local/nagios/utils/count_rows utils/count_rows
+f nagios:nagios 0755 /usr/local/nagios/utils/db_data_age utils/db_data_age
+f nagios:nagios 0755 /usr/local/nagios/utils/create_locale_files utils/create_locale_files
+f nagios:nagios 0755 /usr/local/nagios/utils/create_module utils/create_module
+f nagios:nagios 0755 /usr/local/nagios/utils/cx utils/cx
+f nagios:nagios 0755 /usr/local/nagios/utils/datatidy utils/datatidy
+f nagios:nagios 0755 /usr/local/nagios/utils/dump_dbix_schema utils/dump_dbix_schema
+f nagios:nagios 0755 /usr/local/nagios/utils/dump_events utils/dump_events
+f nagios:nagios 0755 /usr/local/nagios/utils/dump_servicechecks utils/dump_servicechecks
+f nagios:nagios 0755 /usr/local/nagios/utils/enable_all_nots utils/enable_all_nots
+f nagios:nagios 0755 /usr/local/nagios/utils/examine_orig_traps utils/examine_orig_traps
+f nagios:nagios 0755 /usr/local/nagios/utils/export_full_config utils/export_full_config
+f nagios:nagios 0755 /usr/local/nagios/utils/export_host_template utils/export_host_template
+f nagios:nagios 0755 /usr/local/nagios/utils/exrc utils/exrc
+f nagios:nagios 0755 /usr/local/nagios/utils/move_device_between_servers utils/move_device_between_servers
+f nagios:nagios 0755 /usr/local/nagios/utils/generate_schema utils/generate_schema
+f nagios:nagios 0755 /usr/local/nagios/utils/generate_schema_2 utils/generate_schema_2
+f nagios:nagios 0755 /usr/local/nagios/utils/hostgroup_newick.pl utils/hostgroup_newick.pl
+f nagios:nagios 0755 /usr/local/nagios/utils/list_timeperiod_users utils/list_timeperiod_users
+f nagios:nagios 0755 /usr/local/nagios/utils/list_unknown_devices utils/list_unknown_devices
+f nagios:nagios 0755 /usr/local/nagios/utils/mass_submit_passive_results utils/mass_submit_passive_results
+f nagios:nagios 0755 /usr/local/nagios/utils/mysql_check_tables utils/mysql_check_tables
+f nagios:nagios 0755 /usr/local/nagios/utils/get_actual_command utils/get_actual_command
+f nagios:nagios 0755 /usr/local/nagios/utils/alert_every_failure utils/alert_every_failure
+f nagios:nagios 0755 /usr/local/nagios/utils/obsfuscate_db utils/obsfuscate_db
+f nagios:nagios 0755 /usr/local/nagios/utils/optimize_db utils/optimize_db
+f nagios:nagios 0755 /usr/local/nagios/utils/parse_config_json utils/parse_config_json
+f nagios:nagios 0755 /usr/local/nagios/utils/parse_retention utils/parse_retention
+f nagios:nagios 0755 /usr/local/nagios/utils/read_opsview_sessions utils/read_opsview_sessions
+f nagios:nagios 0755 /usr/local/nagios/utils/rename_host utils/rename_host
+f nagios:nagios 0755 /usr/local/nagios/utils/repair_db utils/repair_db
+f nagios:nagios 0755 /usr/local/nagios/utils/resched_all_host_checks utils/resched_all_host_checks
+f nagios:nagios 0755 /usr/local/nagios/utils/reset_sched_queue utils/reset_sched_queue
+f nagios:nagios 0755 /usr/local/nagios/utils/reschedule_checks utils/reschedule_checks
+f nagios:nagios 0755 /usr/local/nagios/utils/svcgrp_enable utils/svcgrp_enable
+f nagios:nagios 0755 /usr/local/nagios/utils/test_db_post utils/test_db_post
+f nagios:nagios 0755 /usr/local/nagios/utils/test_notifications utils/test_notifications
+f nagios:nagios 0755 /usr/local/nagios/utils/update_copyrights utils/update_copyrights
+f nagios:nagios 0755 /usr/local/nagios/utils/update_opsview_schema_classes utils/update_opsview_schema_classes
+f nagios:nagios 0755 /usr/local/nagios/utils/update_test_dbs utils/update_test_dbs
+f nagios:nagios 0755 /usr/local/nagios/utils/watch_spool utils/watch_spool
+f nagios:nagios 0755 /usr/local/nagios/utils/innodb_housekeeping utils/innodb_housekeeping
+
+d nagios:nagios 0755 /var/run/opsview
+d nagios:nagios 0755 /var/log/opsview
+
+# This directory is for the Berkeley db's working area
+# I think an empty file is required for RPM, otherwise the directory is ignored
+# IMPORTANT! If you add a directory that is not in /usr/local/nagios, you will need to update
+# RPM spec file to include the directory
+d nagios:nagios 0775 /opt/opsview/work
+f nagios:nagios 0644 /opt/opsview/work/.do-not-remove installer/empty_file
+
+
+# lib/ will be appended here 
+

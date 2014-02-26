@@ -1,0 +1,131 @@
+#!/usr/bin/perl -w
+#
+#
+# SYNTAX:
+my $usage = qq{
+submit_sms_aql
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+Usage: submit_sms_aql -u aql_username -p aql_password -P proxy [-m num] [-n]
+Options: 
+  -u,-p    AQL's username and password
+  -P       Proxy to use. Can be empty
+  -m num   Maximum number of texts of 160 chars to send. Will truncate to (160*num). Defaults to 1
+  -n       Do not send acknowledgements
+
+};
+
+#
+# DESCRIPTION:
+#	Sends text message via AQL
+#
+# LICENCE:
+#    Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+sub usage {
+    if ( $_ = shift ) { print "Error: $_\n" }
+    print $usage;
+    exit 1;
+}
+
+use strict;
+
+use lib "/usr/local/nagios/lib", "/usr/local/nagios/perl/lib";
+use Getopt::Std;
+use SMS::AQL;
+use Opsview::Config::Notifications;
+
+sub ldie { $_ = shift; print $_. $/; exit 1 }
+
+my $opts = {};
+getopts( "hu:p:m:P:n", $opts );
+
+if ( $opts->{h} ) {
+    usage();
+    exit(0);
+}
+
+if ( $opts->{n} && $ENV{NAGIOS_NOTIFICATIONTYPE} eq 'ACKNOWLEDGEMENT' ) {
+    print 'Not sending acknowledgement', $/;
+    exit 0;
+}
+
+my $config = Opsview::Config::Notifications->notification_variables(
+    "com.opsview.notificationmethods.aql"
+);
+my $username =
+     $opts->{u}
+  || $config->{AQL_USERNAME}
+  || usage "Must specify AQL username";
+my $password =
+     $opts->{p}
+  || $config->{AQL_PASSWORD}
+  || usage "Must specify AQL password";
+my $aql_options = { sender => "Opsview" };
+my $proxy_server = exists $opts->{P} ? $opts->{P} : $config->{AQL_PROXY_SERVER}
+  || '';
+if ( $proxy_server ne '' ) {
+    $aql_options->{proxy} = $proxy_server;
+}
+
+my $numbers = $ENV{NAGIOS_CONTACTPAGER}
+  || ldie "Must have CONTACTPAGER for this notification script";
+
+my $text;
+if ( $ENV{NAGIOS_SERVICEDESC} ) {
+    $text =
+      "$ENV{NAGIOS_NOTIFICATIONTYPE}: $ENV{NAGIOS_SERVICEDESC} on $ENV{NAGIOS_HOSTNAME} is $ENV{NAGIOS_SERVICESTATE}: $ENV{NAGIOS_SERVICEOUTPUT} ($ENV{NAGIOS_SHORTDATETIME})";
+}
+else {
+    $text =
+      "$ENV{NAGIOS_NOTIFICATIONTYPE}: $ENV{NAGIOS_HOSTNAME} is $ENV{NAGIOS_HOSTSTATE}: $ENV{NAGIOS_HOSTOUTPUT} ($ENV{NAGIOS_SHORTDATETIME})";
+}
+
+my $sms = SMS::AQL->new(
+    {
+        username => $username,
+        password => $password,
+        options  => $aql_options
+    }
+);
+
+my @numbers = split( ",", $numbers );
+
+# Validate in right format, eg, starts with a +
+foreach my $n (@numbers) {
+    ldie "Number must start with a +" unless $n =~ /^\+/;
+}
+
+# Cleanup numbers: remove spaces
+@numbers = map { s/\+//; s/ //g; $_ } @numbers;
+
+# Cleanup text
+$text =~ s/\n/ /g;
+my $maxchars = ( $opts->{m} || 1 ) * 160;
+$text = substr( $text, 0, $maxchars );
+
+foreach my $n (@numbers) {
+    my $ok = $sms->send_sms( $n, $text );
+    if ( !$ok ) {
+        print "Error: " . $sms->last_error . $/;
+    }
+}
+print "Submitted to AQL", $/;
+exit;

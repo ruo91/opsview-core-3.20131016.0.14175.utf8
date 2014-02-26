@@ -1,0 +1,204 @@
+#!/usr/bin/perl
+#
+#
+# AUTHORS:
+#       Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+
+my $np = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => "check_snmp_weblogic_jdbcconns",
+    version   => "1.1",
+    blurb =>
+      "Checks the number of active connections in a JDBC connection pool, or the number of waiters.",
+    snmp => {
+        "snmp-version" => 1,
+        "snmp-timeout" => 2,
+    },
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w, --warning=INTEGER
+    Warning threshold},
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c, --critical=INTEGER
+    Critical threshold},
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "server|s=s",
+    help => qq{-s, --server=INTEGER
+    Weblogic server name},
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "pool|P=s",
+    help => qq{-P, --pool=INTEGER
+    Pool name to check connections for},
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "waiting|W=s",
+    help => qq{-W, --waiting=INTEGER
+    Check waiting connections not current capacity},
+);
+
+$np->getopts;
+
+my $warning  = $np->opts->warning;
+my $critical = $np->opts->critical;
+
+my $pool_name     = $np->opts->pool;
+my $check_waiting = 0;
+if ( $np->opts->waiting ) {
+    $check_waiting = 1;
+}
+
+my $s = $np->snmp(
+    { rocommunity => $np->opts->rocommunity . "\@" . $np->opts->server }
+);
+
+my $oid_testoid        = ".1.3.6.1.4.1.140.625.10.1.0";
+my $oid_jdbc_poolnames = ".1.3.6.1.4.1.140.625.190.1.15";
+my $oid_jdbc_conns     = ".1.3.6.1.4.1.140.625.190.1.25";
+my $oid_jdbc_waiters   = ".1.3.6.1.4.1.140.625.190.1.30";
+my $count              = 0;
+my $perfdata           = "";
+my $retmsg             = "";
+
+# Call this when you know you'll get a single value back
+sub get_oid_value {
+    our ( $oid, $result, $status, $returnstring );
+
+    $oid = shift(@_);
+
+    if ( !defined( $s->get_request($oid) ) ) {
+        if ( !defined( $s->get_request($oid_testoid) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return -1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return -1;
+        }
+    }
+
+    foreach ( $s->var_bind_names() ) {
+        $result = $s->var_bind_list()->{$_};
+        if ( $_ !~ /^$oid/ ) {
+            print "UNKNOWN - OID does not exist!\n";
+            exit 3;
+        }
+    }
+
+    return $result;
+}
+
+if ( !defined( $s->get_request($oid_testoid) ) ) {
+    if ( !defined( $s->get_request($oid_testoid) ) ) {
+        print "Agent not responding\n";
+        exit 1;
+    }
+}
+
+# Finds the sub oid for a particular bridge by its name
+sub get_suboid_by_name {
+    my $name = shift(@_);
+    my $key;
+    my $results;
+
+    $s->get_table($oid_jdbc_poolnames);
+    $results = $s->var_bind_list();
+
+    foreach $key ( keys %$results ) {
+        if ( $results->{$key} =~ /^$name$/ ) {
+            $key =~ s/^$oid_jdbc_poolnames//;
+            return $key;
+        }
+    }
+
+    # Couldn't find name -> undef
+}
+
+# Get the sub OID for this particular server
+my $poolname_oid = get_suboid_by_name($pool_name);
+
+# Check if the name was found
+if ( $poolname_oid eq "" ) {
+    print "UNKNOWN - Pool name $pool_name not found!\n";
+    exit 3;
+}
+
+if ($check_waiting) {
+
+    # Find out how many waiters there are
+    $count = get_oid_value( "$oid_jdbc_waiters$poolname_oid" );
+}
+else {
+
+    # Find out how many active connections there are
+    $count = get_oid_value( "$oid_jdbc_conns$poolname_oid" );
+}
+
+if ( $count eq -1 ) {
+    print "UNKNOWN - Plugin error, couldn't retrieve OID\n";
+    exit 3;
+}
+
+# Output text and performance data
+if ($check_waiting) {
+    $retmsg   = "$count waiters";
+    $perfdata = "waiters=$count;$warning;$critical;";
+}
+else {
+    $retmsg   = "$count active connections";
+    $perfdata = "connections=$count;$warning;$critical;";
+}
+
+# Show appropriate message (we don't have a critical state)
+if ( $count > $critical ) {
+    print "CRITICAL - $retmsg |$perfdata\n";
+    exit 2;
+}
+elsif ( $count > $warning ) {
+    print "WARNING - $retmsg |$perfdata\n";
+    exit 1;
+}
+else {
+    print "OK - $retmsg |$perfdata\n";
+    exit 0;
+}

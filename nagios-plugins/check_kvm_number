@@ -1,0 +1,100 @@
+#!/usr/bin/perl 
+#
+# AUTHORS: Rohit Deshmukh
+#   Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+use Shell qw(virsh);
+use Nagios::Plugin;
+use Data::Dump qw(dump);
+
+my $np = Nagios::Plugin->new(
+    shortname => "KVM",
+    usage     => "KVM status\n%s\n[-w],[-c],[-v]"
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help =>
+      "-w, --warning=range range<min,max>, Warning if current  instance number is outside of warning range\n"
+      . " EXAMPLE\n"
+      . " If -w 3:6 -c 2:9 and number of instances :2\n"
+      . " raises warning alert as outside of the warning range and inside of critical rannge\n"
+      . " any value lies in warning range and critical range should alert OK",
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help =>
+      "-c, --critical=range range<min,max>,critical if current running instances number is outside critical range\n"
+      . " EXAMPLE\n"
+      . " If -w 3:6 -c 2:9 and number of instances :1\n"
+      . " raises critical alert as outside of critical range.",
+);
+
+$np->getopts;
+my $warning  = $np->opts->warning;
+my $critical = $np->opts->critical;
+
+my $data = virsh( "list" );
+
+#removes all special charachters and keeps those are listed in the bracket.
+#remember there is space in the end after 0-9 which is not removed from $data
+$data =~ s/[^a-zA-Z0-9 ]*//g;
+
+#print $data;
+my @array = split( " ", $data );
+
+#print dump(@array);
+my @active_domains;
+my $running_count = 0;
+if ( scalar @array > 3 ) {
+    $i = 5;
+    foreach $a (@array) {
+
+        #print $array[$i];
+        if ( $array[$i] eq "running" ) {
+            $running_count++;
+            my $tmp_dom = "$running_count) " . "$array[$i-1]. ";
+            push( @active_domains, $tmp_dom );
+        }
+        $i = $i + 3;
+    }
+}
+
+#print "runnig vm: ". $running_count;
+my $code = $np->check_threshold(
+    check    => $running_count,
+    warning  => $np->opts->warning,
+    critical => $np->opts->critical,
+
+);
+
+#adding performance data
+$np->add_perfdata(
+    label => 'active_domains',
+    value => $running_count,
+
+    # threshold => $code,
+);
+
+$np->nagios_exit(
+    $code,
+    "$running_count domains are currently active. active domains: @active_domains"
+);
+1

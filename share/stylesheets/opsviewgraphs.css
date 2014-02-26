@@ -1,0 +1,38 @@
+/* Opsview specific graph CSS */
+
+.ajaxgraph .graph-dropdown input.hostbox {
+  margin-right: 3px;
+  margin-bottom: 3px;
+}
+
+
+.ajaxgraph .graph-dropdown input.servicebox {
+  margin-bottom: 3px;
+  margin-right: 3px;
+}
+
+
+.ajaxgraph .graph-dropdown input.metricbox {
+}
+
+.ajaxgraph .graph-toolbar .link-btn {
+  clear: none;
+  float: right;
+  cursor: pointer;
+  margin-right: 5px;
+  padding: 3px;
+}
+
+.ajaxgraph .link-dropdown {
+  position: absolute;
+  border: solid 1px black;
+  right: 0px; top: 60px; width: 300px;
+  background-color: #f7f7f7;
+  padding: 3px;
+}
+
+.ajaxgraph .link-dropdown input {
+  width: 250px;
+  display: inline;
+  margin-right: 5px;
+}

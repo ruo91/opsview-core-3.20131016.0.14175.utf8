@@ -1,0 +1,180 @@
+#!/usr/bin/perl
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use strict;
+use warnings;
+
+use lib '/usr/local/nagios/perl/lib';
+use lib '/usr/local/nagios/lib';
+
+use FindBin qw($Bin $Script);
+use Getopt::Long qw(:config no_ignore_case bundling no_auto_abbrev);
+use Pod::Usage;
+
+use Opsview;
+use Opsview::Servicecheck;
+
+my $VERSION = '0.01';
+
+my %options = (
+    'help|h|?'  => 0,
+    'man'       => 0,
+    'version|V' => 0,
+    'debug:+'   => 0,
+    'set:i'     => 0,
+);
+
+GetOptions( \%options, keys(%options) ) || pod2usage( -verbose => 1 );
+
+die("Version: $VERSION\n") if ( $options{version} );
+pod2usage( -verbose => 1 ) if ( $options{'?'}  || $options{help} );
+pod2usage( -verbose => 2 ) if ( $options{HELP} || $options{man} );
+
+$options{debug} ||= 0;
+$options{debug} = 8 if ( $options{debug} > 8 );
+$options{set}   = 1 if ( !defined( $options{set} ) );
+
+sub logmsg($@) {
+    my ( $level, @text ) = @_;
+    print @text, $/ if ( $level <= $options{debug} );
+}
+
+logmsg( 1, "Script $Script is running out of $Bin" );
+
+my $servicename = shift;
+if ( !$servicename ) {
+    pod2usage(
+        -verbose => 1,
+        -message => 'Service check name not specified',
+    );
+}
+
+my $checks =
+  Opsview::Servicecheck->search_like( { name => '%' . $servicename . '%' } );
+
+print
+  "Setting 'Alert every failure' to $options{set} on the following check(s)",
+  $/;
+while ( my $check = $checks->next ) {
+    print $check->name, $/;
+    $check->volatile( $options{set} );
+    $check->update();
+}
+
+__END__
+
+=head1 NAME
+
+alert_every_failure
+
+=head1 SYNOPSIS
+
+S<< alert_every_failure [-?hV] [-s 1 ] <service name> >>
+
+=head1 DESCRIPTION
+
+Search all service checks for the given service name and set 
+'Alert Every Failure' on them.  i.e.
+
+  $ ./alert_every_failure "TCP"
+  Setting "Alert every failure" on the following check(s)
+  TCP Connections
+  TCP/IP
+
+=head1 OPTIONS
+
+=over
+
+=item --help, -?, -h
+
+Display basic help 
+
+=item --man
+
+Display man page
+
+=item --debug [0-9], --debug [--debug [...]]
+
+Enable debugging mode (using more than once increases verbosity, or specify
+a level explicitly to a maximum of level 8) 
+
+=item --version, -V
+
+Show version information
+
+=item set <0|1|2>
+
+Value to set 'Alert every failure' to, where
+
+=over
+
+=item 0 - Disabled
+
+=item 1 - Enabled (default)
+
+=item 2 - Enabled with re-noticication interval
+
+=back
+
+=back
+
+=head1 ARGUMENTS
+
+=over
+
+=item servicename
+
+Search term to identify all service checks to set the attribute on
+
+=back
+
+=head1 NOTES
+
+N/A
+
+=head1 FILES
+
+N/A
+
+=head1 AUTHOR AND COPYRIGHT
+
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This software is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Opsview; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+=head1 KNOWN BUGS
+
+None known at this time.
+
+=head1 SEE ALSO
+
+L<perl>
+
+=cut

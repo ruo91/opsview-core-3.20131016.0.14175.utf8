@@ -1,0 +1,32 @@
+{
+      "name" : "freshness checks45",
+      "id" : "2",
+      "servicechecks" : [
+         {
+            "ref" : "/rest/config/servicecheck/85",
+            "name" : "Passive no freshness"
+         },
+         {
+            "ref" : "/rest/config/servicecheck/86",
+            "name" : "Passive renotify"
+         },
+         {
+            "ref" : "/rest/config/servicecheck/87",
+            "name" : "Passive set_stale"
+         },
+         {
+            "ref" : "/rest/config/servicecheck/88",
+            "name" : "snmptrap no freshness"
+         },
+         {
+            "ref" : "/rest/config/servicecheck/89",
+            "name" : "snmptrap renotify"
+         },
+         {
+            "ref" : "/rest/config/servicecheck/90",
+            "name" : "snmptrap set_stale"
+         }
+      ],
+      "uncommitted" : "1"
+   }
+

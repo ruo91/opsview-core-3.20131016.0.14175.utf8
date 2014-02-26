@@ -1,0 +1,123 @@
+#!/usr/bin/perl -w
+#
+#
+# SYNTAX:
+#   test_notifications [-d] {type} {notificationscript}
+#
+# DESCRIPTION:
+#	Will set environment variables for the type of notification and then exec the notification script
+#   -d will display the env vars and quit
+#
+# LICENCE:
+#    Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+
+use lib "/usr/local/nagios/lib", "/usr/local/nagios/perl/lib";
+
+my ( $type, $notificationscript, @params ) = @ARGV;
+
+my $display_only;
+if ( $type eq "-d" ) {
+    $display_only = 1;
+}
+
+my %types = (
+    "hostproblem"     => 1,
+    "serviceproblem"  => 1,
+    "hostrecovery"    => 1,
+    "servicerecovery" => 1,
+    "hostack"         => 1,
+    "serviceack"      => 1,
+);
+
+if ( !$display_only ) {
+    die "Must specify a type: " . ( join( " ", keys %types ) ) unless ($type);
+    die "Invalid type: $type" unless $types{$type};
+
+    die "Must specify a notification script to run" unless $notificationscript;
+
+    die "Notification script not found"      unless ( -f $notificationscript );
+    die "Notification script not executable" unless ( -x $notificationscript );
+}
+
+# Setup envvars. Similar to Nagios logic
+# Only doing the most common ones for the moment
+my %a;
+$a{CONTACTNAME}  = "admin";
+$a{CONTACTEMAIL} = 'opsview@example.com';
+$a{HOSTADDRESS}  = "10.11.12.13";
+$a{HOSTALIAS}    = "temp host 1";
+$a{HOSTNAME}     = "host1";
+$a{HOSTOUTPUT}   = "Test host failure";
+$a{LONGHOSTOUTPUT} =
+  "More data returned from Nagios\nWhich could be over\nmultiple lines";
+$a{HOSTSTATE}           = "DOWN";
+$a{HOSTATTEMPT}         = 1;
+$a{MAXHOSTATTEMPTS}     = 2;
+$a{LASTHOSTCHECK}       = 1234567891;
+$a{LASTHOSTDOWN}        = 0;
+$a{LASTHOSTSTATECHANGE} = 0;
+$a{LASTHOSTUP}          = 1234567890;
+$a{LONGDATETIME}        = "Dec 1 2009";
+$a{TIMET}               = 1234567895;
+my $object = "host";
+
+if ( $type =~ /^service/ ) {
+    $a{SERVICEDESC}   = "Test service";
+    $a{SERVICESTATE}  = "CRITICAL";
+    $a{SERVICEOUTPUT} = "Service failure! Abort! Abort!";
+    $a{LONGSERVICEOUTPUT} =
+      "Many moons ago, in a galaxy\nfar, far away\nlived... Luke Skywaker!";
+    $a{LASTSERVICESTATECHANGE} = 1234567889;
+    $a{SERVICEATTEMPT}         = 2;
+    $a{MAXSERVICEATTEMPTS}     = 3;
+    $object                    = "service";
+}
+if ( $type =~ /ack$/ ) {
+    $a{NOTIFICATIONTYPE} = "ACKNOWLEDGEMENT";
+    if ( $object eq "host" ) {
+        $a{HOSTACKAUTHOR}  = "contactH";
+        $a{HOSTACKCOMMENT} = "host acknowledgement comment";
+    }
+    else {
+        $a{SERVICEACKAUTHOR}  = "contactS";
+        $a{SERVICEACKCOMMENT} = "service acknowledgement comment";
+    }
+}
+else {
+    $a{NOTIFICATIONTYPE} = "PROBLEM";
+}
+
+# Setup envvars, but allow existing ones to remain
+foreach my $p ( keys %a ) {
+    $ENV{"NAGIOS_$p"} = $a{$p} unless exists $ENV{"NAGIOS_$p"};
+}
+
+if ($display_only) {
+    foreach my $v ( sort keys %ENV ) {
+        print "export $v='$ENV{$v}'\n" if $v =~ /NAGIOS_/;
+    }
+    exit;
+}
+
+# Exec
+exec( $notificationscript, @params );

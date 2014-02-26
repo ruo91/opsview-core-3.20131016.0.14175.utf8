@@ -1,0 +1,62 @@
+#!/usr/bin/perl
+#
+### BEGIN OPSVIEW INFO
+# Macros: EVENTSTARTTIME,PROCESSSTARTTIME
+### END OPSVIEW INFO
+#
+# DESCRIPTION:
+#	Nagios plugin to return perf data based on the startup time of Nagios
+#	Requires Nagios 3
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+sub nagios_exit { my ( $val, $text ) = @_; print $text, "\n"; exit $val; }
+
+if ( @ARGV && $ARGV[0] eq "-h" ) {
+    print <<'EOF';
+check_nagios_startup
+
+Returns the time taken between Nagios starting up and starting to monitor
+
+EOF
+    exit 0;
+}
+my $monitoringstarttime = $ENV{NAGIOS_EVENTSTARTTIME}
+  || nagios_exit(
+    2,
+    "No NAGIOS_EVENTSTARTTIME environment variable found - this is incompatible with Opsview's Test Service Check feature"
+  );
+
+my $processstarttime = $ENV{NAGIOS_PROCESSSTARTTIME}
+  || nagios_exit( 2, "No NAGIOS_PROCESSSTARTTIME environment variable found" );
+
+my $delay = $monitoringstarttime - $processstarttime;
+
+my $text;
+if ( $delay == 1 ) {
+    $text = "Nagios started up in 1 second";
+}
+else {
+    $text = "Nagios started up in $delay seconds";
+}
+nagios_exit( 0, "$text | delay=$delay" );

@@ -1,0 +1,46 @@
+{
+      "hosts" : [
+         {
+            "ref" : "/rest/config/host/7",
+            "name" : "cisco"
+         }
+      ],
+      "exceptions" : [
+         {
+            "name" : "Check Memory",
+            "args" : "--except"
+         }
+      ],
+      "name" : "Cisco Mgt",
+      "timed_exceptions" : [
+         {
+            "name" : "Check Memory",
+            "args" : "--timed --nonworkhours",
+            "timeperiod" : {
+               "name" : "nonworkhours"
+            }
+         }
+      ],
+      "description" : "Cisco device Management URLs",
+      "id" : "3",
+      "servicechecks" : [
+         {
+            "ref" : "/rest/config/servicecheck/44",
+            "name" : "Check Memory"
+         }
+      ],
+      "managementurls" : [
+         {
+            "url" : "ssh://$HOSTADDRESS$",
+            "name" : "SSH",
+            "id" : "4"
+         },
+         {
+            "url" : "telnet://$HOSTADDRESS$",
+            "name" : "Telnet",
+            "id" : "5"
+         }
+      ],
+      "uncommitted" : "1"
+   }
+

@@ -1,0 +1,139 @@
+{
+  "" => {
+        response => { high => 0, low => 0 },
+        result   => {
+                      CRITICAL => "0.170527213301123",
+                      OK => "99.701577376723",
+                      WARNING => "0.127895409975842",
+                      total => 7037,
+                    },
+      },
+  check_dig => {
+        response => { high => "0.275833687104029", low => "0.01875" },
+        result   => {
+                      CRITICAL => "0.0622200099552016",
+                      OK => "99.9377799900448",
+                      total => 8036,
+                    },
+      },
+  check_http => {
+        response => { high => "0.643483869008787", low => "0.814439453125" },
+        result   => {
+                      CRITICAL => "13.3835769597085",
+                      OK => "86.4756304608887",
+                      WARNING => "0.140792579402874",
+                      total => 24149,
+                    },
+      },
+  check_imap => {
+        response => { high => "0.29138408418737", low => "0.024" },
+        result   => { OK => 100, total => 2010 },
+      },
+  check_mysql => {
+        response => { high => "0.094544952168419", low => "0.018" },
+        result   => { OK => 100, total => 2009 },
+      },
+  check_nrpe => {
+        response => { high => "3.25532013568291", low => "0.0413228689956515" },
+        result   => {
+                      CRITICAL => "8.76784753221262",
+                      OK => "91.0564472726121",
+                      WARNING => "0.17570519517523",
+                      total => 126348,
+                    },
+      },
+  check_ping => {
+        response => { high => "0.298835818970718", low => "10.0829557155566" },
+        result   => {
+                      CRITICAL => "17.602490834153",
+                      OK => "81.8869857167245",
+                      WARNING => "0.510523449122436",
+                      total => 123011,
+                    },
+      },
+  check_smtp => {
+        response => { high => "0.447907943190595", low => "0.0445" },
+        result   => {
+                      CRITICAL => "0.0497677504976775",
+                      OK => "99.9502322495023",
+                      total => 6028,
+                    },
+      },
+  check_snmp_apcups => {
+        response => { high => "1.1545350209028", low => "0.623" },
+        result   => { OK => "98.0256663376111", WARNING => "1.97433366238894", total => 2026 },
+      },
+  "check_snmp_cisco_ifstatus" => {
+        response => { high => "0.31359185449257", low => "0.617" },
+        result   => { OK => 100, total => 2424 },
+      },
+  "check_snmp_cisco_ifstatus2" => {
+        response => { high => "0.47365845559931", low => "0.162" },
+        result   => { OK => 100, total => 2009 },
+      },
+  "check_snmp_cisco_loadavg" => {
+        response => { high => "0.470701451762615", low => "0.081" },
+        result   => { OK => "98.993399339934", WARNING => "1.00660066006601", total => 6060 },
+      },
+  "check_snmp_cisco_memutil" => {
+        response => { high => "0.42208289282236", low => "0.1705" },
+        result   => { OK => "99.6188266489891", WARNING => "0.381173351010938", total => 6034 },
+      },
+  "check_snmp_interfaces" => {
+        response => { high => "0.563524426872447", low => "0.6751640625" },
+        result   => {
+                      OK => "99.3670493329196",
+                      UNKNOWN => "0.0124107973937325",
+                      WARNING => "0.620539869686627",
+                      total => 16115,
+                    },
+      },
+  "check_snmp_linkstatus" => {
+        response => { high => "1.37966326466187", low => "0.23690625" },
+        result   => {
+                      OK => "99.6746411483254",
+                      UNKNOWN => "0.325358851674641",
+                      total => 10450,
+                    },
+      },
+  check_snmp_resources => {
+        response => { high => "0.29856347811691", low => 0 },
+        result   => { OK => 100, total => 2009 },
+      },
+  "check_snmp_sensatronics_temp" => {
+        response => { high => "0.88115561575352", low => "0.15" },
+        result   => { OK => "98.9092711948438", WARNING => "1.09072880515617", total => 2017 },
+      },
+  check_snmp_sysinfo => {
+        response => { high => "0.37932884951643", low => "1.2773359375" },
+        result   => {
+                      OK => "99.6953494155683",
+                      WARNING => "0.304650584431733",
+                      total => 16084,
+                    },
+      },
+  check_snmp_uptime => {
+        response => { high => "0.73992416845507", low => "2.63218774414062" },
+        result   => { OK => "91.3069693208016", WARNING => "8.69303067919844", total => 28195 },
+      },
+  check_tcp => {
+        response => { high => "0.583478838222139", low => "7.55282785659152" },
+        result   => {
+                      CRITICAL => "21.6139482400903",
+                      OK => "78.3860517599097",
+                      total => 82419,
+                    },
+      },
+  check_weather => {
+        response => { high => "0.76628581612058", low => "0.105" },
+        result   => { OK => 100, total => 2009 },
+      },
+  refresh_state => {
+        response => { high => "0.065313213766456", low => "0.009" },
+        result   => { OK => 50, WARNING => 50, total => 336 },
+      },
+  set_to_stale => {
+        response => { high => "0.08180077420097", low => "0.007" },
+        result   => { UNKNOWN => 100, total => 2672 },
+      },
+}

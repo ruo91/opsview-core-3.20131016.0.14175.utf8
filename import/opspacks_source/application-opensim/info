@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.application_opensim
+VERSION=1.0
+ALIAS=Application - OpenSim
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

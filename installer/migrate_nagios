@@ -1,0 +1,859 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+# 	migrate_nagios [-y] objects.cache
+#
+# DESCRIPTION:
+#	Takes existing nagios objects.cache file and imports into Opsview
+#   -y makes the changes, otherwise just print
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#
+
+use strict;
+use warnings;
+
+use FindBin qw($Bin);
+use lib "$Bin/../perl";
+use lib "$Bin/../lib", "$Bin/../etc";
+
+use Data::Dump qw/ dump /;
+
+use Pod::Usage;
+
+# Utils
+use Opsview::Utils qw(convert_to_arrayref);
+
+# opsview DB stuff
+use Opsview;
+use Opsview::Timeperiod;
+use Opsview::Host;
+use Opsview::Schema;
+
+# Pull in require nagios config file parse
+use Nagios::Config;
+use Nagios::Object::Config;
+
+# Pull in functions to parse the command line options
+# Configure command line options to be case sensitive, and allow
+# -v -a -x as -vax (different to --vax).  Long options must also use --'s
+# Also stop long options being abreviated to uniqueness
+use Getopt::Long qw(:config no_ignore_case bundling no_auto_abbrev);
+
+# Start of POD (Perl Online Documentation)
+#   Use "perldoc <script>" or "<script> --help" to read POD
+
+=head1 NAME
+
+migrate_nagios
+
+=head1 SYNOPSIS
+
+migrate_nagios [-y] objects.cache
+
+=head1 DESCRIPTION
+
+Script to parse an existing Nagios objects.cache file and populate Opsview database.
+
+Currently this script can parse and populate the following:
+
+=over
+
+=item Time periods
+
+Only weekly definitions are imported
+
+=item Contacts
+
+=item Hosts
+
+Parents will be added.
+
+Contact groups will not be added due to differences in how Opsview handles these associations
+
+=item Hostgroups
+
+=item Services
+
+Only active service checks will be imported.
+
+Each service will have an Opsview service check of the same name created and this service check
+will be associated with the appropriate host.
+
+A check will be done to ensure that services with the same name have the same attribute values.
+
+=back
+
+=head1 OUTPUT
+
+Actions taken will be displayed to standard output. Make sure you read this carefully as changes
+may be made (removing of invalid characters in data).
+
+=cut
+
+#### Set up default options available for all scripts,
+# i.e. "<script> --version" or "<script> --help"
+# All command line options are stored within a hash for easy access
+# This initialises hash and defines some entries in one go
+# See "perldoc perldata" for more info
+my %options = (
+    'help|h|?'  => 0,
+    'man'       => 0,
+    'version|V' => 0,
+    'debug:+'   => 0,
+    'confirm|y' => 0,
+);
+
+#### Document default options
+
+=head1 OPTIONS
+
+=over
+
+=item --help, -?, -h
+
+Display basic help
+
+=item --man
+
+Display man page
+
+=item --debug [0-9], --debug [--debug [...]]
+
+Enable debugging mode (using more than once increases verbosity, or specify
+a level explicitly to a maximum of level 8)
+
+=item --version, -V
+
+Show version information
+
+=back
+
+=head1 ARGUMENTS
+
+=over
+
+=item <path-to-objects.cache>
+
+The path to the objects.cache file to be parsed
+
+=back
+
+=cut
+
+#### start of perl code ####
+
+# Getopt::Long can limit/expand on how switches are used.  This step
+# normalises the options hash to remove optional specifiers used by
+# Getopts::Long.  Show usage (from the inline POD) if any options unrecognised
+GetOptions( \%options, keys(%options) ) || pod2usage( -verbose => 1 );
+
+# output basic help text when -?, --help or -h used
+pod2usage( -verbose => 1 ) if ( $options{'?'} || $options{help} );
+
+#output complete help text when -m|--man|-H|--HELP used
+pod2usage( -verbose => 2 ) if ( $options{HELP} || $options{man} );
+
+#### global variables ####
+# Initialise debug variable correctly if not already set by --debug
+$options{debug} ||= 1;
+
+# Set an arbitrary max level of 8 for debug
+$options{debug} = 8 if ( $options{debug} > 8 );
+
+#### all sub-routines ####
+
+# description:
+#   given a level and a message, if level <= debug level, output message
+#   Allows for progressivly more output the higher the debug level, as
+#   given by the use of --debug. Saves on "expensive" 3rd party module
+# parameters:
+#   $1 = level --> level (to match debug level)
+#   $2 .. $n   --> list to pass to print
+# returns:
+#   nothing
+sub logmsg($@) {
+    print @_, $/ if ( shift() <= $options{debug} );
+}
+
+# Variables
+# These can be changed based on your system
+my $hostgroup_to_logo_mapping = {
+    "windows-server"               => "SYMBOL - Server",
+    "VPN"                          => "SYMBOL - VPN",
+    "SAP"                          => "SYMBOL - Application",
+    "Router"                       => "SYMBOL - Router",
+    "Lotus Server"                 => "SYMBOL - Application",
+    "Linux Servers"                => "LOGO - Linux Penguin",
+    "LAN-Core-Distri-Switch"       => "SYMBOL - Switch",
+    "VPN-Netscreen-Router"         => "SYMBOL - Router",
+    "Security-FW-Ironport-Tipping" => "SYMBOL - Firewall",
+    "MES-Server"                   => "SYMBOL - Application",
+    "WAN-LINES-Riverbed"           => "SYMBOL - Network Cloud",
+};
+
+my $notification_methods_to_opsview_mapping = {
+    "notify-none"            => "",
+    "notify-by-epager"       => "aql",
+    "notify-by-email"        => "email",
+    "notify-by-atom"         => "rss",
+    "notify-by-aql"          => "aql",
+    "host-notify-by-epager"  => "aql",
+    "host-notify-by-email"   => "email",
+    "host-notify-by-atom"    => "rss",
+    "host-notify-by-aql"     => "aql",
+    "notify-host-by-email"   => "email",
+    "escalate-host-by-email" => "email",
+    "escalate-host-by-pager" => '',
+    'notify-host-by-mobile'  => '',
+    'notify-host-by-sms'     => '',
+};
+
+my $command_ignores = {
+    "host-notify-by-email"  => 1,
+    "notify-by-epager"      => 1,
+    "notify-by-email"       => 1,
+    "notify-by-atom"        => 1,
+    "notify-by-aql"         => 1,
+    "host-notify-by-epager" => 1,
+    "host-notify-by-email"  => 1,
+    "host-notify-by-atom"   => 1,
+    "host-notify-by-aql"    => 1,
+    "ochp_command"          => 1,
+    "my_negate"             => 1,
+};
+
+# plugins to be replaced with other plugins
+my $command_replace_with = { "check_custom" => "check_dummy", };
+
+#### END VARIABLES ####
+
+#### main ####
+
+my $schema = Opsview::Schema->my_connect;
+
+my $confirmed = $options{y} || 0;
+
+my $objects_cache = shift @ARGV
+  or pod2usage(
+    {
+        -exitval => 2,
+        -msg     => "Must specify an object.cache file to parse"
+    }
+  );
+unless ( -r $objects_cache ) {
+    pod2usage(
+        {
+            -exitval => 2,
+            -msg     => "object.cache not readable"
+        }
+    );
+}
+
+my $objs = Nagios::Object::Config->new( Version => 2 );
+$objs->parse($objects_cache);
+
+my $timeperiod_objects = {};
+
+TIMEPERIODS: {
+    logmsg( 2, "Installing time periods" );
+    foreach my $timeperiod ( @{ $objs->{timeperiod_list} } ) {
+        my $name = $timeperiod->{timeperiod_name};
+        logmsg( 2, "- ", $name );
+
+        my $dbo = Opsview::Timeperiod->find_or_create( { name => $name } );
+
+        $dbo->alias( $timeperiod->{alias} )     if ( $timeperiod->{alias} );
+        $dbo->sunday( $timeperiod->{sunday} )   if ( $timeperiod->{sunday} );
+        $dbo->monday( $timeperiod->{monday} )   if ( $timeperiod->{monday} );
+        $dbo->tuesday( $timeperiod->{tuesday} ) if ( $timeperiod->{tuesday} );
+        $dbo->wednesday( $timeperiod->{wednesday} )
+          if ( $timeperiod->{wednesday} );
+        $dbo->thursday( $timeperiod->{thursday} )
+          if ( $timeperiod->{thursday} );
+        $dbo->friday( $timeperiod->{friday} ) if ( $timeperiod->{friday} );
+        $dbo->saturday( $timeperiod->{saturday} )
+          if ( $timeperiod->{saturday} );
+
+        #$dbo->uncomitted(1); # this will have to be fixed sometime
+        $dbo->update;
+        $timeperiod_objects->{$name} = $dbo;
+        logmsg( 3, " - done" );
+    }
+}
+
+# contacts & contact groups - requires 3 steps
+# populate all contacts, then do groups (which references contact names)
+# then add in the groups back to contacts
+CONTACTS: {
+    logmsg( 2, "Installing contacts (without groups)" );
+    foreach my $contact ( @{ $objs->{contact_list} } ) {
+
+        my $username = $contact->name;
+        logmsg( 2, "- ", $username, " (", $contact->alias, ")" );
+        if ( $username =~ /\// ) {
+            logmsg(
+                1,
+                "Ignoring $username as it contains a '/' so is probably an Opsview contact"
+            );
+            next;
+        }
+
+        # DATA CLEANUP
+        $username = cleanup_username($username);
+
+        # TODO: How do you confirm this part?
+
+        my $tp_obj;
+        my $tpname = $contact->service_notification_period;
+        if ($tpname) {
+            $tp_obj =
+              Opsview::Timeperiod->search( { name => $tpname, } )->first;
+        }
+
+        my @variables;
+        push @variables,
+          {
+            name  => "EMAIL",
+            value => $contact->email
+          }
+          if ( $contact->email );
+        my $contact_data = {
+            name        => $username,
+            fullname    => $contact->alias || $username,
+            description => $contact->alias || "",
+            variables   => \@variables,
+        };
+
+        my $opsview_contact =
+          $schema->resultset("Contacts")->synchronise($contact_data);
+
+        my $nprofile = {
+            name      => "Imported",
+            contactid => $opsview_contact->id
+        };
+        $nprofile->{notification_period} = $tp_obj->id if ($tp_obj);
+        if ( $contact->service_notification_options ) {
+            if ( ref( $contact->service_notification_options ) eq "ARRAY" ) {
+                my $opts =
+                  join( ",", @{ $contact->service_notification_options } );
+                $nprofile->{service_notification_options} = $opts;
+            }
+            else {
+                $nprofile->{service_notification_options} =
+                  $contact->service_notification_options;
+            }
+        }
+        if ( $contact->host_notification_options ) {
+            if ( ref( $contact->host_notification_options ) eq "ARRAY" ) {
+                my $opts =
+                  join( ",", @{ $contact->host_notification_options } );
+                $nprofile->{host_notification_options} = $opts;
+            }
+            else {
+                $nprofile->{host_notification_options} =
+                  $contact->host_notification_options;
+            }
+        }
+        my $host_notification_commands =
+          convert_to_arrayref( $contact->host_notification_commands );
+        my @notificationmethods = ();
+        foreach my $method (@$host_notification_commands) {
+            my $setting = $notification_methods_to_opsview_mapping->{$method};
+            die "Unrecognised method='$method'" unless defined $setting;
+            next if $setting eq "";
+            push @notificationmethods, { name => $setting };
+        }
+        $nprofile->{notificationmethods} = \@notificationmethods;
+        $schema->resultset("Notificationprofiles")->synchronise($nprofile);
+        logmsg( 3, " - done" );
+    }
+}
+
+# hostgroups
+# Create a lookup for a host to a hostgroup, as objects.cache does not lookup in this direction
+my $host_to_hostgroup = {};
+HOSTGROUPS: {
+    logmsg( 2, "Installing hostgroups" );
+    my $parent = Opsview::Hostgroup->search( { name => "Opsview", } )->first;
+
+    {
+        my $unknown =
+          Opsview::Hostgroup->search( { name => "Unknown", } )->first;
+
+        if ( !$unknown ) {
+            Opsview::Hostgroup->find_or_create(
+                {
+                    name     => "Unknown",
+                    parentid => $parent,
+                }
+            );
+        }
+    }
+
+    foreach my $hostgroup ( @{ $objs->{hostgroup_list} } ) {
+        my $name = $hostgroup->hostgroup_name;
+        logmsg( 2, "- ", $name );
+
+        my $dbo = Opsview::Hostgroup->search( { name => $name } )->first;
+
+        if ( !$dbo ) {
+            $dbo = Opsview::Hostgroup->create(
+                {
+                    name     => $hostgroup->hostgroup_name,
+                    parentid => $parent,
+                }
+            );
+        }
+
+        $dbo->uncommitted(1);
+        $dbo->update;
+
+        my $members = convert_to_arrayref( $hostgroup->members );
+        foreach my $h (@$members) {
+            if ( exists $host_to_hostgroup->{$h} ) {
+                logmsg(
+                    2,
+                    "Host $h already in hostgroup " . $host_to_hostgroup->{$h}
+                );
+            }
+            else {
+                $h = cleanup_hostname($h);
+                $host_to_hostgroup->{$h} = $name;
+            }
+        }
+
+        logmsg( 3, " - done" );
+    }
+}
+
+my $network_base_host_template =
+  Opsview::Hosttemplate->search( { name => "Network - Base" } )->first;
+die "No Network - Base host template" unless $network_base_host_template;
+
+# hosts
+HOSTS: {
+    logmsg( 2, "Installing hosts (without groups)" );
+    my $default = Opsview::Hostgroup->search( { name => "Unknown", } )->first;
+
+    foreach my $host ( @{ $objs->{host_list} } ) {
+        my $name = $host->host_name;
+        logmsg( 2, "host_name = $name" );
+
+        $name = cleanup_hostname($name);
+
+        logmsg( 2, "- ", $name, " (", $host->alias, ")" );
+
+        my $tp_obj;
+        my $tpname = $host->notification_period;
+        if ($tpname) {
+            $tp_obj =
+              Opsview::Timeperiod->search( { name => $tpname, } )->first;
+        }
+
+        my $cmd =
+          Opsview::HostCheckCommand->search( { name => "ping", } )->first;
+
+        my $hostgroup;
+        my $hgname = $host_to_hostgroup->{$name};
+        my $icon = $hostgroup_to_logo_mapping->{$hgname} || "LOGO - Opsview";
+        $hostgroup = Opsview::Hostgroup->search( { name => $hgname } )->first
+          || $default;
+
+        my $dbo = Opsview::Host->find_or_create(
+            { name          => $name, },
+            { check_command => $cmd, }
+        );
+        $dbo->set_parents_to();
+
+        $dbo->alias( $host->alias ) if ( $host->alias );
+        $dbo->ip( $host->address || "1.2.3.4" );
+        $dbo->notification_interval( $host->notification_interval )
+          if ( $host->notification_interval );
+
+        if ( $host->notification_options ) {
+            if ( ref( $host->notification_options ) eq "ARRAY" ) {
+                my $opts = join( ",", @{ $host->notification_options } );
+                $dbo->notification_options($opts);
+            }
+            else {
+                $dbo->notification_options(
+                    join( ",", $host->notification_options )
+                );
+            }
+        }
+        $dbo->notification_period($tp_obj) if ($tp_obj);
+        $dbo->hostgroup($hostgroup)        if ($hostgroup);
+        $dbo->icon($icon);
+
+        $dbo->set_hosttemplates_to($network_base_host_template);
+
+        $dbo->uncommitted(1);
+        $dbo->update;
+        logmsg( 3, " - done" );
+    }
+}
+
+# register parent-child relationships
+PARENTCHILD: {
+    foreach my $host ( @{ $objs->{host_list} } ) {
+        logmsg( 2, "host_name = ", $host->host_name );
+
+        if ( $host->parents ) {
+            my $db_host =
+              Opsview::Host->search( { name => $host->host_name, } )->first;
+            my $parents = convert_to_arrayref( $host->parents );
+            foreach my $parent (@$parents) {
+                my $parentname = cleanup_hostname($parent);
+                logmsg( 2, "\tparent = ", $parentname );
+                my $db_parent =
+                  Opsview::Host->search( { name => $parentname, } )->first;
+                $db_host->add_to_parents(
+                    {
+                        hostid   => $db_host->id,
+                        parentid => $db_parent->id
+                    }
+                ) if ($db_parent);
+            }
+        }
+    }
+}
+
+# For Groundwork Opensource, they set their check commands to be like service definitions
+# so we need to read all of them in, indexed by command_name, for subsequent creation later
+my $check_commands = {};
+logmsg( 2, "Parsing check commands" );
+COMMANDLIST: {
+    foreach my $command ( @{ $objs->{command_list} } ) {
+        my $negate       = 0;
+        my $name         = $command->command_name;
+        my $command_line = $command->command_line;
+        $command_line =~ s#/usr/bin/perl##;
+
+        # NOTE: plugins may be named directly (i.e. 'snmpget') or contain
+        # full stops or hyphens, or in a rare case '$ARGn$'
+        # Pick up on when negate used and instead flag as 'invert results'
+        my ( $dummy, $plugin, $args );
+        REDO:
+        ( $dummy, $plugin, $args ) = ( $command_line
+              =~ m%(\$USER1\$/|/usr/local/nagios/libexec/)?([\w\.-]+) ?(.*)% );
+
+        if ( $plugin eq 'my_negate' ) {
+            $command_line =~ s#^.*?/my_negate\s+##;
+            $negate = 1;
+            goto REDO;
+        }
+
+        if ( $command_replace_with->{$name} ) {
+            logmsg(
+                1,
+                "WARNING: substituted "
+                  . $command_replace_with->{$name}
+                  . " for $name"
+            );
+            $plugin = $command_replace_with->{$name};
+            $dummy  = 'dummy';
+        }
+
+        # Some special case ignores
+        if ( $command_ignores->{$name} ) {
+            logmsg( 3, "- ignored $name" );
+            next;
+        }
+
+        if ( $plugin !~ /snmpget/ ) {
+            if ( !( $dummy && $plugin ) ) {
+                logmsg( 2, "- ignored $name because cannot parse as a plugin"
+                );
+                next;
+            }
+
+            if ( $plugin !~ /^check_/ ) {
+                logmsg( 2, "- ignored $plugin as it does not start with check_"
+                );
+                next;
+            }
+        }
+
+        $check_commands->{$name} = {
+            plugin        => $plugin,
+            args          => $args,
+            invertresults => $negate,
+        };
+    }
+}
+
+# create 'IMPORTED' service group
+my $sg_imported =
+  Opsview::Servicegroup->find_or_create( { name => 'IMPORTED' } );
+
+SERVICES: {
+    logmsg( 2, "Checking services" );
+
+    # drop all into hashes for easier grouping
+    my %grp_service;
+    my %grp_host;
+
+    foreach my $service ( @{ $objs->{service_list} } ) {
+
+        my $hostname            = $service->host_name;
+        my $service_description = $service->service_description;
+
+        $service_description =
+          cleanup_service_description($service_description);
+
+        logmsg( 2, "Service: $hostname: $service_description" );
+
+        if ( $service->active_checks_enabled == 0 ) {
+            logmsg( 2, " - ignored due to not being an active check" );
+            next;
+        }
+
+        # Need to work out args for the check command to create a host exception later if necessary
+        my $check_command = $service->check_command;
+        my @args;
+        my $attrs = {};
+        if ( $check_command =~ /\!/ ) {
+            @args = split( "!", $check_command );
+            $check_command = shift @args;
+
+            if ( $check_command eq "my_negate" ) {
+                my $old_args = join( "!", @args );
+                my ( $new_plugin, $new_args ) =
+                  ( $old_args =~ m%([^ ]+) (.*)$% );
+                $attrs->{invertresults} = 1;
+                $check_command = $new_plugin;
+                @args = split( "!", $new_args );
+            }
+        }
+        my $host_exception_args;
+        $attrs = { %$attrs, %{ $check_commands->{$check_command} } };
+
+        unless ($attrs) {
+            die( "Cannot find a check command for $check_command" );
+        }
+
+        if (@args) {
+            $host_exception_args = substitute_args( $attrs->{args}, \@args );
+        }
+
+        # Find an existing service check with this name
+        my $servicecheck =
+          Opsview::Servicecheck->search( { name => $service_description } )
+          ->first;
+
+        # I think some older versions of Nagios use normal_check_interval
+        my $check_interval = $service->normal_check_interval
+          || $service->check_interval;
+        my $retry_interval = $service->retry_check_interval
+          || $service->retry_interval;
+
+        # If a servicecheck doesn't exist, then will need to create a new servicecheck
+        # based on the information here
+        unless ($servicecheck) {
+
+            # Check plugins exist. If not, create and warn
+            my $plugin_exists =
+              Opsview::Plugin->search( { name => $attrs->{plugin} } )->first;
+            unless ($plugin_exists) {
+                logmsg(
+                    1,
+                    "- Missing plugin "
+                      . $attrs->{plugin}
+                      . ". Will create a dummy one for import"
+                );
+                Opsview::Plugin->create(
+                    {
+                        name => $attrs->{plugin},
+                        help => "Dummy import - must provide"
+                    }
+                );
+            }
+            $_ = convert_to_arrayref( $service->notification_options );
+            my $no = join( ",", @$_ );
+            $servicecheck = Opsview::Servicecheck->create(
+                {
+                    name                 => $service_description,
+                    servicegroup         => $sg_imported,
+                    uncommitted          => 1,
+                    check_interval       => $check_interval,
+                    check_attempts       => $service->max_check_attempts,
+                    retry_check_interval => $retry_interval,
+                    check_period =>
+                      $timeperiod_objects->{ $service->check_period },
+                    notification_options => $no,
+                    notification_period =>
+                      $timeperiod_objects->{ $service->notification_period },
+                    %$attrs,
+                }
+            );
+
+            die "Servicecheck not created" unless $servicecheck;
+        }
+        else {
+
+            # Validate all attributes for service check are the same
+            unless ( $servicecheck->check_period eq $service->check_period ) {
+                logmsg(
+                    1,
+                    "WARNING - '$service_description' on '$hostname' Inconsistent check_period"
+                );
+            }
+            unless ( $servicecheck->check_interval == $check_interval ) {
+                logmsg(
+                    1,
+                    "WARNING - '$service_description' on '$hostname' Inconsistent check_interval: "
+                      . $servicecheck->check_interval
+                      . " versus $check_interval"
+                );
+            }
+            unless (
+                $servicecheck->check_attempts == $service->max_check_attempts )
+            {
+                logmsg( 1,
+                    "WARNING - '$service_description' on '$hostname' Inconsistent max_check_attempts: "
+                      . $servicecheck->check_attempts
+                      . " versus "
+                      . $service->max_check_attempts );
+            }
+            unless ( $servicecheck->retry_check_interval == $retry_interval ) {
+                logmsg(
+                    1,
+                    "WARNING - '$service_description' on '$hostname' Inconsistent retry_interval: "
+                      . $servicecheck->retry_check_interval
+                      . " versus $retry_interval"
+                );
+            }
+            my $no_array =
+              convert_to_arrayref( $service->notification_options );
+            my $no = $servicecheck->notification_options;
+            if ( !defined $no ) {
+                @_ = ();
+            }
+            else {
+                @_ = split( ",", $no );
+            }
+            my $db_array = convert_to_arrayref( \@_ );
+            unless ( check_array_ref( $db_array, $no_array ) ) {
+                logmsg(
+                    1,
+                    "WARNING - '$service_description' Inconsistent notification_options (got "
+                      . $servicecheck->notification_options
+                      . " but expected "
+                      . join( ",", @$no_array ) . ")"
+                );
+            }
+
+            # Don't check this as it could be null to say from host
+            #unless ($servicecheck->notification_period eq $service->notification_period) {
+            #    die "Incorrect notification_period: ".$servicecheck->notification_period." versus ".$service->notification_period;
+            #}
+            logmsg( 2, "- found existing servicecheck" );
+        }
+
+        # This allows an import of Opsview type setups
+        # Set the default arguments as the first one it comes across
+        # Everything else are host exceptions
+        if ( $servicecheck->args eq '$ARG1$' && $host_exception_args ) {
+            $servicecheck->args($host_exception_args);
+            $servicecheck->update;
+        }
+
+        my $hostobj = Opsview::Host->search( { name => $hostname, } )->first;
+        logmsg( 3, "host name = $hostname" );
+        Opsview::HostServicecheck->find_or_create(
+            {
+                hostid         => $hostobj->id,
+                servicecheckid => $servicecheck->id,
+            }
+        ) if ($hostobj);
+
+        if (   $host_exception_args
+            && $host_exception_args ne $servicecheck->args )
+        {
+            Opsview::Servicecheckhostexception->find_or_create(
+                {
+                    host         => $hostobj->id,
+                    servicecheck => $servicecheck->id,
+                },
+                { args => $host_exception_args, }
+            );
+        }
+    }
+}
+
+logmsg( 2, "Finished migration" );
+
+1;
+
+sub substitute_args {
+    my ( $string, $args ) = @_;
+    my $c = 1;
+    foreach my $a (@$args) {
+        $string =~ s/\$ARG$c\$/$a/g;
+        $c++;
+    }
+    return $string;
+}
+
+sub cleanup_username {
+    my $username       = shift;
+    my $clean_username = $username;
+    $clean_username =~ s/\@//g;
+    if ( $clean_username ne $username ) {
+        logmsg( 1, "WARNING - Converted username $username to $clean_username"
+        );
+    }
+    return $clean_username;
+}
+
+sub cleanup_hostname {
+    my $name = shift;
+    my $newname;
+    ( $newname = $name ) =~ s/ /-/g;
+    if ( $name ne $newname ) {
+        logmsg( 1, "WARNING - Changed hostname from $name to $newname" );
+    }
+    return $newname;
+}
+
+sub cleanup_plugin_name {
+    my $name = shift;
+    if ( $name eq "check_alive" || $name eq "check_host_alive" ) {
+        $name = "check_icmp";
+    }
+    return $name;
+}
+
+sub cleanup_service_description {
+    my $name    = shift;
+    my $newname = $name;
+    $newname =~ s/:/_/g;
+    $newname =~ s/\+/ and /g;
+    $newname =~ s#\[##g;
+    $newname =~ s#\]##g;
+    $newname = substr( $newname, 0, 63 );
+    if ( $name ne $newname ) {
+        logmsg(
+            1,
+            "WARNING - Changed service description from '$name' to '$newname'"
+        );
+    }
+    return $newname;
+}
+
+sub check_array_ref {
+    my ( $first, $second ) = @_;
+    my %seen = map { ( $_ => 1 ) } @$first;
+    foreach my $k (@$second) {
+        $seen{$k}--;
+    }
+    foreach my $k ( keys %seen ) {
+        return 0 if $seen{$k} != 0;
+    }
+    1;
+}

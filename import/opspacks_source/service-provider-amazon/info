@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.service_provider_amazon
+VERSION=1.0
+ALIAS=Service Provider - Amazon
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

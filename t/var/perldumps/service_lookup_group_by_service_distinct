@@ -1,0 +1,12 @@
+{
+  allrows => 12,
+  list    => [
+               { name => "Another exception" },
+               { name => "Check Loadavg" },
+               { name => "Check Memory" },
+               { name => "Coldstart" },
+               { name => "faked ok service" },
+             ],
+  rows    => 5,
+  total   => 19,
+}

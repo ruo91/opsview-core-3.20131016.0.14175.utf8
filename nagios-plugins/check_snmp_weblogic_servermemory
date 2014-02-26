@@ -1,0 +1,129 @@
+#!/usr/bin/perl
+#
+#
+# AUTHORS:
+#       Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+use strict;
+use warnings;
+
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+
+my $np = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => "check_snmp_weblogic_servermemory",
+    version   => "0.2",
+    blurb     => "Checks the JVM heap free memory",
+    snmp      => {
+        "snmp-version" => 1,
+        "snmp-timeout" => 2,
+    },
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w, --warning=INTEGER
+    Warning threshold (%)},
+    default => 0,
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c, --critical=INTEGER
+    Critical threshold (%)},
+    default => 0,
+);
+
+$np->getopts;
+
+my $warning  = $np->opts->warning;
+my $critical = $np->opts->critical;
+
+my $s = $np->snmp;
+
+my $oid_testoid      = ".1.3.6.1.4.1.140.625.10.1.0";
+my $free_memory_oid  = ".1.3.6.1.4.1.140.625.340.1.25";
+my $total_memory_oid = ".1.3.6.1.4.1.140.625.340.1.30";
+
+my $free_memory  = 0;
+my $total_memory = 0;
+my $retmsg       = 0;
+my $retval       = 0;
+my $perfdata     = "";
+
+# Call this when you know you'll get a single value back
+sub get_oid_value {
+    our ( $oid, $result, $status, $returnstring );
+
+    $oid = shift(@_);
+
+    if ( !defined( $s->get_next_request($oid) ) ) {
+        if ( !defined( $s->get_request($oid_testoid) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return -1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return -1;
+        }
+    }
+
+    foreach ( $s->var_bind_names() ) {
+        $result = $s->var_bind_list()->{$_};
+        if ( $_ !~ /^$oid/ ) {
+            print "UNKNOWN - OID does not exist!\n";
+            exit 3;
+        }
+    }
+
+    return $result;
+}
+
+if ( !defined( $s->get_request($oid_testoid) ) ) {
+    if ( !defined( $s->get_request($oid_testoid) ) ) {
+        print "Agent not responding\n";
+        exit 1;
+    }
+}
+
+# Get the sub OID for this particular queue
+$free_memory  = get_oid_value($free_memory_oid);
+$total_memory = get_oid_value($total_memory_oid);
+
+# Accurate to 2dp
+my $free_percent = int( ( $free_memory / $total_memory ) * 10000 ) / 100;
+$perfdata = "free_memory=$free_percent;$warning;$critical;";
+
+if ( $free_percent < $critical ) {
+    print "CRITICAL - Free heap memory is $free_percent%|$perfdata\n";
+    exit 2;
+}
+elsif ( $free_percent < $warning ) {
+    print "WARNING - Free heap memory is $free_percent%|$perfdata\n";
+    exit 1;
+}
+else {
+    print "OK - Free heap memory is $free_percent%|$perfdata\n";
+    exit 0;
+}

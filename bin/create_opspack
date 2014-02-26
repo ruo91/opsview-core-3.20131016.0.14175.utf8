@@ -1,0 +1,515 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+# 	create_opspack {hosttemplatename} [...]
+#
+# DESCRIPTION:
+#   Uses Opsview's REST API to get a list of host templates and the related service groups, servicechecks and plugins
+#   and creates a monitor pack for installation with install_opspack
+#   Output files:
+#    info - key=value pair metadata about the monitor pack
+#    plugins/ - a directory with all plugins referenced (common plugins removed)
+#    config.json - a json file of service groups, plugins, service checks, host templates
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin", "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+
+use Getopt::Long;
+use Opsview::API;
+use JSON;
+use Data::Dump qw(dump);
+use File::Copy qw(cp);
+use Opsview::Config;
+
+my $plugindir = "/usr/local/nagios/libexec";
+
+my $url_prefix = $ENV{OPSVIEW_URL_PREFIX} || "http://localhost";
+my $username;
+my $password;
+
+GetOptions(
+    "username|u=s" => \$username,
+    "password|p=s" => \$password,
+) or my_die( "Incorrect options" );
+
+my $hosttemplate_name = $ARGV[0]
+  or my_die( "Must specify a host template name" );
+
+my $j = JSON->new;
+
+my $ua = Opsview::API->new(
+    username        => $username,
+    password        => $password,
+    url_prefix      => $url_prefix,
+    api_min_version => "2",
+    data_format     => "json",
+);
+
+$ua->login;
+
+# This list is to avoid adding these service check
+# dependencies into the monitor packs. This is
+# a bit fragile as a rename of the service checks on the
+# target Opsview system would potentially break this, but
+# is the best under the circumstances
+my @common_servicecheck_dependencies =
+  ( "SNMP Agent", "Opsview Agent", "HTTP", );
+my %common_servicecheck_dependences =
+  map { ( $_ => 1 ) } @common_servicecheck_dependencies;
+
+$_ = lc $hosttemplate_name;
+my $norm_hosttemplate_dir  = $_;
+my $norm_hosttemplate_name = $_;
+$norm_hosttemplate_dir  =~ s/\W+/-/g;
+$norm_hosttemplate_name =~ s/\W+/_/g;
+
+my $result;
+my %hosttemplates;
+my %servicegroups;
+my %servicechecks;
+my %attributes;
+my %keywords;
+my %plugins;
+
+# Recursive function to find all service checks and its dependencies and get related information
+sub process_servicechecks {
+    my ( $hash_ref, $level ) = @_;
+    $level ||= 0;
+
+    # Ignore servicechecks already discovered
+    if ( $_ = $servicechecks{ $hash_ref->{name} } ) {
+        if ( $_->{level} < $level ) {
+            $_->{level} = $level;
+        }
+        next;
+    }
+
+    $ua->get(
+        $hash_ref->{ref}
+          . "?cols=-hosts,-hosttemplates,-id,-check_period,-notification_period,-uncommitted"
+    );
+    my $result = $j->decode( $ua->content );
+
+    my $object = $result->{object};
+    for ( @{ $object->{keywords} || [] } ) {
+        $keywords{ $_->{name} } = $_->{ref};
+    }
+    $servicegroups{ $object->{servicegroup}->{name} } =
+      $object->{servicegroup}->{ref};
+    if ( $object->{attribute} && $object->{attribute}->{name} ) {
+        $attributes{ $object->{attribute}->{name} } =
+          $object->{attribute}->{ref};
+    }
+
+    # Check if attributes used in args field
+    my $commandline    = $object->{args};
+    my $hostvar_regexp = Opsview::Config->parse_attributes_regexp;
+    while ( my ( $key, $attribute_name, undef, $argX ) =
+        ( $commandline =~ $hostvar_regexp ) )
+    {
+        unless ( $attributes{$attribute_name} ) {
+            $ua->get( "config/attribute?s.name=$attribute_name" );
+            my $a = $j->decode( $ua->content );
+            if ( $a->{summary}->{rows} == 0 ) {
+                my_die( "Cannot find attribute name $attribute_name" );
+            }
+            elsif ( $a->{summary}->{rows} > 1 ) {
+                my_die( "Too many attributes for $attribute_name! Problem!" );
+            }
+            else {
+                $attributes{$attribute_name} = $a->{list}->[0]->{ref};
+            }
+        }
+        $commandline =~ s/%$key%//g;
+    }
+
+    # Store list of plugins required
+    if ( $object->{plugin} && $object->{plugin}->{name} ) {
+        $plugins{ $object->{plugin}->{name} } = 1;
+    }
+
+    $servicechecks{ $object->{name} } = $object;
+    $object->{level} = $level;
+
+    foreach my $dep ( @{ $object->{dependencies} } ) {
+        process_servicechecks( $dep, $level + 1 );
+    }
+}
+
+$ua->get(
+    "config/hosttemplate?s.name=$hosttemplate_name&cols=-id,-hosts,-uncommitted"
+);
+
+$result = $j->decode( $ua->content );
+
+if ( $result->{summary}->{rows} == 0 ) {
+    my_die( "Cannot find host template: $hosttemplate_name" );
+}
+if ( $result->{summary}->{rows} > 1 ) {
+    my_die( "Got more than one row: " . $result->{summary}->{rows} );
+}
+
+my $hosttemplate = $result->{list}->[0];
+$hosttemplates{ $hosttemplate->{name} } = $hosttemplate;
+
+#print "result=".dump($hosttemplate)."\n";
+
+foreach my $scname ( @{ $hosttemplate->{servicechecks} } ) {
+    process_servicechecks($scname);
+}
+
+# This is a list of common plugins which are included with Opsview
+# and do not need to be included in the monitor pack
+my @common_plugins_list = qw(
+  check_apache
+  check_apache_performance
+  check_app_mem
+  check_apt
+  check_aql_sms_credit
+  check_aws_ec2
+  check_aws_ec2_instances
+  check_aws_s3
+  check_breeze
+  check_by_ssh
+  check_clamd
+  check_cluster
+  check_cpu_solaris
+  check_cpustatus_solaris
+  check_dhcp
+  check_dig
+  check_dir_age
+  check_disk
+  check_diskerr_solaris
+  check_diskiops_solaris
+  check_diskio_solaris
+  check_disk_smb
+  check_dns
+  check_dnsbl
+  check_dummy
+  check_file_age
+  check_file_count
+  check_flexlm
+  check_ftp
+  check_host
+  check_hpjd
+  check_http
+  check_http_authentication
+  check_hudson_job
+  check_icmp
+  check_ide_smart
+  check_ifoperstatus
+  check_ifstatus
+  check_imap
+  check_ircd
+  check_jabber
+  check_kvm_number
+  check_kvm_state
+  check_ldap
+  check_ldaps
+  check_ldap_sync
+  check_linksyswap
+  check_load
+  check_log
+  check_mailq
+  check_memory
+  check_memory_solaris
+  check_modem
+  check_mrtg
+  check_mrtgtraf
+  check_mysql
+  check_mysql_performance
+  check_mysql_query
+  check_nagios
+  check_nagios_check_spread
+  check_nagios_disabled
+  check_nagios_latency
+  check_nagios_startup
+  check_nagios_stats
+  check_netapp
+  check_netbotz_humidity
+  check_netbotz_temperature
+  check_netflow_database
+  check_netio_solaris
+  check_netlink_solaris
+  check_netsnmp_perfstats
+  check_nntp
+  check_nntps
+  check_nrpe
+  check_nt
+  check_ntp
+  check_ntp_peer
+  check_ntp_time
+  check_nwstat
+  check_odw_hostgroup_availability
+  check_odw_status
+  check_opsview_async_imports
+  check_opsview_backups
+  check_opsview_checkresults
+  check_opsview_cluster
+  check_opsview_keyword
+  check_opsview_license_expiry
+  check_opsview_master
+  check_opsview_mysql
+  check_opsview_mysql_performance
+  check_opsview_ndo_import
+  check_opsview_services
+  check_opsview_sessions
+  check_opsview_slave
+  check_opsview_slave_cluster
+  check_opsview_slave_node
+  check_opsview_tablespace_free
+  check_opsview_tablespace_used
+  check_opsview_update
+  check_oracle
+  check_overcr
+  check_pgsql
+  check_ping
+  check_plugin_output
+  check_pop
+  check_postgres
+  check_procs
+  check_radius_ih
+  check_raid
+  check_real
+  check_route
+  check_rpc
+  check_runqueue_solaris
+  check_selenium
+  check_sensors
+  check_sensor_solaris
+  check_simap
+  check_slicehost
+  check_smart
+  check_smtp
+  check_snmp
+  check_snmp_apc_exttempprobe
+  check_snmp_apcups
+  check_snmp_cisco_asa_hastatus
+  check_snmp_cisco_bgppeer
+  check_snmp_cisco_bits_sec
+  check_snmp_cisco_css_master
+  check_snmp_cisco_ha
+  check_snmp_cisco_ha_ismaster
+  check_snmp_cisco_ifstatus
+  check_snmp_cisco_linkstatus
+  check_snmp_cisco_loadavg
+  check_snmp_cisco_loadavg_asa
+  check_snmp_cisco_memutil
+  check_snmp_extreme_power_supply
+  check_snmp_fortigate_cpu
+  check_snmp_fortigate_disk
+  check_snmp_fortigate_mem
+  check_snmp_foundry_cpuavg
+  check_snmp_foundry_loadavg
+  check_snmp_foundry_memutil
+  check_snmp_fsutil
+  check_snmp_ifstatus
+  check_snmp_interfaces
+  check_snmp_interfaces_cascade
+  check_snmp_linkstatus
+  check_snmp_loadavg
+  check_snmp_memutil
+  check_snmp_netscaler_clientconnections
+  check_snmp_netscaler_clientconnections_established
+  check_snmp_netscaler_cpu
+  check_snmp_netscaler_httpssl
+  check_snmp_netscaler_memutil
+  check_snmp_netscaler_serverconnections
+  check_snmp_netscaler_surgequeue
+  check_snmp_netscaler_vserver
+  check_snmp_netscreen_activesessions
+  check_snmp_netscreen_cpu
+  check_snmp_netscreen_mem
+  check_snmp_netscreen_nsrp
+  check_snmp_noprocesses
+  check_snmp_nousers
+  check_snmp_perfstats
+  check_snmp_runningproc
+  check_snmp_sensatronics_temp
+  check_snmp_sysinfo
+  check_snmp_tcpcurrestab
+  check_snmp_tcpcurrestab_cssfix
+  check_snmp_uptime
+  check_snmp_vmware_cpu
+  check_snmp_vmware_gueststatus
+  check_snmp_vmware_memory
+  check_snmp_vmware_netio
+  check_snmp_vmware_vmkernel
+  check_snmp_weblogic_appsessions
+  check_snmp_weblogic_clusterservers
+  check_snmp_weblogic_deploymentstatus
+  check_snmp_weblogic_idlethreads
+  check_snmp_weblogic_jdbccapacity
+  check_snmp_weblogic_jdbcconns
+  check_snmp_weblogic_jms_dests
+  check_snmp_weblogic_jmsmsgbridge
+  check_snmp_weblogic_jmsqueuelength
+  check_snmp_weblogic_jms_servers
+  check_snmp_weblogic_lockedout
+  check_snmp_weblogic_queuelength
+  check_snmp_weblogic_servermemory
+  check_snmp_weblogic_serverstatus
+  check_snmp_weblogic_version
+  check_spop
+  check_sql_advanced
+  check_ssh
+  check_ssmtp
+  check_swap
+  check_tcp
+  check_tcpconnections
+  check_tftp
+  check_time
+  check_time_skew
+  check_udp
+  check_ups
+  check_users
+  check_wave
+  check_xen_number
+  check_xen_state
+);
+my %common_plugins = map { ( $_ => 1 ) } @common_plugins_list;
+
+mkdir($norm_hosttemplate_dir);
+
+if ( !-e "$norm_hosttemplate_dir/plugins" ) {
+    mkdir "$norm_hosttemplate_dir/plugins"
+      or my_die( "Cannot create $norm_hosttemplate_dir/plugins/ directory" );
+}
+
+my %needed_plugins;
+foreach my $p ( keys %plugins ) {
+    next if $common_plugins{$p};
+    my $plugin_file = "$plugindir/$p";
+    if ( !-e $plugin_file ) {
+        my_die( "$plugin_file does not exist" );
+    }
+    my $dest = "$norm_hosttemplate_dir/plugins/$p";
+    cp( $plugin_file, $dest ) or my_die( "Cannot copy $p to $dest" );
+    chmod( 0755, $dest );
+    print "Copied $p\n";
+    $needed_plugins{$p}++;
+}
+
+# Delete unused plugins
+foreach my $plugin_path (<"$norm_hosttemplate_dir/plugins/check_*">) {
+    ( my $p = $plugin_path ) =~ s%plugins/%%;
+    next if $needed_plugins{$p};
+    print "Deleting $p\n";
+    unlink $plugin_path;
+}
+
+my @keywords;
+foreach my $kwname ( keys %keywords ) {
+    $ua->get(
+        $keywords{$kwname}
+          . "?cols=-hosts,-roles,-servicechecks,-id,-uncommitted"
+    );
+    $result = $j->decode( $ua->content );
+    push @keywords, $result->{object};
+}
+
+my @servicegroups;
+foreach my $sgname ( keys %servicegroups ) {
+    $ua->get( $servicegroups{$sgname} . "?cols=-servicechecks,-id,-uncommitted"
+    );
+    $result = $j->decode( $ua->content );
+    push @servicegroups, $result->{object};
+}
+
+my @attributes;
+foreach my $attr ( keys %attributes ) {
+    $ua->get( $attributes{$attr} . "?cols=-servicechecks,-id,-uncommitted" );
+    $result = $j->decode( $ua->content );
+    push @attributes, $result->{object};
+}
+
+# Deliberately sorted by $b first, as level is higher for more dependent service checks
+my @servicechecks =
+  sort { $b->{level} <=> $a->{level} || $a->{name} cmp $b->{name} }
+  values %servicechecks;
+my @hosttemplates = values %hosttemplates;
+
+# We use a hash here so that install_opspacks can parse through types easily
+my $export = {
+    "servicegroup" => \@servicegroups,
+    "keyword"      => \@keywords,
+    "servicecheck" => \@servicechecks,
+    "hosttemplate" => \@hosttemplates,
+    "attribute"    => \@attributes,
+};
+
+Opsview::Utils->remove_keys_from_hash( $export, ["ref"] );
+
+open F, ">", "$norm_hosttemplate_dir/config.json"
+  or my_die( "Cannot open $norm_hosttemplate_dir/config.json for writing" );
+print F $j->pretty->canonical->encode($export);
+close F;
+print "Created config.json\n";
+
+if ( !-e "$norm_hosttemplate_dir/info" ) {
+    open F, ">", "$norm_hosttemplate_dir/info"
+      or my_die( "Cannot open $norm_hosttemplate_dir/info for writing" );
+    print F <<"EOF";
+NAME=com.example.opspack.$norm_hosttemplate_name
+VERSION=1.0
+ALIAS=$hosttemplate_name
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=
+EOF
+    close F;
+    print "Created info\n";
+}
+
+open F, ">", "$norm_hosttemplate_dir/Makefile"
+  or my_die( "Cannot open $norm_hosttemplate_dir/Makefile for writing" );
+print F << 'EOF';
+NAME := $(shell perl -ne 'if (/ALIAS=(.*)/){ $$_ = lc($$1); s/ /-/g; s/\-+/-/g; print $$_ }' info)
+
+PACKNAME = ${NAME}
+
+mpack: clean
+	mkdir ${PACKNAME}
+	cp info config.json ${PACKNAME}
+	# plugin.d is only created if required - can ignore warnings about directory missing
+	tar --exclude=.svn -cf - plugins plugin.d | tar -C ${PACKNAME} -xf -
+	tar --gzip -cf ${PACKNAME}.tar.gz ${PACKNAME}
+
+clean:
+	rm -fr ${PACKNAME}
+EOF
+close F;
+print "Created Makefile\n";
+
+sub my_die {
+    print <<"USAGE";
+
+create_opspack --username=username --password=password {template name}
+
+Will output a JSON format for the host template for creating an Opsview Monitor Pack. Will
+included related information. For import_monitor_pack to install
+
+USAGE
+    die(@_);
+}

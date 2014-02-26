@@ -1,0 +1,2 @@
+#!/bin/bash
+find . \( -name "*.orig" -o -name "*.bak" -o -name "svn-commit*.tmp" -o -name "*.merge-left.r*" -o -name "*.merge-right.r*" -o -name "*.working" -o -name "nagios-*-00.log" \) -exec rm {} \;

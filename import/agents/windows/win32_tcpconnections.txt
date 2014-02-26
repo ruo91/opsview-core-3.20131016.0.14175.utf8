@@ -1,0 +1,10 @@
+check_tcpconnections v1.0
+
+Returns number of connections to given TCP port
+
+Usage: check_tcpconnections -p <tcp port> -w <warning threshold> -c <critical threshold>
+
+Options: -p             TCP port number
+         -w             Warning threshold (integer)
+         -c             Critical threshold (integer)
+         -z 1           Warns if connections = 0

@@ -1,0 +1,278 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#	import_slaveresultsd
+#
+# DESCRIPTION:
+#	Imports slave results from Nagios to Opsview master
+#   Takes cache log files and then pushes those via NRD to master
+#	Allows Nagios to continue processing while this is asynchronously updating
+#	Will import files from the var/slaveresults directory
+#	in filename order (which should be timestamped)
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin/../perl/lib", "$Bin/../lib", "$Bin/../etc";
+use Log::Log4perl;
+use POSIX;
+use Time::HiRes qw(sleep gettimeofday);
+use Try::Tiny;
+
+use NRD::Client;
+
+# Allow a cache of 5 minutes
+my $max_file_age = 5 * 60;
+
+$0 = "import_slaveresultsd";
+
+my $rootdir      = "/usr/local/nagios";
+my $import_dir   = "$rootdir/var/slaveresults";
+my $error_flag   = "$rootdir/var/slaveresults.error";
+my $send_nrd_cfg = '/usr/local/nagios/etc/send_nrd.cfg';
+
+Log::Log4perl::init_and_watch( "$rootdir/etc/Log4perl-slave.conf", 30 );
+
+my $logger = Log::Log4perl->get_logger( "import_slaveresultsd" );
+
+$logger->info( "Starting" );
+
+my $pidfile = "/usr/local/nagios/var/import_slaveresultsd.pid";
+if ( -e $pidfile ) {
+    open( my $fh, "< $pidfile" )
+      or $logger->logdie( "Cannot read pid file - is daemon running?" );
+    my $pid = <$fh>;
+    close $fh;
+    if ( kill 0, $pid ) {
+        $logger->logdie( "import_slaveresultsd already running as process $pid"
+        );
+    }
+    else {
+        $logger->warn( "Crash from previous run. Deleting pid file" );
+        unlink $pidfile or $logger->logdie( "Cannot delete pidfile" );
+    }
+}
+
+# Do cleanup on exit
+my $pid;
+END { cleanup() unless $pid }
+
+if (1) {
+    $pid = fork;
+    exit if $pid;
+    $logger->logdie("Couldn't fork: $!") unless defined $pid;
+    POSIX::setsid() or $logger->logdie( "Cannot daemonize" );
+
+    $logger->info( "Daemonised" );
+
+    open PID, "> $pidfile" or die "Could not write to pid file $pidfile";
+    print PID "$$";
+    close PID;
+
+    for my $handle ( *STDIN, *STDOUT, *STDERR ) {
+        open( $handle, "+<", "/dev/null" )
+          || die "can't reopen $handle to /dev/null: $!";
+    }
+}
+
+my $break = 0;
+$SIG{INT}  = \&catch_signals;
+$SIG{TERM} = \&catch_signals;
+$SIG{PIPE} = 'IGNORE';
+
+my $log_duration_threshold = 12;
+
+if ( !-e $import_dir ) {
+    mkdir $import_dir || $logger->logdie( "Cannot create $import_dir" );
+}
+chdir($import_dir) or $logger->logdie( "Cannot chdir: $!" );
+my $last_update = 0;
+my $c           = 0;
+
+my ( $host, $port );
+my $conf                   = {};
+my $send_nrd_last_modified = 0;
+
+MAINLOOP:
+until ($break) {
+
+    my $send_nrd_modified = ( stat $send_nrd_cfg )[9] || -1;
+    if ( $send_nrd_modified != $send_nrd_last_modified ) {
+        $send_nrd_last_modified = $send_nrd_modified;
+        $logger->debug( "send_nrd_modified: $send_nrd_modified" );
+        setup();
+        $logger->debug( "encrypt_key: $conf->{encrypt_key}" );
+    }
+
+    # Not sure why, but can't use IMPORT_DIR filehandle
+    my $dir_update = ( stat(".") )[9];
+    my $found      = 0;
+    if ( $dir_update != $last_update ) {
+        opendir( IMPORT_DIR, "." ) or $logger->logdie( "Cannot open dir: $!" );
+
+        # sorting required to get files in timestamped order
+        my @files = sort ( grep !/^\.\.?\z/, readdir IMPORT_DIR );
+        closedir IMPORT_DIR;
+
+        RETRY:
+        while ( my $file = shift @files ) {
+            last MAINLOOP if ($break);
+
+            my $error = undef;
+            try {
+                process_each_file($file);
+            }
+            catch {
+                $error = $_;
+            };
+            if ( defined $error ) {
+                chomp $error;
+                $error =~ s/\n/ /g;
+                $logger->error(
+                    "Error processing data [$error] - retry in 5 seconds"
+                );
+                unshift @files, $file;
+
+                # Save the reason for last error - this is for opsview_retrieve_info to return
+                # Strip off the at ...{file} message
+                $error =~ s/ at \/.*//;
+                open ERROR, ">", $error_flag;
+                print ERROR $error;
+                close ERROR;
+
+                sleep 5;
+                next RETRY;
+            }
+            else {
+
+                # Remove the error flag as last transfer was fine. Don't check for errors as may not exist
+                unlink($error_flag);
+
+            }
+
+            $found = 1;
+        }
+        $last_update = $dir_update;
+    }
+
+    # Directory would have changed from our last import, so expect above if to succeed
+    # But allows a next check to run if more files have been added
+    sleep 0.25 unless $found;
+}
+
+sub cleanup {
+    $logger->info( "Stopping $0" );
+    unlink $pidfile;
+}
+
+sub process_each_file {
+    my $file      = shift;
+    my $start     = gettimeofday();
+    my $file_size = -s $file;
+
+    $logger->debug( "Processing $file, size $file_size" );
+
+    if ( $file_size == 0 ) {
+        unlink $file;
+        return;
+    }
+
+    # Drop file if too old
+    my $file_age = $start - $file;
+    if ( $file_age > $max_file_age ) {
+        $logger->warn(
+                "Dropping $file ("
+              . scalar localtime($file)
+              . ") because file age ($file_age) is greater than max file age ($max_file_age)"
+        );
+        unlink $file;
+        return;
+    }
+
+    unless ( open NAGIOSDATA, $file ) {
+        $logger->error( "Error opening $file: $!" );
+        return;
+    }
+
+    my $client = NRD::Client->new($conf);
+    $client->connect(
+        PeerAddr => $host,
+        PeerPort => $port,
+        Proto    => 'tcp',
+    );
+    $client->send_results_from_lines(*NAGIOSDATA);
+    $client->end;
+    close NAGIOSDATA;
+
+    if ( $logger->is_debug() ) {
+        my $debug_dir = "/usr/local/nagios/var/slaveresults.archive";
+        unless ( -d $debug_dir ) {
+            mkdir $debug_dir;
+        }
+        rename( $file, "$debug_dir/$file" );
+    }
+    else {
+        unlink $file;
+    }
+
+    my $duration = gettimeofday() - $start;
+    $logger->debug( "Finished $file. Duration=$duration" );
+    if ( $duration > $log_duration_threshold ) {
+        my $nice_duration = sprintf( "%0.2f", $duration );
+        $logger->warn(
+            "Import of $file, size=$file_size, took $nice_duration seconds > $log_duration_threshold seconds"
+        );
+    }
+}
+
+sub catch_signals {
+    if ( $break++ == 0 ) {
+        $logger->warn( "Received kill signal - gracefully shutting down" );
+    }
+    else {
+        $logger->logdie( "Received kill signal - forced death" );
+    }
+}
+
+sub setup {
+    {
+        local *CONF;
+        open CONF, "<", $send_nrd_cfg or next;
+        while ( my $line = <CONF> ) {
+            chomp $line;
+            next if ( $line =~ m/^\s*#/ );
+            next if ( $line =~ m/^\s*$/ );
+            $line =~ s/^\s*(\w+)\s+(.{1,}?)\s*$/$conf->{$1} = $2;/ge;
+        }
+    }
+
+    $host = $conf->{'host'} ||= 'localhost';
+    $port = $conf->{'port'} ||= 5669;
+
+    $conf->{'serializer'}   ||= 'none';
+    $conf->{'encrypt_type'} ||= '';
+    $conf->{'encrypt_key'}  ||= '';
+    $conf->{input_delimiter} = "doublepipe";
+
+}

@@ -1,0 +1,42 @@
+#!/usr/bin/perl
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use strict;
+use warnings;
+
+use lib '/usr/local/nagios/perl/lib';
+use lib '/usr/local/nagios/lib';
+
+use Opsview;
+use Opsview::Servicecheck;
+my $checks = Opsview::Servicecheck->retrieve_from_sql(
+    qq{
+    check_interval is not null
+}
+);
+
+while ( my $check = $checks->next ) {
+    $check->check_interval( $check->check_interval * 60 );
+    if ( $check->retry_check_interval ) {
+        $check->retry_check_interval( $check->retry_check_interval * 60 );
+    }
+    if ( $check->notification_interval ) {
+        $check->notification_interval( $check->notification_interval * 60 );
+    }
+    $check->update;
+}

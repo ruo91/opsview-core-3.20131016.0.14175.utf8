@@ -1,0 +1,314 @@
+#!/usr/bin/perl
+#
+### BEGIN OPSVIEW INFO
+# Macros: LASTSERVICECHECK
+### END OPSVIEW INFO
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+# This script is used for BROKEN devices which return the total
+# number of TCP connections from the tcpCurrEstab OID rather than,
+# perhaps obviously, the number of currently established connections
+# This is partly handy, though, as we can use it to generate an
+# average number of connections per minute
+use strict;
+use warnings;
+
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+use DBI;
+
+my $script = "check_tcpcurrestab_cssfix";
+
+my $np = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => $script,
+    version   => "1.1",
+    blurb =>
+      "Returns the average number of TCP connections established every minute, for Cisco CSS",
+    snmp => {
+        "snmp-version" => 1,
+        "snmp-timeout" => 2,
+    },
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w, --warning=INTEGER
+    Warning threshold (conns per minute)},
+    default  => 60,
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c, --critical=INTEGER
+    Critical threshold (conns per minute)},
+    default  => 200,
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "debug|D",
+    help => qq{-D, --debug=INTEGER
+    Output some debug information},
+);
+
+$np->getopts;
+
+my $warning  = $np->opts->warning;
+my $critical = $np->opts->critical;
+my $hostname = $np->opts->hostname;
+
+my $s = $np->snmp;
+
+my $oid_tcpCurrEstab = ".1.3.6.1.2.1.6.9.0";
+my $oid_sysDescr     = ".1.3.6.1.2.1.1.1.0";
+
+my $returnstring = "";
+my $status       = 0;
+
+sub my_die {
+    my (@text) = @_;
+    print @text, $/;
+    exit 3;
+}
+
+# Database settings
+# Where to put the .db file
+my $db_home = "/usr/local/nagios/var/";
+
+# Name of the database file
+my $db_name = "$script.db";
+
+# Database handle
+my $db_h;
+
+# Statement handle
+my $st_h;
+
+### SQL Queries
+# Create table SQL query
+my $sql_create_hosts = "CREATE TABLE hosts (hostname UNIQUE,conns,modified_on)";
+
+# Retrive data
+my $sql_previous_state =
+  "SELECT conns,modified_on FROM hosts WHERE hostname='$hostname'";
+
+sub dbsetup {
+
+    # Check if the db has been set up
+    my $res = $db_h->selectall_arrayref(
+        "SELECT name FROM sqlite_master
+		WHERE type='table'
+		AND name='hosts'"
+    );
+
+    unless ( $res->[0]->[0] eq "hosts" ) {
+
+        # Create tables
+        $st_h = $db_h->prepare($sql_create_hosts);
+        $st_h->execute()
+          or my_die( "Can't create hosts table!" );
+    }
+}
+
+# Load previous information from database - this is read only so shouldnt lock
+sub dbload {
+    our ( $conns, $modified_on );
+    my $retdata = {};
+
+    $st_h = $db_h->prepare($sql_previous_state) || my_die($DBI::errstr);
+    $st_h->execute() || my_die($DBI::errstr);
+    $st_h->bind_columns( \$conns, \$modified_on );
+    $st_h->fetch();
+
+    # If there's no data, put a blank row in so we can just run an
+    # UPDATE in dbsave without worrying about the row not existing
+    if ( $modified_on eq "" ) {
+        warn 'Creating new entry within database', $/;
+        $conns       = 0;
+        $modified_on = time();
+
+        $st_h =
+          $db_h->prepare( "INSERT INTO hosts (hostname,conns,modified_on) "
+              . "VALUES ('$hostname',$conns,$modified_on)" )
+          || my_die($DBI::errstr);
+        $st_h->execute()
+          or my_die( "Can't insert new row into table!" );
+    }
+
+    $retdata->{conns}       = $conns;
+    $retdata->{modified_on} = $modified_on;
+    return $retdata;
+}
+
+# save data back out - this needs write lock on the db so need to retry
+sub dbsave {
+    my $conns = shift(@_);
+
+    $st_h = $db_h->prepare(
+            "UPDATE hosts SET modified_on="
+          . time()
+          . ",conns="
+          . $conns
+          . " WHERE hostname='$hostname'"
+    );
+
+    warn 'Attempting to write to database', $/ if ( $np->opts->debug );
+
+    my $retries = 5;
+    ATTEMPT: {
+        my $result;
+
+        last ATTEMPT if ( $st_h->execute() );
+        my_die($DBI::errstr) unless $DBI::errstr =~ /database is locked/;
+
+        last ATTEMPT if $retries < 1;
+
+        # NOTE: the execute has a sleep time in it so we don't need to
+        # sleep ourselves
+        $retries--;
+        warn "Database is locked - $retries retries left.", $/
+          if ( $$np->opts->debug );
+        redo ATTEMPT;
+    }
+    if ( $retries < 1 ) {
+        my_die( 'Unable to obtain write lock on sqlite database' );
+    }
+    else {
+        warn 'Database record written', $/ if ( $np->opts->debug );
+    }
+}
+
+if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+    if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+        print "Agent not responding, tried SNMP v1 and v2\n";
+        exit 3;
+    }
+}
+
+# Initialise DB connection (catch errors nicely here?)
+$db_h = DBI->connect( "dbi:SQLite:dbname=$db_home/$db_name", "", "" )
+  or my_die($DBI::errstr);
+
+# Create database tables if they don't exist if they don't exist
+dbsetup();
+
+# Retrieve current host information if it exists
+my $prevdata = dbload();
+my $newconns = main($prevdata);
+dbsave($newconns);
+
+# Close the session
+$s->close();
+if ( $returnstring eq "" ) {
+    $status = 3;
+}
+
+if ( $status == 0 ) {
+    print "OK - $returnstring\n";
+}
+elsif ( $status == 1 ) {
+    print "WARNING - $returnstring\n";
+}
+elsif ( $status == 2 ) {
+    print "CRITICAL - $returnstring\n";
+}
+else {
+    print "Plugin error! SNMP status unknown\n";
+}
+
+# Clean up
+$st_h->finish();
+
+# Need to undef because of bug in sqlite handling (finalize() not called with finish())
+# http://rt.cpan.org/Public/Bug/Display.html?id=22688
+undef $st_h;
+$db_h->disconnect();
+
+exit $status;
+
+sub main {
+    my $prevdata = shift(@_);
+    my $tcpcurrestab;
+    my $diff;
+    my $minutes;
+
+    if ( !defined( $s->get_request($oid_tcpCurrEstab) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+
+    foreach ( $s->var_bind_names() ) {
+        $tcpcurrestab = $s->var_bind_list()->{$_};
+    }
+
+    my $now = time();
+
+    if ( $now eq $prevdata->{modified_on} ) {
+        warn 'Running at same second as previously; sleeping for 1', $/;
+        sleep 1;
+        $now = time();
+    }
+
+    # Time difference
+    $minutes = ( $now - $prevdata->{modified_on} ) / 60;
+
+    # couldn't work out when last check was from db, so let nagios tell us
+    if ( !$minutes ) {
+        warn 'Could not calculate last check time from DB so using nagios', $/;
+        $minutes = ( $now - $ENV{NAGIOS_LASTSERVICECHECK} ) / 60;
+        warn 'time()=', $now, $/;
+        warn 'modified_on=', $prevdata->{modified_on}, $/;
+        warn "minutes=$minutes";
+    }
+
+    $diff = ( $tcpcurrestab - $prevdata->{conns} ) / $minutes;
+
+    # $diff+0.5 is to make int() work like a round() function
+    $returnstring =
+        "TCP connections per minute: "
+      . int( $diff + 0.5 )
+      . "|connections/min=$diff";
+
+    #print "$tcpcurrestab, $diff\n";
+    if ( $diff >= $warning ) {
+        $status = 1;
+    }
+
+    if ( $diff >= $critical ) {
+        $status = 2;
+    }
+
+    return $tcpcurrestab;
+}
+

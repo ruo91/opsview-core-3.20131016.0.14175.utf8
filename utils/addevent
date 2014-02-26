@@ -1,0 +1,194 @@
+#!/usr/bin/perl
+#
+# addevent -h [-t state_type] hostname stateid text
+# addevent -s [-t state_type] hostname servicename stateid text
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use strict;
+use warnings;
+
+use FindBin qw($Bin);
+use lib "$FindBin::Bin/../lib", "$FindBin::Bin/../etc";
+
+use Runtime::Schema;
+use DateTime;
+
+use Getopt::Std;
+
+my $opts = {};
+getopts( "hst:", $opts ) or die "Invalid opts";
+
+die "Host -h or service -s?" unless $opts->{h} or $opts->{s};
+
+my $object_type;
+if ( $opts->{h} && $opts->{h} == 1 ) {
+    $object_type = "host";
+}
+else {
+    $object_type = "service";
+}
+
+die "Specify state type" unless defined $opts->{t};
+my $state_type_id = 1;
+if ( lc $opts->{t} eq "soft" || lc $opts->{t} eq "s" || $opts->{t} == 0 ) {
+    $state_type_id = 0;
+}
+
+my $hostname = shift @ARGV || die "Specify hostname";
+my $servicename;
+
+if ( $opts->{s} ) {
+    $servicename = shift @ARGV || die "Specify servicename";
+}
+
+my $state_input = shift @ARGV;
+die "Specify state as numbers or text" unless defined $state_input;
+
+my $lookup_service_stateid = {
+    "0"      => 0,
+    "1"      => 1,
+    "2"      => 2,
+    "3"      => 3,
+    ok       => 0,
+    o        => 0,
+    w        => 1,
+    warn     => 1,
+    warning  => 1,
+    c        => 2,
+    crit     => 2,
+    critical => 2,
+    u        => 3,
+    un       => 3,
+    unknown  => 3,
+};
+
+my $lookup_host_stateid = {
+    "0"         => 0,
+    "1"         => 1,
+    "2"         => 2,
+    up          => 0,
+    un          => 1,
+    unreach     => 1,
+    unreachable => 1,
+    down        => 2,
+    d           => 2,
+};
+
+my $state_id;
+if ( $object_type eq "host" ) {
+    $state_id = $lookup_host_stateid->{$state_input};
+}
+else {
+    $state_id = $lookup_service_stateid->{$state_input};
+}
+die "Invalid state: $state_input" unless defined $state_id;
+
+my $text = "@ARGV";
+die "Must specify output" unless defined $text;
+
+my $schema = Runtime::Schema->my_connect;
+
+my $object_rs = $schema->resultset( "NagiosObjects" );
+
+my $object;
+if ( $object_type eq "host" ) {
+    $object = $object_rs->find(
+        {
+            name1         => $hostname,
+            objecttype_id => 1
+        }
+    );
+}
+else {
+    $object = $object_rs->find(
+        {
+            name1 => $hostname,
+            name2 => $servicename
+        }
+    );
+}
+die "Object not found" unless $object;
+
+my $rs = $schema->resultset("NagiosStatehistory")->create(
+    {
+        object_id             => $object->id,
+        state_time            => DateTime->now,
+        instance_id           => 1,
+        state                 => $state_id,
+        state_type            => $state_type_id,
+        current_check_attempt => 1,
+        max_check_attempts    => 3,
+        last_state            => 0,
+        last_hard_state       => 0,
+        output                => $text,
+    }
+);
+
+__DATA__
+
+
+
+
+my $total = $rs->count;
+is( $total, 9373, "Got all events" );
+
+my $formatter = DateTime::Format::Strptime->new(
+  pattern => "%F %T",
+);
+
+sub formatter {
+  my $dt = shift;
+  $dt->set_formatter( $formatter );
+  $dt->set_time_zone( "America/Chicago" );
+  "$dt";
+}
+
+my $first = $rs->first;
+is( $first->statehistory_id, 1);
+isa_ok( $first->state_time, "DateTime" );
+is( $first->state_time, '2009-07-08T12:31:47' );
+is( formatter($first->state_time), '2009-07-08 07:31:47');
+is( $first->state_time_usec, 102124 );
+is( $first->state_change, 1 );
+is( $first->state, 1 );
+is( $first->state_type, 0 );
+is( $first->output, "WARNING - load average: 3.03, 1.86, 0.83");
+
+my $object = $first->object;
+isa_ok( $object, "Runtime::Schema::NagiosObjects" );
+is( $object->objecttype_id, 2 );
+is( $object->name1, "monitored_by_slave" );
+is( $object->name2, "Check Loadavg" );
+
+#$total = $rs->search( { "hostgroup.matpath"" => { "-like" => { "matpath" => "blah%" } } } )->count;
+#is( $total, 54, "Got filter by hostgroup" );
+
+$total = $rs->search( { "keywords.keyword" => "cisco" }, { join => "keywords" } )->count;
+is( $total, 248, "Got filter by keyword" );
+
+$total = $rs->search( { "contacts.contactid" => 1 }, { join => "contacts" } )->count;
+is( $total, 832, "Got filter by contact" );
+
+$total = $rs->search( { "contacts.contactid" => 4 }, { join => "contacts" } )->count;
+is( $total, 262, "Got filter by different contact" );
+
+my $max_event_id = $rs->get_column("statehistory_id")->max;
+is( $max_event_id, 9373, "Got max statehistory id");
+
+
+1;

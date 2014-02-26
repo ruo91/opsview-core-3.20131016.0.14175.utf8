@@ -1,0 +1,24 @@
+{
+      "all_hosts" : "1",
+      "hosts" : [],
+      "contacts" : [
+         {
+            "ref" : "/rest/config/contact/10",
+            "name" : "viewkeywords"
+         }
+      ],
+      "all_servicechecks" : "0",
+      "style" : "group_by_host",
+      "name" : "cisco",
+      "description" : "cisco devices",
+      "servicechecks" : [
+         {
+            "ref" : "/rest/config/servicecheck/82",
+            "name" : "Another exception"
+         }
+      ],
+      "id" : "2",
+      "enabled" : "1",
+      "uncommitted" : "1"
+   }
+

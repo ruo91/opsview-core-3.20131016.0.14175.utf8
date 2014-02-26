@@ -1,0 +1,86 @@
+host {
+host_name=cisco2
+last_check=1264586389
+current_state=1
+last_state=1
+last_hard_state=1
+plugin_output=PING CRITICAL - Packet loss = 100%
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+hostdowntime {
+host_name=cisco2
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Leaf': test future downtime
+}
+service {
+host_name=cisco2
+service_description=Coldstart
+last_check=1264586309
+current_state=1
+last_state=1
+last_hard_state=1
+plugin_output=**Disk failure** on *sd1* - see [internal wiki](http://opsview.org) < 10
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+servicedowntime {
+host_name=cisco2
+service_description=Coldstart
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Leaf': test future downtime
+}
+service {
+host_name=cisco2
+service_description=Test exceptions
+last_check=1264586387
+current_state=0
+last_state=0
+last_hard_state=0
+plugin_output=Service assumed OK - no results received
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+servicedowntime {
+host_name=cisco2
+service_description=Test exceptions
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Leaf': test future downtime
+}
+service {
+host_name=cisco2
+service_description=Another exception
+last_check=1264586387
+current_state=0
+last_state=0
+last_hard_state=0
+plugin_output=Service assumed OK - no results received
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+servicedowntime {
+host_name=cisco2
+service_description=Another exception
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Leaf': test future downtime
+}

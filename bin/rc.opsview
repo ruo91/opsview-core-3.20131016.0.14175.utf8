@@ -1,0 +1,507 @@
+#!/bin/sh
+#
+#
+# SYNTAX:
+#	rc.opsview
+#
+# DESCRIPTION:
+#	Start/stop script for Opsview
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+# chkconfig: 345 99 01
+# description: Control script for Opsview
+# processname: opsviewd
+### BEGIN INIT INFO
+# Provides:          opsview
+# Required-Start:    $remote_fs +mysql
+# Required-Stop:     $remote_fs +mysql
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Start Opsview daemons at boot/shutdown
+# Description:       Start Opsview daemons at boot/shutdown
+### END INIT INFO
+
+#########
+#
+# NOTE: To work correctly for HA systems, MUST conform to 
+#       http://clusterlabs.org/doc/en-US/Pacemaker/1.0/html/Pacemaker_Explained/ap-lsb.html
+#
+#########
+
+# Switch to nagios if run as root
+id | grep "uid=0(" >/dev/null
+if [ $? = "0" ] ; then
+	test -d /var/lock/mrtg || mkdir -p /var/lock/mrtg
+	chown nagios:nagios /var/lock/mrtg
+	case "$0" in
+		/*) cmd="$0" ;;
+		*) cmd=`which $0`
+			case "$cmd" in
+			/*) ;;
+			*) cmd="$PWD/$cmd";;
+			esac
+			;;
+        esac
+        exec su - nagios -c "$cmd $@"
+fi
+
+# Enable coredumps for the user
+# We hide any errors as it is not important
+ulimit -c unlimited > /dev/null 2>&1
+
+# Redirect fd3 which is left open by Debian's apt-get install process
+exec 3>/dev/null
+
+# Reads pidfile $1
+# Returns 0 if okay, otherwise 1
+# Prints pid if found
+read_pidfile()
+{
+	pidfile=$1
+	if test ! -r $pidfile; then
+		echo "Cannot read $pidfile" >&2
+		return 1
+	fi
+	PID=`head -n 1 $pidfile`
+	if [ "x$PID" = "x" ] ; then
+		echo "No pid in $pidfile - manually check" >&2
+		return 1
+	fi
+	echo $PID
+	return 0
+}
+
+# Expects $1 to be pidfile
+# Returns 1 if not running, otherwise 0 if running
+# Will die if error
+status ()
+{
+	pidfile=$1
+	if test ! -f $pidfile; then
+		return 1
+	fi
+	PID=`read_pidfile $pidfile` || die 1 "Error reading pidfile"
+	if kill -0 $PID 2> /dev/null; then
+		return 0
+	fi
+	return 1
+}
+
+# Expects $1 to be name, $2 to be pidfile
+stop_application()
+{
+    # Get the application's PID.
+    if [ "$1" = "nrd" ]; then
+    # NRD doesn't use a PID file.
+        PID=`pgrep -o -x nrd`
+        if [ "x$PID" = "x" ] ; then
+            echo "$1 is not running"
+            return
+        fi
+    else
+        status $2
+        if [ $? != 0 ] ; then
+            echo "$1 is not running"
+            return
+        fi
+        PID=`read_pidfile $2` || die 1 "Problem reading pidfile for $1"
+    fi
+
+	kill_then_wait_30_seconds_before_minus_nine $PID $1
+}
+
+# Expects $1 to be pid to wait for
+kill_then_wait_30_seconds_before_minus_nine()
+{
+	pid=$1
+	kill $pid
+	COUNT=30
+	while true; do
+		kill -0 $pid 2>/dev/null
+		if [ $? != 0 ]; then
+			break
+		fi
+		if [ $COUNT -lt 1 ]; then
+			echo "Process $2 not stopped after 30 seconds - sending kill -9"
+			kill -9 $pid
+			break
+		fi
+		COUNT=`expr $COUNT - 1`
+		sleep 1
+	done
+}
+
+killproc_ndo2db()
+{
+	# Actually done via import_ndologsd
+	# Should add pidfile to ndo2db...
+	pkill -u nagios ndo2db
+}
+
+stopallchecks()
+{
+	perl -e 'print "[",time,"] STOP_EXECUTING_HOST_CHECKS\n[",time,"] STOP_EXECUTING_SVC_CHECKS\n"' > $NagiosCmd
+}
+
+startallchecks()
+{
+	perl -e 'print "[",time,"] START_EXECUTING_HOST_CHECKS\n[",time,"] START_EXECUTING_SVC_CHECKS\n"' > $NagiosCmd
+}
+
+backup()
+{
+	[ -d $BACKUP_DIR ] || die 1 "Cannot find $BACKUP_DIR"
+	if [ x$1 = "x" ] ; then
+		# These are the daily backups
+		BACKUP_SUFFIX=`date +"%Y-%m-%d-%H%M"`
+		after_reload=0
+
+		var_symlink=
+		if [ -h $prefix/var ] ; then
+			var_symlink="."`readlink $prefix/var`
+		fi
+		extras=
+		# Backup opsview-web if it exists - could reside on different server
+		if [ -d /usr/local/opsview-web ] ; then
+			extras=./usr/local/opsview-web
+		fi
+		# Need to exclude .$BACKUP_DIR because could be within /usr/local/nagios
+		# Also exclude sockets in var directory
+		# Also exclude NMIS' rrd files, but retain structure
+		# Also exclude ndologs dir because this is transcient data
+        # Also exclude the mount point directory
+		( cd / && tar --exclude .$prefix/lost+found --exclude .$prefix/nmis/database/*.rrd --exclude .$prefix/var/mrtg --exclude snmp/all --exclude .$BACKUP_DIR --exclude .$prefix/var/rw/nagios.cmd --exclude .$prefix/var/rw/opsviewd.cmd --exclude .$prefix/var/ndo.sock --exclude .$prefix/var/opsview_web_socket --exclude .$prefix/tmp --exclude .$prefix/var/ndologs --exclude .$prefix/var/perfdatarrd --exclude .$prefix/var/ndoconfigend --exclude .$prefix/var/spool -cf - .$prefix $extras $var_symlink | gzip -c > $BACKUP_DIR/opsview-files-$BACKUP_SUFFIX.tar.gz )
+
+		$bindir/db_runtime db_daily_backup | gzip -c > $BACKUP_DIR/runtime-db-$BACKUP_SUFFIX.sql.gz
+	else
+		BACKUP_SUFFIX=$1
+		after_reload=1
+	fi
+
+	# This name is required for the restore from Audit logs page
+	$bindir/db_opsview db_backup | gzip -c > $BACKUP_DIR/opsview-db-$BACKUP_SUFFIX.sql.gz
+
+	if [ $after_reload -eq 1 ] ; then
+		perl -e 'use lib "/usr/local/nagios/lib", "/usr/local/nagios/etc", "/usr/local/nagios/perl/lib"; use Opsview::Auditlog; Opsview::Auditlog->create( { text => "Backup completed", reloadid => shift(@ARGV) } )' $1
+	else
+		find $BACKUP_DIR -type f -mtime +${BACKUP_RETENTION_DAYS-30} -exec rm {} \;
+	fi
+}
+
+housekeep()
+{
+	# Housekeeping for master only
+	$exec_prefix/bin/opsview_master_housekeep
+
+	# Other housekeeping for all opsview servers
+	$exec_prefix/bin/opsview_cronjobs daily
+}
+
+# runs daily tasks
+cron_daily() {
+	if [ "$DAILY_BACKUP" -eq 1 ]; then
+		backup
+	fi
+	housekeep
+	#gen_config full_perf > /dev/null 2>&1
+}
+
+gen_config() {
+	#
+	# Generate configuration and send
+	#
+	$prefix/bin/create_and_send_configs -r && $prefix/bin/reset_uncommitted && return 0
+	echo "Failed to generate configuration - see /admin/reload for errors"
+	return 1
+}
+
+web_reload() {
+	if [ -f $reload_flag ] ; then
+		gen_config > $prefix/var/rw/config_output 2>&1
+		if [ $? -eq 0 ] ; then
+			mv $prefix/var/rw/config_output $prefix/var/rw/config_output.last_okay
+		fi
+		rm -f $prefix/var/rw/reload_flag
+	fi
+}
+
+stop_opsview() {
+	if [ $MASTER = "yes" ] ; then
+		perl -e 'use lib "/usr/local/nagios/lib", "/usr/local/nagios/etc", "/usr/local/nagios/perl/lib"; use Opsview::Auditlog; Opsview::Auditlog->system( "Stopping Opsview" );'
+	fi
+	printf "Stopping opsview... "
+	if [ $MASTER = "yes" ] ; then
+		stop_application nrd
+		stop_application nsca $NSCARun
+		stop_application opsviewd $OpsviewRun
+	else
+		stop_application import_slaveresultsd $prefix/var/import_slaveresultsd.pid
+	fi
+	stop_application nagios $NagiosRun
+	if [ $MASTER = "yes" ] ; then
+		stop_application import_ndologsd $Import_NdologsRun
+		stop_application import_perfdatarrd $Import_PerfdatarrdRun
+		stop_application import_ndoconfigend $Import_NdoconfigendRun
+		#killproc_ndo2db
+	fi
+	rm -f $NagiosLog $NagiosTmp $NagiosCmd
+	rm -f $reload_flag
+}
+
+die() { echo "$2" >&2; exit $1; }
+
+prefix=/usr/local/nagios
+
+bindir=${prefix}/bin
+
+# If running HA check to see if this is the master; if not, drop out
+# Use rc=0 not 5 as this can be run on all nodes in the system at any time
+test -f $bindir/nagios || exit 0
+
+# Check for su - nagios
+# If this is not set, all sorts of bad stuff may happen
+# We change this to a warning, rather than dying
+# Must check for tty as cronjobs also call here
+tty > /dev/null 2>&1
+if [ $? = 0 -a "$OPSVIEW_BASE" != "/usr/local/nagios" ]; then
+    echo "Environment not set properly. Check nagios user's profile"
+fi
+
+. $bindir/profile
+
+eval `$bindir/opsview.sh`
+# Will set BACKUP_DIR, ROOT_DIR
+# If not set, then this is a slave
+
+NAGIOS=nagios
+
+exec_prefix=${prefix}
+NagiosBin=${exec_prefix}/bin/nagios
+NagiosCfg=${prefix}/etc/nagios.cfg
+NagiosLog=$STATUS_DAT
+NagiosTmp=${prefix}/var/nagios.tmp
+NagiosSav=${prefix}/var/retention.dat
+NagiosCmd=${prefix}/var/rw/nagios.cmd
+NagiosVar=${prefix}/var
+NagiosRun=${prefix}/var/nagios.lock
+OpsviewRun=${prefix}/var/opsview.pid
+Import_NdologsRun=${prefix}/var/import_ndologsd.pid
+Import_PerfdatarrdRun=${prefix}/var/import_perfdatarrd.pid
+Import_NdoconfigendRun=${prefix}/var/import_ndoconfigend.pid
+NSCARun=${prefix}/var/nsca.pid
+NagiosLckFile=nagios
+NagiosCGI=${exec_prefix}/sbin
+Nagios=nagios
+reload_flag=$prefix/var/rw/reload_flag
+
+# Check that nagios exists.
+test -f $NagiosBin || exit 0
+
+if [ "x$ROOT_DIR" = "x" ] ; then
+	MASTER="no"
+else
+	MASTER="yes"
+fi
+
+if [ ! -d "$CHECK_RESULT_PATH" ]; then
+    mkdir -p $CHECK_RESULT_PATH || die 1 "Failed to create check_result_path directory $CHECK_RESULT_PATH"
+fi
+
+# See how we were called.
+case "$1" in
+
+	start)
+		test -z "$OPSVIEW_NOSTART" || exit 0
+
+		test ! -f $NagiosCfg && die 1 "No nagios.cfg - exiting"
+
+		status $NagiosRun && die 0 "Nagios already running"
+
+        echo -n "Starting Opsview..."
+
+        STARTED=0
+        for i in $( seq 1 298 ); do # Five minutes (300 seconds minus the slept 2)
+
+            $( ${prefix}/bin/db_opsview db_exists > /dev/null 2>&1 )
+            OPSVIEW=$?
+            $( ${prefix}/bin/db_runtime db_exists > /dev/null 2>&1 )
+            RUNTIME=$?
+
+            if [ $OPSVIEW -eq 0 -a $RUNTIME -eq 0 ]; then
+                STARTED=1
+                break
+            fi
+
+            echo -n '.'
+            sleep 2
+
+        done
+        echo
+
+        if [ $STARTED -ne 1 ]; then
+            echo "Opsview is unable to connect to its databases. Please investigate."
+            exit 1
+        fi
+
+		if [ $MASTER = "yes" ] ; then
+			perl -e 'use lib "/usr/local/nagios/lib", "/usr/local/nagios/etc", "/usr/local/nagios/perl/lib"; use Opsview::Auditlog; Opsview::Auditlog->system( "Starting Opsview" );'
+		fi
+		# Do some file cleanups, in case of a crash
+		rm -f $NagiosCmd
+
+		if [ $MASTER = "yes" ] ; then
+          if [ "$TEST_NO_DAEMONS" != "off" ] ; then
+			rm -f $NagiosVar/ndo.sock	# Force removal of this socket - would remain if system crashed
+			#$exec_prefix/bin/ndo2db -c $prefix/etc/ndo2db.cfg
+			$prefix/bin/import_ndologsd || die 1 "Cannot startup import_ndologsd"
+			$prefix/bin/import_perfdatarrd || die 1 "Cannot startup import_perfdatarrd"
+			$prefix/bin/import_ndoconfigend || die 1 "Cannot startup import_ndoconfigend"
+          fi
+		fi
+		cd $prefix/etc
+        # Nagios4: We remove -x as not supported any more
+        #        : -u doesn't appear to work on a HUP signal - needs investigation if still required
+		# We set the PERL5LIB path to include libexec for Nagios only because some plugins assume this
+		PERL5LIB="$PERL5LIB:$prefix/libexec" $NagiosBin -d $NagiosCfg
+		if [ $MASTER = "yes" ] ; then
+			$prefix/bin/opsviewd || die 1 "Cannot startup opsviewd"
+			$prefix/bin/nsca -c $prefix/etc/nsca.cfg --single || die 1 "Cannot startup nsca"
+            $prefix/bin/nrd || die 1 "Cannot startup nrd"
+        else
+            $prefix/bin/import_slaveresultsd || die 1 "Cannot startup import_slaveresultsd"
+
+            # We force removal of this flag, created by install_slave.
+            # It could occur when initially setting up the slave so safest to remove on every start
+            rm -f /usr/local/nagios/var/install_slave.flag
+		fi
+
+		# Remove the reload flag, if a reload happens to have been requested during this outage period
+		rm -f $reload_flag
+		echo "done"
+		;;
+
+	stop)
+		stop_opsview
+		echo "done"
+		;;
+
+  killproc_nsca)
+    stop_application nsca $NSCARun
+    ;;
+
+	status)
+		if status $NagiosRun; then
+			echo "Nagios is running"
+			exit 0
+		else
+			echo "Nagios is not running"
+			exit 3
+		fi
+		;;
+
+	# This returns an XML doc with status information
+	# This returns 1 if the reload flag is set, 3 if configuration errors,
+	# otherwise 0 for running, 2 for not
+	# This is not usually run
+	web_status)
+		perl -e 'use lib "/usr/local/nagios/etc", "/usr/local/nagios/lib", "/usr/local/nagios/perl/lib"; use Opsview::Nagios; print Opsview::Nagios->web_status';
+		;;
+
+	# May make a web_restart do different things, like logging
+	# There is a small window where Nagios could have started up before it writes the pidfile
+	# and where the pidfile could be removed before the process actually stops
+	# Leave a 5 second delay to compensate
+	restart|web_restart)
+		$0 stop
+		sleep 5
+		$0 start
+		;;
+
+	reload|force-reload)
+		status $NagiosRun
+		if [ $? != 0 ]; then
+			$0 start
+		else
+            # If an install_slave has been run on slave, then restart the daemons
+            # instead of just reloading. This guarantees that the binaries are the
+            # latest and the configuration is the latest too
+            # Flag gets removed on a start()
+            if [ -f /usr/local/nagios/var/install_slave.flag ] ; then
+                $0 restart
+            else
+                NagiosPID=`read_pidfile $NagiosRun` || die 1 "Cannot read pidfile"
+                printf "Reloading Nagios configuration..."
+                kill -HUP $NagiosPID
+                if [ $MASTER = "yes" ] ; then
+                    printf "Reloading NRD configuration..."
+                    # Send HUP to nrd children.
+                    pkill -SIGHUP -P `pgrep -o -x nrd` -x nrd
+                fi
+                echo "done"
+            fi
+		fi
+		;;
+
+    verify)
+        $NagiosBin -vp $NagiosCfg
+        ;;
+
+	check)
+		nagios="${2-$NagiosCfg}"
+		printf "Checking configuration for $nagios... "
+		output=`$NagiosBin -vp "$nagios" 2>&1`
+		if [ $? -eq 0 ] ; then
+			echo "okay"
+		else
+			echo "$output"
+		fi
+		;;
+
+	stopallchecks)
+		stopallchecks
+		;;
+	startallchecks)
+		startallchecks
+		;;
+	backup)
+		backup $2
+		;;
+	housekeep)
+		housekeep
+		;;
+	cron_daily)
+		cron_daily
+		;;
+	gen_config)
+		gen_config $2
+		;;
+	# This is run from nagios user's crontab
+	web_reload)
+		web_reload
+		;;
+	*)
+		echo "Usage: $comm {start|stop|restart|reload|status|check|stopallchecks|startallchecks|backup|housekeep|gen_config [force] [full_perf]|cron_daily}"
+		exit 1
+		;;
+
+esac
+
+# End of this script

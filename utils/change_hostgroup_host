@@ -1,0 +1,61 @@
+#!/usr/bin/perl
+# Changes host -> host group relationship via Opsview's model
+# Expects input of:
+#  hostgroupname,hostname
+# Will print to stdout with:
+#  hostgroupname,hostname,result
+# Where result is:
+#  * ok
+#  * reason for error
+
+use FindBin qw($Bin);
+use lib "$Bin/../perl/lib", "$Bin/../lib";
+
+use Opsview::Schema;
+
+my $schema = Opsview::Schema->my_connect;
+
+foreach my $line (<>) {
+    $line =~ s/\r//g;
+    chomp $line;
+    my ( $hostgroupname, $hostname ) = split( ",", $line );
+
+    #print "hostgroup=$hostgroupname, host=$hostname\n";
+    sort_this_out( $hostgroupname, $hostname );
+}
+
+sub print_result {
+    print join( ",", @_ ), $/;
+}
+
+sub sort_this_out {
+    my ( $hostgroupname, $hostname ) = @_;
+    my $hostgroup =
+      $schema->resultset("Hostgroups")->find( { name => $hostgroupname } );
+    if ( !$hostgroup ) {
+        print_result( $hostgroupname, $hostname,
+            "Cannot find hostgroup $hostgroupname"
+        );
+        return;
+    }
+
+    if ( !$hostgroup->is_leaf ) {
+        print_result( $hostgroupname, $hostname, "Hostgroup is not a leaf" );
+        return;
+    }
+
+    my $host = $schema->resultset("Hosts")->find( { name => $hostname } );
+    if ( !$host ) {
+        print_result( $hostgroupname, $hostname, "Cannot find host $hostname"
+        );
+        return;
+    }
+
+    $host->update(
+        {
+            hostgroup   => $hostgroup,
+            uncommitted => 1
+        }
+    );
+    print_result( $hostgroupname, $hostname, "ok" );
+}

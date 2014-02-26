@@ -1,0 +1,125 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#	check_opsview_async_imports [options] [directory]
+#
+# DESCRIPTION:
+#	On master server makes sure ndo import process is keeping up to date
+#	by ensuring nothing is older than 60 seconds.  Also report stats.
+#   Also can be used for performance data
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+use Nagios::Plugin;
+
+my $VERSION = "0.01";
+
+my $np = Nagios::Plugin->new(
+    usage =>
+      "Usage: %s [-v|--verbose] [-h|--help] [-w, --warning=<seconds>] [-c, --critical=<seconds>]\n   Checks number of asynchronous logs still to process within a directory",
+    shortname => "LOGS",
+    version   => $VERSION,
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w, --warning=INTEGER
+   Minimum and maximum number of allowable result, outside of which a
+   warning will be generated (default: 30)},
+    default => 30,
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c, --critical=INTEGER
+   Minimum and maximum number of the generated result, outside of
+   which a critical will be generated (default: 60) },
+    default => 60,
+);
+
+$np->getopts;
+
+my $rootdir = "/usr/local/nagios";
+my $logdir = shift @ARGV || "ndologs";
+
+my $valid_logdirs = {
+    "ndologs"     => 1,
+    "perfdatarrd" => 1,
+};
+if ( !exists $valid_logdirs->{$logdir} ) {
+    $np->nagios_exit( UNKNOWN, "$logdir is not valid" );
+}
+
+my $import_dir = "$rootdir/var/$logdir";
+
+if ( !-d $import_dir ) {
+    $np->nagios_exit( CRITICAL, "$import_dir directory does not exist" );
+}
+
+alarm $np->opts->timeout;
+
+opendir( IMPORT, $import_dir );
+
+# only interested in the oldest file
+my $oldest_file_name;
+my $oldest_file_age  = time();
+my $total_file_count = 0;
+
+while ( my $file = readdir(IMPORT) ) {
+    next if ( $file =~ m/^\.+$/ );
+
+    $total_file_count++;
+
+    if ( ( stat( $import_dir . "/" . $file ) )[9] < $oldest_file_age ) {
+        $oldest_file_age  = ( stat( $import_dir . "/" . $file ) )[9];
+        $oldest_file_name = $file;
+    }
+}
+closedir(IMPORT);
+
+my $result = time() - $oldest_file_age;
+
+$np->add_perfdata(
+    label    => "last_import",
+    uom      => "s",
+    value    => $result,
+    warning  => $np->opts->warning,
+    critical => $np->opts->critical,
+);
+
+# log the number of backlogged files with a SWAG at warning/crit values
+$np->add_perfdata(
+    label    => "ndo_file_backlog",
+    uom      => "",
+    value    => $total_file_count,
+    warning  => 1000,
+    critical => 10000,
+);
+
+$np->nagios_exit(
+    return_code => $np->check_threshold($result),
+    message =>
+      "Oldest log file is $result seconds old, $total_file_count files backlogged",
+);

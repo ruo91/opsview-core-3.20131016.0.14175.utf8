@@ -1,0 +1,85 @@
+#
+# $Id$ 
+#
+# postinstall script to handle package upgrade
+#
+# Taken from http://dlc.sun.com/pdf/817-0406/817-0406.pdf 'Upgrading' section
+PATH=/usr/sadm/bin:$PATH
+UPGR_SCRIPT=/tmp/upgr.$PKGINST
+PKGADM=/tmp/pkgadm.$PKGINST
+
+UPGRADE_MSG="Do you want to upgrade the installed version ?"
+UPGRADE_HLP="If upgrade is desired, the existing version of the \
+package will be replaced by this version. If it is not \
+desired, no further actions will be taken."
+UPGRADE_NOTICE="Conflict approval questions may be displayed. The \
+listed files are the ones that will be upgraded. Please \
+answer \"y\" to these questions if they are presented."
+
+pkginfo -q $PKG.\*
+
+# package has already been installed
+if [ $? -eq 0 ]; then
+    # check to see if its the same version as we are installing
+    # if so, do not set up removal script
+    pkginfo -v $VERSION -q $PKGINST
+    if [ $? -eq 0 ]; then
+    exit 0
+    fi
+
+    # See if upgrade is desired here
+    response=`ckyorn -p "$UPGRADE_MSG" -h "$UPGRADE_HLP"`
+
+    if [ $response = "y" ]; then
+        oldpkg=`pkginfo -x ${PKG}.\* | nawk "/$PKG/ {print \\$1}" | head -1`
+        echo "PATH=/usr/sadm/bin:$PATH" > $UPGR_SCRIPT
+        echo "cat > $PKGADM <<EOF" >> $UPGR_SCRIPT
+        echo "setuid=nocheck" >> $UPGR_SCRIPT
+        echo "action=nocheck" >> $UPGR_SCRIPT
+        echo "partial=nocheck" >> $UPGR_SCRIPT
+        echo "conflict=nocheck" >> $UPGR_SCRIPT
+        echo "rdepend=nocheck" >> $UPGR_SCRIPT
+        echo "idepend=nocheck" >> $UPGR_SCRIPT
+        echo "runlevel=nocheck" >> $UPGR_SCRIPT
+        echo "EOF" >> $UPGR_SCRIPT
+        echo "sleep 3" >> $UPGR_SCRIPT
+        echo "echo Now removing old instance of $PKG" >> $UPGR_SCRIPT
+        echo "echo '======================================================='" >> $UPGR_SCRIPT
+        echo "echo '  If this step fails, please remove <$oldpkg> by hand'" >> $UPGR_SCRIPT
+        echo "echo '  and run /etc/init.d/opsview start'" >> $UPGR_SCRIPT
+        echo "echo '======================================================='" >> $UPGR_SCRIPT
+
+        if [ ${PKG_INSTALL_ROOT} ]; then
+              echo "pkgrm -n -a $PKGADM -R $PKG_INSTALL_ROOT $oldpkg" >> $UPGR_SCRIPT
+        else
+              echo "su - root -c 'pkgrm -n -a $PKGADM $oldpkg'" >> $UPGR_SCRIPT
+        fi
+
+        echo "rm $UPGR_SCRIPT" >> $UPGR_SCRIPT
+	echo "rm $PKGADM" >> $UPGR_SCRIPT
+        echo "exit $?" >> $UPGR_SCRIPT
+
+        puttext -l 5 "$UPGRADE_NOTICE"
+
+    else
+        if [ -f $UPGR_SCRIPT ]; then
+              rm $UPGR_SCRIPT
+		rm $PKGADM
+        fi
+        echo "Performing no further actions"
+        exit 1
+    fi
+else
+    # fresh install
+
+#    # these steps disabled for the moment
+#    echo "Please enter the Mysql database root account password: "
+#    read pass
+#
+#    cat >$1 <<!
+#    MYSQL_ROOT_PW=$pass
+#    !
+    :
+fi
+
+exit 0

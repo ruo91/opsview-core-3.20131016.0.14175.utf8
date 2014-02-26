@@ -1,0 +1,77 @@
+{
+      "language" : "",
+      "servicegroups" : [
+         {
+            "ref" : "/rest/config/servicegroup/2",
+            "name" : "freshness checks"
+         },
+         {
+            "ref" : "/rest/config/servicegroup/1",
+            "name" : "Operations"
+         }
+      ],
+      "all_servicegroups" : "1",
+      "name" : "admin",
+      "variables" : [
+         {
+            "value" : "1",
+            "name" : "RSS_COLLAPSED"
+         },
+         {
+            "value" : "1440",
+            "name" : "RSS_MAXIMUM_AGE"
+         },
+         {
+            "value" : "30",
+            "name" : "RSS_MAXIMUM_ITEMS"
+         }
+      ],
+      "all_hostgroups" : "1",
+      "username" : "admin",
+      "keywords" : [
+         {
+            "ref" : "/rest/config/keyword/7",
+            "name" : "allhosts"
+         },
+         {
+            "ref" : "/rest/config/keyword/8",
+            "name" : "allservicechecks"
+         }
+      ],
+      "comment" : "Initial admin user",
+      "hostgroups" : [
+         {
+            "ref" : "/rest/config/hostgroup/9",
+            "name" : "alphaearly"
+         },
+         {
+            "ref" : "/rest/config/hostgroup/4",
+            "name" : "Leaf"
+         },
+         {
+            "ref" : "/rest/config/hostgroup/5",
+            "name" : "Leaf2"
+         },
+         {
+            "ref" : "/rest/config/hostgroup/8",
+            "name" : "middling"
+         },
+         {
+            "ref" : "/rest/config/hostgroup/2",
+            "name" : "Monitoring Servers"
+         },
+         {
+            "ref" : "/rest/config/hostgroup/7",
+            "name" : "singlehost"
+         }
+      ],
+      "notificationprofiles" : [],
+      "realm" : "local",
+      "id" : "1",
+      "role" : {
+         "ref" : "/rest/config/role/10",
+         "name" : "Admin"
+      },
+      "uncommitted" : "0"
+   }
+

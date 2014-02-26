@@ -1,0 +1,28 @@
+# OPSVIEW-START
+# Do not remove comment above. Everything between OPSVIEW-START and OPSVIEW-END
+# will be automatically installed as part of an Opsview install/upgrade
+0,5,10,15,20,25,30,35,40,45,50,55 * * * * /usr/local/nagios/bin/mrtg_genstats.sh > /dev/null 2>&1
+11 3 * * * /usr/local/nagios/bin/rc.opsview cron_daily > /dev/null 2>&1
+22 2,6,10,14,18,22 * * * . /usr/local/nagios/bin/profile && /usr/local/nagios/bin/opsview_cronjobs 4hourly > /dev/null 2>&1
+0,5,10,15,20,25,30,35,40,45,50,55 * * * * /usr/local/nagios/bin/call_nmis nmis.pl type=collect mthread=true > /dev/null 2>&1
+34 0,4,8,12,16,20 * * * /usr/local/nagios/bin/call_nmis nmis.pl type=update mthread=true > /dev/null 2>&1
+# NMIS reports
+0 0 * * * /usr/local/nagios/bin/call_nmis run-reports.sh day health
+0 0 * * * /usr/local/nagios/bin/call_nmis run-reports.sh day top10
+0 0 * * * /usr/local/nagios/bin/call_nmis run-reports.sh day outage
+0 0 * * * /usr/local/nagios/bin/call_nmis run-reports.sh day response
+0 0 * * * /usr/local/nagios/bin/call_nmis run-reports.sh day avail
+0 0 * * * /usr/local/nagios/bin/call_nmis run-reports.sh day port
+0 0 * * 0 /usr/local/nagios/bin/call_nmis run-reports.sh week health
+0 0 * * 0 /usr/local/nagios/bin/call_nmis run-reports.sh week top10
+0 0 * * 0 /usr/local/nagios/bin/call_nmis run-reports.sh week outage
+0 0 * * 0 /usr/local/nagios/bin/call_nmis run-reports.sh week response
+0 0 * * 0 /usr/local/nagios/bin/call_nmis run-reports.sh week avail
+0 0 * * 0 /usr/local/nagios/bin/call_nmis run-reports.sh week port
+0 0 1 * * /usr/local/nagios/bin/call_nmis run-reports.sh month health
+0 0 1 * * /usr/local/nagios/bin/call_nmis run-reports.sh month top10
+0 0 1 * * /usr/local/nagios/bin/call_nmis run-reports.sh month outage
+0 0 1 * * /usr/local/nagios/bin/call_nmis run-reports.sh month response
+0 0 1 * * /usr/local/nagios/bin/call_nmis run-reports.sh month avail
+0 0 1 * * /usr/local/nagios/bin/call_nmis run-reports.sh month port
+# OPSVIEW-END

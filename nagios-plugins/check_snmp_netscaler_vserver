@@ -1,0 +1,191 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#       Neil Ferguson <neil.ferguson@opsview.com>
+#       Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+use strict;
+use warnings;
+
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+
+my $np = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => "check_snmp_netscaler_vserver",
+    version   => "0.2",
+    blurb =>
+      "Checks status of Netscaler vserver (number of up/down physical servers)",
+    snmp => {
+        "snmp-version" => "2c",
+        "v1-fallback"  => 1,
+    },
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w, --warning=INTEGER
+    Warning threshold},
+    default => 0,
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c, --critical=INTEGER
+    Critical threshold},
+    default => 0,
+);
+
+$np->add_arg(
+    spec => "server|s=s",
+    help => qq{-s, --server=STRING
+    vserver name},
+    required => 1,
+);
+$np->getopts;
+
+my $warning      = $np->opts->warning;
+my $critical     = $np->opts->critical;
+my $vserver_name = $np->opts->server;
+
+my $s = $np->snmp;
+
+my $oid_testoid         = ".1.3.6.1.2.1.1.1.0";
+my $oid_servername_base = "1.3.6.1.4.1.5951.1.3.2.1.1.5";
+
+my $up_servers    = 0;
+my $total_servers = 0;
+
+# Call this when you know you'll get a single value back
+sub get_oid_value {
+    our ( $oid, $result, $status, $returnstring );
+
+    $oid = shift(@_);
+
+    if ( !defined( $s->get_request($oid) ) ) {
+        if ( !defined( $s->get_request($oid_testoid) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return -1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return -1;
+        }
+    }
+
+    foreach ( $s->var_bind_names() ) {
+        $result = $s->var_bind_list()->{$_};
+        if ( $_ !~ /^$oid/ ) {
+            print "UNKNOWN - OID does not exist!\n";
+            exit 3;
+        }
+    }
+
+    return $result;
+}
+
+# Finds the sub oid for a particular server by its name
+sub get_suboid_by_name {
+    my $name = shift(@_);
+    my $key;
+    my $results;
+
+    $s->get_table($oid_servername_base);
+    $results = $s->var_bind_list();
+
+    foreach $key ( keys %$results ) {
+        if ( $results->{$key} =~ /^$name$/ ) {
+            $key =~ s/^$oid_servername_base//;
+            return $key;
+        }
+    }
+
+    # Couldn't find name -> undef
+}
+
+# Return all suboids for a given oid
+sub get_all_suboids {
+    my $base_oid = shift(@_);
+    my $key;
+    my $results;
+    my @oids;
+
+    $s->get_table($base_oid);
+    $results = $s->var_bind_list();
+    foreach $key ( keys %$results ) {
+        $key =~ s/^$base_oid//;
+        push( @oids, $key );
+    }
+
+    return @oids;
+}
+
+# get suboid of server so we can find out about physical services
+my $suboid = get_suboid_by_name($vserver_name);
+if ( $suboid eq "" ) {
+    print "UNKNOWN - Could not find specified server name $vserver_name\n";
+    exit 3;
+}
+
+# Physical servers
+my @physoids = get_all_suboids( "1.3.6.1.4.1.5951.1.3.1.1.1$suboid" );
+
+# Total number of physical servers
+$total_servers = @physoids;
+
+# Find the number of items set to '1', i.e. the number of Up servers.
+foreach (@physoids) {
+    if ( get_oid_value("1.3.6.1.4.1.5951.1.3.2.2.1.6$_") eq 1 ) {
+        $up_servers = $up_servers + 1;
+    }
+}
+
+# If thresholds were specified as percentages, convert to number now we know total
+if ( $warning =~ /\d%/ ) {
+    $warning =~ s/%//;
+    $warning = ( $warning * $total_servers ) / 100;
+}
+if ( $critical =~ /\d%/ ) {
+    $critical =~ s/%//;
+    $critical = ( $critical * $total_servers ) / 100;
+}
+
+# Output text
+my $retmsg = "$up_servers of $total_servers servers are up";
+
+# Performance data
+my $perfdata = "total=$total_servers up=$up_servers;$warning;$critical";
+
+# Show appropriate message
+if ( $up_servers < $critical ) {
+    print "CRITICAL - $retmsg|$perfdata\n";
+    exit 2;
+}
+elsif ( $up_servers < $warning ) {
+    print "WARNING - $retmsg|$perfdata\n";
+    exit 1;
+}
+else {
+    print "OK - $retmsg|$perfdata\n";
+    exit 0;
+}

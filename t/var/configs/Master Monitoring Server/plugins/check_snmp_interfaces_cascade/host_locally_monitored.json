@@ -1,0 +1,45 @@
+{
+   "host":{
+      "ip":"hostname1",
+      "snmp_community":"public",
+      "snmp_extended_throughput_data":"0",
+      "snmp_max_msg_size":"0",
+      "snmp_port":"161",
+      "snmp_version":"2c",
+      "snmpv3_authpassword":"",
+      "snmpv3_authprotocol":null,
+      "snmpv3_privpassword":"",
+      "snmpv3_privprotocol":null,
+      "snmpv3_username":"",
+      "tidy_ifdescr_level":"0"
+   },
+   "interfaces":{
+      "ADSL":{
+         "0":{
+            "indexid":"0",
+            "shortinterfacename":"ADSL",
+            "throughput":1,
+            "throughput_critical":"",
+            "throughput_warning":""
+         }
+      },
+      "Ethernet0":{
+         "0":{
+            "indexid":"0",
+            "shortinterfacename":"Ethernet0",
+            "throughput":1,
+            "throughput_critical":"",
+            "throughput_warning":""
+         }
+      },
+      "Interface with 'quotes' in":{
+         "0":{
+            "indexid":"0",
+            "shortinterfacename":"Interface with quotes in",
+            "throughput":1,
+            "throughput_critical":"30%",
+            "throughput_warning":"20%"
+         }
+      }
+   }
+}

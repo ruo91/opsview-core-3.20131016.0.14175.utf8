@@ -1,0 +1,28 @@
+{
+   "page" : 1,
+   "totalsearchrows" : "10",
+   "totalrows" : "10",
+   "rows" : "2",
+   "totalpages" : 5,
+   "list" : [
+      {
+         "contacts" : [],
+         "monitoringservers" : [],
+         "ref" : "/rest/config/role/1",
+         "name" : "Public",
+         "id" : "1",
+         "description" : "Access available for public users",
+         "uncommitted" : "0"
+      },
+      {
+         "contacts" : [],
+         "monitoringservers" : [],
+         "ref" : "/rest/config/role/2",
+         "name" : "Authenticated user",
+         "id" : "2",
+         "description" : "All authenticated users inherit this role",
+         "uncommitted" : "0"
+      }
+   ]
+}
+

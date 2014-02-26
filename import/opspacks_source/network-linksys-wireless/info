@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.network_linksys_wireless
+VERSION=1.0
+ALIAS=Network - Linksys Wireless
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

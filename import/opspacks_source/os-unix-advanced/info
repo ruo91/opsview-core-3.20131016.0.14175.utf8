@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.os_unix_advanced
+VERSION=1.0
+ALIAS=OS - Unix Advanced
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

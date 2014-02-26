@@ -1,0 +1,5 @@
+NRPE_NT Plugin, CPU Load
+
+usage: cpuload warning threshold(%) critical threshold(%)
+
+example: 70 90

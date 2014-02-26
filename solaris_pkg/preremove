@@ -1,0 +1,10 @@
+die () { echo "$@" ; exit 0; }
+
+echo "Stopping Opsview"
+/usr/sbin/chroot $BASEDIR /etc/init.d/opsview stop
+
+echo "Stopping Opsview Agent"
+/usr/sbin/chroot $BASEDIR /etc/init.d/opsview-agent stop
+
+echo "Running Opsview preremove tasks"
+/usr/sbin/chroot $BASEDIR /usr/bin/su - nagios -c /usr/local/nagios/installer/preremove || die "Failed to complete preremove tasks"

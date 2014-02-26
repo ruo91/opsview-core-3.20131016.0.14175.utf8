@@ -1,0 +1,9 @@
+host_locally_monitored	0	Faked OK |time=1
+monitored_by_slave	0	|
+host_locally_monitored	0	Rubbish
+monitored_by_slave	0	Rubbish|
+monitored_by_slave	0	|stuffhere
+monitored_by_slave	0	stuffed||
+monitored_by_slave	0	 |  
+host_locally_monitored	0	 
+host_locally_monitored	0	a

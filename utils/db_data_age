@@ -1,0 +1,103 @@
+#!/usr/bin/perl
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use warnings;
+use strict;
+use lib "/usr/local/nagios/perl/lib";
+use lib "/usr/local/nagios/lib";
+use lib "/usr/local/nagios/etc";
+
+use Opsview::Config;
+use Opsview::Systempreference;
+use Data::Dump qw( dump );
+
+my $db = shift;
+
+if ( !$db || $db !~ m/(?:Runtime|Opsview)/i ) {
+    die( "Database must be one of Opsview or Runtime\n" );
+}
+
+$db = ucfirst($db);
+
+eval "require $db";
+die $@ if $@;
+
+my $dbh = $db->db_Main;
+
+my $sql;
+my $sth;
+my @tables;
+
+my $one_week_cutoff =
+  $dbh->selectrow_array( "SELECT (NOW() - INTERVAL 7 DAY) FROM DUAL" );
+my $thirty_day_cutoff =
+  $dbh->selectrow_array( "SELECT (NOW() - INTERVAL 30 DAY) FROM DUAL" );
+
+my $audit_log_retention = Opsview::Systempreference->audit_log_retention;
+
+my $audit_log_cutoff = $dbh->selectrow_array(
+    "SELECT (NOW() - INTERVAL $audit_log_retention DAY) FROM DUAL"
+);
+
+$sth = $dbh->prepare( "SHOW TABLE STATUS" );
+$sth->execute;
+
+my %tables;
+
+while ( my $row = $sth->fetchrow_hashref() ) {
+    my $table = $row->{name};
+
+    if ( $row->{comment} =~ m/crashed/i ) {
+        warn $table, ' is marked as crashed - igoring', $/;
+        next;
+    }
+
+    #    dump($row);
+
+    my $sth2 = $dbh->prepare( 'DESCRIBE ' . $table );
+    $sth2->execute;
+    while ( my $row2 = $sth2->fetchrow_hashref() ) {
+
+        #        warn dump($row2);
+
+        if ( $row2->{type} =~ m/datetime/i ) {
+            $tables{$table}{ $row2->{field} } = 1;
+        }
+    }
+}
+
+foreach my $table ( sort keys %tables ) {
+    foreach my $column ( sort keys( %{ $tables{$table} } ) ) {
+        my $sql2 = "SELECT MIN($column) FROM $table";
+
+        #warn "sql=$sql2";
+        my $oldest = $dbh->selectrow_array($sql2);
+
+        #if ( $oldest_ref->[0] && $oldest_ref->[0]->[0] ) {
+        if ($oldest) {
+
+            #die dump $oldest_ref;
+            printf "%48s => %12s\n", "$table.$column", $oldest;
+        }
+    }
+}
+
+print 'NOTES:',              $/;
+print ' One week cutoff:  ', $one_week_cutoff, $/;
+print ' 30 day cutoff:    ', $thirty_day_cutoff, $/;
+print ' Audit log cutoff: ', $audit_log_cutoff, $/;

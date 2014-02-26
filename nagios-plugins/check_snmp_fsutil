@@ -1,0 +1,532 @@
+#!/usr/bin/perl
+
+#    Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This program is free software; you can redistribute it and/or modify
+#
+#    Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+# Thanks to Vincent Cheche for contributions and updates to this script
+
+use strict;
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+
+my $script         = 'check_snmp_fsutil';
+my $script_version = '2.3.2';
+
+my $license = <<'EOL';
+         Note: Include and exclude are not mutually exclusive
+               !!! Exclude takes precedence over include !!!
+
+--------------------------------------------------------------------
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This program is free software; you can redistribute it or modify
+it under the terms of the GNU General Public License
+--------------------------------------------------------------------
+EOL
+
+my $np = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => $script,
+    version   => $script_version,
+    license   => $license,
+    blurb     => "Returns status of detected filesystems",
+    snmp      => {
+        "snmp-timeout" => 2,
+        "v1-fallback"  => 1,
+    },
+);
+
+$np->add_arg(
+    'spec' => 'domain|T',
+    'help' =>
+      "-T --domain \n   Use TCP protocol. Overrides -T (from --snmp-timeout)",
+    'default' => 'udp'
+);
+
+$np->add_arg(
+    'spec' => 'exclude|x=s@',
+    'help' =>
+      "-x, --exclude\n   Exclude file system mount point containing string (i.e. /mnt). Overrides -x (from --priv-password)",
+);
+
+$np->add_arg(
+    'spec' => 'include|i=s@',
+    'help' =>
+      "-i, --include\n   Include file system mount point containing string (i.e. /mnt)",
+);
+
+$np->add_arg(
+    'spec' => 'metric|m',
+    'help' => "-m, --metric\n   Change metric to GB (default is MB)",
+);
+
+$np->add_arg(
+    'spec' => 'minfree|f',
+    'help' =>
+      "-f, --minfree\n   Check free space available using MB (or GB if -m is set) for -w and -c",
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w, --warning=INTEGER
+    Warning threshold (as %)},
+    default => 85,
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c, --critical=INTEGER
+    Critical threshold (as %)},
+    default => 90,
+);
+
+$np->getopts;
+
+my $count        = 0;
+my $oid_sysDescr = ".1.3.6.1.2.1.1.1.0";
+my $index        = ".1.3.6.1.2.1.25.2.3.1.1";
+my $description  = ".1.3.6.1.2.1.25.2.3.1.3";
+my $capacity     = ".1.3.6.1.2.1.25.2.3.1.5";
+my $blocksize    = ".1.3.6.1.2.1.25.2.3.1.4";
+my $used         = ".1.3.6.1.2.1.25.2.3.1.6";
+my $warning      = 90;
+my $critical     = 95;
+my $status       = 0;
+my $returnstring = '';
+my $appendstring = '';
+my $port         = $np->opts->port;
+my $minfree      = $np->opts->minfree;
+my $metric       = $np->opts->metric ? 'Gb' : 'Mb';
+my $domain       = $np->opts->domain;
+my @include      = @{ $np->opts->include || [] };
+my @exclude      = @{ $np->opts->exclude || [] };
+
+# Create the SNMP session
+my $s = $np->snmp( { domain => $domain } );
+
+main();
+
+# Close the session
+$s->close();
+
+if ( $returnstring eq '' ) {
+    $status = 3;
+}
+
+if ( $status == 0 ) {
+    print "Status is OK$returnstring\n";
+
+    # print "$returnstring\n";
+}
+elsif ( $status == 1 ) {
+    print "Status is a WARNING level$returnstring\n";
+}
+elsif ( $status == 2 ) {
+    print "Status is CRITICAL$returnstring\n";
+}
+else {
+    print "Status is UNKNOWN\n";
+}
+
+exit $status;
+
+####################################################################
+# This is where we gather data via SNMP and return results         #
+####################################################################
+
+sub main {
+
+    my $index_tbl = $s->get_table( -baseoid => $index, );
+
+    my $initial_appendstring =
+      $minfree ? " - STATS: (FREE - " : " - STATS: (USED - ";
+    append( "$initial_appendstring" );
+
+    my $exclude_string;
+    my $exclude_count;
+    if (@exclude) {
+        $exclude_string = "(";
+        $exclude_count  = $#exclude;
+        foreach (@exclude) {
+            if ( $exclude_count > 0 ) {
+                $exclude_string .= "$_|";
+            }
+            else {
+                $exclude_string .= "$_";
+            }
+            $exclude_count--;
+        }
+        $exclude_string .= ")";
+
+        # print "Exclude string: $exclude_string\n";
+    }
+    else {
+        $exclude_string = '[^\d\D]';
+
+    }
+
+    my $include_string;
+    my $include_count;
+    if (@include) {
+        $include_string = "(";
+        $include_count  = $#include;
+        foreach (@include) {
+            if ( $include_count > 0 ) {
+                $include_string .= "$_|";
+            }
+            else {
+                $include_string .= "$_";
+            }
+            $include_count--;
+        }
+        $include_string .= ")";
+    }
+    else {
+        # print "Include string: $include_string\n";
+        $include_string = '.*';
+    }
+
+    if ( !defined($index_tbl) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = " - SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = " - SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    my @index =
+      map { $s->var_bind_list()->{$_} } $s->var_bind_names($index_tbl);
+
+    # Descr
+    my @descr;
+    my @index_filtered;
+    foreach my $i (@index) {
+        my $oid_descr = "$description\.$i";
+
+        # print "Descr oid: $oid_descr\n";
+        if ( !defined( $s->get_request($oid_descr) ) ) {
+            if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+                $returnstring = " - SNMP agent not responding";
+                $status       = 1;
+                return 1;
+            }
+            else {
+                $returnstring = " - SNMP OID does not exist";
+                $status       = 1;
+                return 1;
+            }
+        }
+        else {
+            foreach ( $s->var_bind_names($oid_descr) ) {
+                my $d = $s->var_bind_list()->{$_};
+
+                # print "Descr array BEFORE exclude: @descr\n";
+                # print "Descr: $d\n";
+                if ( lc($d) =~ m#memory# ) {
+                }
+                elsif ( lc($d) =~ m#swap# ) {
+                }
+
+                #
+                # Hard-code some special Linux / Solaris / Solaris Zones
+                # file systems which can safely be excluded
+                #
+
+                elsif ( $d =~ m#^(/devices|/dev)$# ) {
+                }
+                elsif ( $d =~ m#/etc/(dfs|svc)/(sharetab|volatile)$# ) {
+                }
+                elsif ( $d =~ m#/lib/libc\.so\.1$# ) {
+                }
+                elsif ( $d =~ m#/lib(/sparcv9)?/libc_psr\.so\.1$# ) {
+                }
+                elsif ( $d =~ m#^(/zones/.*/root)?/dev$# ) {
+                }
+                elsif ( $d =~ m#^/sys$# ) {
+                }
+                elsif ( $d =~ m#$exclude_string# ) {
+
+                    # print "Exclude string: $exclude_string\n";
+                    # print "MATCH found!\n";
+                }
+                elsif ( $d =~ m#$include_string# ) {
+
+                    # print "Include string: $include_string\n";
+                    # print "MATCH found!\n";
+                    push( @descr,          $d );
+                    push( @index_filtered, $i );
+                }
+
+                # print "Descr array AFTER exclude: @descr\n";
+            }
+        }
+    }
+
+    # print "Index array: @index_filtered\n";
+    my $index_count = $#index_filtered;
+
+    # print "Total index count: $index_count \n";
+
+    # Blocksize
+    my @blocksize;
+    foreach my $i (@index_filtered) {
+        my $oid_blocksize = "$blocksize\.$i";
+
+        # print "Blocksize oid: $oid_blocksize\n";
+        if ( !defined( $s->get_request($oid_blocksize) ) ) {
+            if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+                $returnstring = " - SNMP agent not responding";
+                $status       = 1;
+                return 1;
+            }
+            else {
+                $returnstring = " - SNMP OID does not exist";
+                $status       = 1;
+                return 1;
+            }
+        }
+        else {
+            @blocksize =
+              map { $s->var_bind_list()->{$_} }
+              $s->var_bind_names($oid_blocksize);
+        }
+    }
+
+    # Capacity
+    my @capacity;
+    foreach my $i (@index_filtered) {
+        my $oid_capacity = "$capacity\.$i";
+
+        # print "Capacity oid: $oid_capacity\n";
+        if ( !defined( $s->get_request($oid_capacity) ) ) {
+            if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+                $returnstring = " - SNMP agent not responding";
+                $status       = 1;
+                return 1;
+            }
+            else {
+                $returnstring = " - SNMP OID does not exist";
+                $status       = 1;
+                return 1;
+            }
+        }
+        else {
+            @capacity =
+              map { $s->var_bind_list()->{$_} }
+              $s->var_bind_names($oid_capacity);
+        }
+    }
+
+    # Used
+    my @used;
+    foreach my $i (@index_filtered) {
+        my $oid_used = "$used\.$i";
+
+        # print "Used oid: $oid_used\n";
+        if ( !defined( $s->get_request($oid_used) ) ) {
+            if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+                $returnstring = " - SNMP agent not responding";
+                $status       = 1;
+                return 1;
+            }
+            else {
+                $returnstring = " - SNMP OID does not exist";
+                $status       = 1;
+                return 1;
+            }
+        }
+        else {
+            @used =
+              map { $s->var_bind_list()->{$_} } $s->var_bind_names($oid_used);
+        }
+    }
+
+    my $perfdata;
+    my $last_status = $status;
+    while ( $count <= $index_count ) {
+        my $c;
+        my $u;
+        my $free;
+        my $used;
+        my $capacity;
+        my $unit;
+        my $perf_unit;
+
+        # print "Count: $count\n";
+        # print "Index count: $index_count\n";
+        if ( $metric eq 'Mb' ) {
+            $c = ( ( $capacity[$count] * $blocksize[$count] ) / 1024 / 1024 );
+            $u = ( ( $used[$count] * $blocksize[$count] ) / 1024 / 1024 );
+            $free     = sprintf( "%.0f", $c - $u );
+            $used     = sprintf( "%.0f", $u );
+            $capacity = sprintf( "%.0f", $c );
+            $unit     = "Mb";
+            $perf_unit = "MB";
+        }
+        else {
+            $c =
+              (   ( $capacity[$count] * $blocksize[$count] )
+                / 1024 / 1024
+                  / 1024 );
+            $u =
+              ( ( $used[$count] * $blocksize[$count] ) / 1024 / 1024 / 1024 );
+            $free     = sprintf( "%.3f", $c - $u );
+            $used     = sprintf( "%.3f", $u );
+            $capacity = sprintf( "%.3f", $c );
+            $unit     = "Gb";
+            $perf_unit = "GB";
+        }
+        if ( $u == 0 && $u == $c ) {
+
+            # print "Appendstring: $appendstring\n";
+            # if ($appendstring ne $initial_appendstring && $count <= $index_count) {
+            #     append(', ');
+            # }
+            # append("$descr[$count]: \'READ ONLY\'");
+        }
+        else {
+            my $used_pc = sprintf( "%.2f", ( ( 100 / $c ) * $u ) );
+            my $descr = $descr[$count];
+            if ( $descr[$count] =~ m#^/$# ) {
+                $descr[$count] =~ s#^/$#ROOTFS_$perf_unit#;
+            }
+            else {
+                $descr[$count] =~ s#^/(.*)$#$1_$perf_unit#;
+            }
+
+            if ( $metric eq 'Mb' ) {
+                my $perf_metric = lc($unit);
+                my $perf_warn;
+                my $perf_crit;
+                if ($minfree) {
+                    $perf_warn = sprintf( "%.0f", $c - $warning );
+                    $perf_crit = sprintf( "%.0f", $c - $critical );
+                }
+                else {
+                    $perf_warn = sprintf( "%.0f", $c * $warning / 100 );
+                    $perf_crit = sprintf( "%.0f", $c * $critical / 100 );
+                }
+                $perfdata =
+                  sprintf
+                  "$perfdata$descr[$count]=%.0f$perf_metric;$perf_warn;$perf_crit;;%.0f ",
+                  $used, $capacity;
+            }
+            else {
+                my $perf_metric = lc($unit);
+                my $perf_warn;
+                my $perf_crit;
+                if ($minfree) {
+                    $perf_warn = sprintf( "%.3f", $c - $warning );
+                    $perf_crit = sprintf( "%.3f", $c - $critical );
+                }
+                else {
+                    $perf_warn = sprintf( "%.3f", $c * $warning / 100 );
+                    $perf_crit = sprintf( "%.3f", $c * $critical / 100 );
+                }
+                $perfdata =
+                  sprintf
+                  "$perfdata$descr[$count]=%.3f$perf_metric;$perf_warn;$perf_crit;;%.3f ",
+                  $used, $capacity;
+            }
+            if ( $status < 2 ) {
+                if ( !defined($minfree) ) {
+                    if ( $used_pc >= $critical ) {
+                        $status = 2;
+                    }
+                    elsif ( $used_pc >= $warning ) {
+                        $status = 1;
+                    }
+                }
+                elsif ( defined($minfree) ) {
+                    if ( $free <= $critical ) {
+                        $status = 2;
+                    }
+                    elsif ( $free <= $warning ) {
+                        $status = 1;
+                    }
+                }
+            }
+            if ( $status == 1 || $status == 2 ) {
+
+                # print "Appendstring: $appendstring\n";
+                if (   $appendstring ne $initial_appendstring
+                    && $count <= $index_count )
+                {
+                    append( ', ' );
+                }
+                if ( !defined($minfree) ) {
+                    append(
+                        "$descr: $used_pc% ($used $unit of $capacity $unit)"
+                    );
+                }
+                elsif ( defined($minfree) ) {
+                    append( "$descr: $free $unit of $capacity $unit" );
+                }
+                if ( $last_status == 2 ) {
+                }
+                else {
+                    $last_status = $status;
+                }
+                $status = 0;
+            }
+        }
+        $count++;
+    }
+    if ( $appendstring ne $initial_appendstring ) {
+        append( ')' );
+    }
+    else {
+        $returnstring = '';
+    }
+    append( '|' );
+    append($perfdata);
+    $status = $last_status;
+
+}
+
+####################################################################
+# keeps track of status                                            #
+####################################################################
+
+sub status {
+    my $tempstatus = @_[0];
+    if ( $tempstatus == 2 ) {
+        $status = 2;
+    }
+    elsif ( $tempstatus == 1 ) {
+        if ( $status < 2 ) {
+            $status = 1;
+        }
+    }
+
+}
+
+sub append {
+    $appendstring = @_[0];
+    $returnstring = "$returnstring$appendstring";
+}

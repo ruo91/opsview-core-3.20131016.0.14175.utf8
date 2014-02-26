@@ -1,0 +1,118 @@
+/*
+
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This file is part of Opsview
+
+Opsview is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+Opsview is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Opsview; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+*/
+html {
+    font-family: Verdana, Arial, Helvetica, sans-serif;
+    font-size: 8pt;
+    color: #333333;
+}
+div#content {
+    padding: 1em;
+}
+#content h1 {
+	font-size: 18px;
+	font-weight: bold;
+	color: #490a73;
+}
+#content h2 {
+	font-size: 16px;
+	font-weight: bold;
+	color: #3f3f3f;
+}
+#content h3 {
+	font-size: 14px;
+	font-weight: bold;
+	color: #3f3f3f;
+}
+div.startendform {
+	background: #f1f1f1 url(../images/formtable_bg.png) no-repeat;
+	padding: 40px;
+	width: 350px;
+	font-size: 80%;
+	float: right;
+	clear: both;
+	border: 1px solid #e5e5e5;
+}
+div.shadow {
+	background: #999999;
+	float: right;
+	width: 350px;
+}
+
+label {
+	display: block;
+	text-align: right;
+	float: left;
+	width: 120px;
+	padding-right: 5px;
+	padding-top: 5px;
+	font-weight: bold;
+	padding-left: 10px;
+	padding-bottom: 7px;
+}
+br {
+	clear: left;
+}
+.buttonSubmit {
+	margin-left: 105px;
+}
+
+#content a:link {
+	font-size: 11px;
+	font-family: Verdana, Arial, Helvetica;
+	color: #da8d0f;
+	text-decoration: none;
+}
+
+#content a:visited {
+	font-size: 11px;
+	font-family: Verdana, Arial, Helvetica;
+	color: #da8d0f;
+	text-decoration: none;
+}
+
+#content a:hover {
+	font-size: 11px;
+	font-family: Verdana, Arial, Helvetica;
+	color: #da8d0f;
+	text-decoration: underline;
+}
+
+#opsview_banner {
+    background: #3E2155;
+    height: 50px;
+}
+
+#opsview_banner img {
+    padding-left: 15px;
+    padding-top: 12px;
+}
+
+#footer {
+    text-align: center;
+    color: #999999;
+    font-size: 11px;
+    font-family: Verdana,Arial,Helvetica,sans-serif;
+}
+
+#footer p {
+    margin: 0.1em;
+}

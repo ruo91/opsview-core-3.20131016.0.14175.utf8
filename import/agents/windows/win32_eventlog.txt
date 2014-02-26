@@ -1,0 +1,15 @@
+NRPE_NT Plugin, Eventlog
+
+Optionally Specify which service/eventid to IGNORE when they generate
+
+errors in the event log and how far back in time to look
+
+
+
+usage: eventlog_nrpe_nt.exe -m minutes <-s "exluded service,..."> -i <"exluded e
+
+ventid,..."> Do not include unnecesary white space it will not be removed
+
+example: service_nrpe_nt.exe -m 20 -s "NRPE_NT,..." -i "7011,..."
+
+example: service_nrpe_nt.exe -m 7200

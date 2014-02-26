@@ -1,0 +1,179 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#       Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+use strict;
+use warnings;
+
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+use Storable qw(lock_store lock_retrieve);
+
+my $shortname = "check_snmp_weblogic_jmsmsgbridge";
+my $np        = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => $shortname,
+    version   => "1.1",
+    blurb     => "Checks state of JMS Messaging Bridge",
+    snmp      => {
+        "snmp-version" => "2c",
+        "v1-fallback"  => 1,
+    },
+);
+
+$np->add_arg(
+    spec => "bridge|b=s",
+    help => qq{-b, --bridge=INTEGER
+    Bridge name},
+    required => 1,
+);
+
+$np->getopts;
+
+my $bridge_name = $np->opts->bridge;
+
+my $oid_testoid            = ".1.3.6.1.4.1.140.625.10.1.0";
+my $msgbridgename_base_oid = ".1.3.6.1.4.1.140.625.354.1.15";
+my $bridge_state_oid       = ".1.3.6.1.4.1.140.625.354.1.21";
+my $bridge_error_oid       = ".1.3.6.1.4.1.140.625.354.1.22";
+
+my $perfdata = "";
+
+#my $store;
+my $bridge_oid;
+my $max_use = 10 + int( rand(10) );
+my $is_active;
+
+my $s = $np->snmp;
+
+my $store_dir = "$Bin/../var/plugins/${shortname}";
+my $store;
+
+if ( !-d $store_dir ) {
+    mkpath($store_dir) || die "Unable to create $store_dir directory: $!", $/;
+}
+
+my $store_file =
+  $store_dir . "/" . $np->opts->hostname . "_" . $np->opts->bridge;
+
+if ( -f $store_file ) {
+
+    # if lock_retrieve fails, file is corrupt - just carry on with empty store
+    eval { $store = lock_retrieve($store_file); };
+}
+
+# Call this when you know you'll get a single value back
+sub get_oid_value {
+    our ( $oid, $result, $status, $returnstring );
+
+    $oid = shift(@_);
+
+    if ( !defined( $s->get_request($oid) ) ) {
+        if ( !defined( $s->get_request($oid_testoid) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return -1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return -1;
+        }
+    }
+
+    foreach ( $s->var_bind_names() ) {
+        $result = $s->var_bind_list()->{$_};
+    }
+
+    return $result;
+}
+
+if ( !defined( $s->get_request($oid_testoid) ) ) {
+    if ( !defined( $s->get_request($oid_testoid) ) ) {
+        print "Agent not responding, tried SNMP v1 and v2\n";
+        exit 1;
+    }
+}
+
+# Increase size of SNMP max message buffer
+if ( !defined $s->max_msg_size(65535) ) {
+    print "SNMP Error: ", $s->error, $/;
+    exit 3;
+}
+
+# Finds the sub oid for a particular bridge by its name
+sub get_suboid_by_name {
+    my $name = shift(@_);
+    my $key;
+    my $results;
+
+    $s->get_table($msgbridgename_base_oid);
+    $results = $s->var_bind_list();
+
+    foreach $key ( keys %$results ) {
+        if ( $results->{$key} eq $name ) {
+            $key =~ s/^$msgbridgename_base_oid//;
+            return $key;
+        }
+    }
+
+    # Couldn't find name -> undef
+}
+
+if ( ref( $store->{$bridge_name}->{oid} ) ) {
+    $bridge_oid = $store->{$bridge_name}->{oid};
+    $store->{$bridge_name}->{count}++;
+    if ( $store->{$bridge_name}->{count} > $store->{$bridge_name}->{max_use} ) {
+        delete( $store->{$bridge_name} );
+    }
+}
+else {
+
+    # Get the sub OID for this particular server
+    $bridge_oid = get_suboid_by_name($bridge_name);
+
+    if ( $bridge_oid eq "" ) {
+        print "Could not find specified bridge\n";
+        exit 1;
+    }
+    $store->{$bridge_name}            = {};
+    $store->{$bridge_name}->{oid}     = $bridge_oid;
+    $store->{$bridge_name}->{count}   = 0;
+    $store->{$bridge_name}->{max_use} = $max_use;
+}
+
+lock_store( $store, $store_file );
+
+$is_active = get_oid_value( "$bridge_state_oid$bridge_oid" );
+
+# Show appropriate message (we don't have a critical state)
+if ( $is_active =~ /^active$/i ) {
+    print "OK - bridge $bridge_name is in state $is_active.\n";
+    exit 0;
+}
+else {
+
+    # If the bridge is not active, we can find out why...
+    my $error_desc = get_oid_value( "$bridge_error_oid$bridge_oid" );
+    print "CRITICAL - Error, $bridge_name reports: $error_desc\n";
+    exit 2;
+}

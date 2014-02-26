@@ -1,0 +1,210 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#	sync_cluster_node_status
+#
+# DESCRIPTION:
+#   Executed from nagios user's crontab
+#   Will send its sync.dat file for actively monitored hosts to all other cluster nodes
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin/../perl/lib", "$Bin/../lib", "$Bin/../etc";
+use Log::Log4perl;
+use Opsview::Slave::Host;
+use Opsview::Slave::Node;
+use Opsview::Slave::NodeStatus;
+use Opsview::Utils::NagiosSyncStatus;
+use Opsview::Slave::Config;
+use Fcntl;
+use IPC::Run qw(run);
+
+my @cleanups;
+
+END {
+    map { $_->() } @cleanups;
+}
+
+my $topdir   = "/usr/local/nagios";
+my $tmpdir   = "$topdir/tmp";
+my $log4perl = "$topdir/etc/Log4perl-slave.conf";
+
+Log::Log4perl::init($log4perl);
+my $log = Log::Log4perl->get_logger( "sync_cluster_node_status" );
+$log->info( "Starting" );
+
+$SIG{__DIE__} = sub {
+    if ($^S) {
+
+        # In eval{}
+        return;
+    }
+    $Log::Log4perl::caller_depth++;
+    $log->fatal(@_);
+    die(@_);
+};
+
+push @cleanups, sub { $log->info("Finished") if $log };
+
+my $sync_pid;
+$SIG{INT} = sub {
+    if ($sync_pid) {
+        $log->warn( "Killing sync pid $sync_pid" );
+        kill 'INT', $sync_pid;
+    }
+    $log->logdie( "From SIGINT" );
+};
+$SIG{PIPE} = 'IGNORE';
+
+# Set lock
+my $set_lock_file;
+my $lock_file = "/usr/local/nagios/var/sync_cluster_node_status.lock";
+unless ( sysopen( FLAG, $lock_file, O_WRONLY | O_EXCL | O_CREAT ) ) {
+    $log->error( "Another sync running" );
+    exit;
+}
+print FLAG $$;
+close FLAG;
+$set_lock_file++;
+push @cleanups, sub {
+    if ($set_lock_file) {
+        $log->debug( "Removing lock file" );
+        unlink $lock_file;
+    }
+};
+
+# Find this node
+my @nodes = Opsview::Slave::Node->retrieve_all;
+my $self;
+foreach my $n (@nodes) {
+    $self = $n if $n->self == 1;
+}
+unless ($self) {
+    die "Cannot find own node";
+}
+
+$log->debug( "I am node = " . $self->name );
+
+# No syncing required
+unless ( @nodes > 1 ) {
+    $log->info( "No nodes to sync" );
+    exit;
+}
+
+# Get current node status
+foreach my $n (@nodes) {
+    $log->debug( "Node: " . $n->name );
+
+    my $nodestatus = Opsview::Slave::NodeStatus->retrieve( $n->name );
+    if ($nodestatus) {
+        $log->debug( " status=" . $nodestatus->status );
+    }
+    else {
+        $log->debug( " No status" );
+    }
+}
+
+# Set list of active hosts
+my @hosts        = Opsview::Slave::Host->retrieve_all;
+my $active_hosts = {};
+foreach my $h (@hosts) {
+    my $debug = $h->name;
+    if ( $h->primaryclusternode eq $self->name ) {
+        $active_hosts->{ $h->name } = "";
+        $debug .= " - active";
+    }
+    $log->debug($debug);
+}
+
+$log->info( "Gathering status for " . ( scalar keys %$active_hosts ) . " hosts"
+);
+
+# Generate sync.dat file
+my $sync        = Opsview::Utils::NagiosSyncStatus->new;
+my $status_file = Opsview::Slave::Config->status_dat;
+if ( !-e $status_file ) {
+    $log->info( "No status file exists" );
+    exit;
+}
+$sync->generate(
+    {
+        status_file  => $status_file,
+        targetdir    => $tmpdir,
+        slave_lookup => $active_hosts,
+    }
+);
+
+my $sync_file = "$tmpdir/sync.dat";
+push @cleanups, sub { unlink $sync_file };
+
+# Send to each node in this cluster
+# Sync file may not exist if there is nothing to sync
+if ( -e $sync_file ) {
+    foreach my $node (@nodes) {
+        next if $node->self == 1;
+        my $nodestatus = Opsview::Slave::NodeStatus->retrieve( $node->name );
+
+        # If node not found in NodeStatus, then assume up. Nagios should flick
+        # to offline when takeover occurs
+        if ( $nodestatus && $nodestatus->status eq "offline" ) {
+            $log->info( "Node " . $node->name . " is offline - ignoring sync"
+            );
+            next;
+        }
+
+        $log->info( "Sending to " . $node->name );
+        my @command = (
+            "scp", "-B", $sync_file,
+            $node->ip . ":/usr/local/nagios/var/sync.dat.node." . $self->name
+        );
+        $log->debug( "Command = @command" );
+        my ( $in, $out, $err );
+        run( \@command, \$in, \$out, \$err );
+        my $rc = $?;
+
+        if ( $rc == 0 ) {
+            $log->info( "Node " . $node->name . " successful transfer" );
+        }
+        else {
+            $log->error(
+                    "Node: "
+                  . $node->name
+                  . " failed scp, system() return code: "
+                  . ($rc)
+            );
+            $log->error( "out=$out" );
+            $log->error( "err=$err" );
+            exit;
+        }
+    }
+}
+
+# Update flag to give the last completed sync time
+my $update_time_flag =
+  "/usr/local/nagios/var/sync_cluster_node_status.lastupdate";
+open SYNC, ">", $update_time_flag;
+close SYNC;
+
+exit

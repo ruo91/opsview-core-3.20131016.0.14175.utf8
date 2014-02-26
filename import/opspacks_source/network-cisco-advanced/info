@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.network_cisco_advanced
+VERSION=1.0
+ALIAS=Network - Cisco Advanced
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

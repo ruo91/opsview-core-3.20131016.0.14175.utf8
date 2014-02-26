@@ -1,0 +1,73 @@
+CWD=`pwd`
+PATH=/usr/sadm/bin:$PATH
+UPGR_SCRIPT=/tmp/upgr.$PKGINST
+
+die () { echo "$@" ; exit 1; }
+
+/usr/sbin/chroot $BASEDIR /usr/bin/su - nagios -c /usr/local/nagios/installer/set_profile || die "Failed to set profile"
+
+START=S60
+STOP=K30
+
+for F in rc.opsview rc.opsview-agent
+do
+	G=`echo $F | sed 's/^rc\.//'`
+
+	#cd $BASEDIR/etc/init.d/
+	#ln -s ../../usr/local/nagios/bin/$F $G
+	installf $PKGINST $PKG_INSTALL_ROOT/etc/init.d/$G=../../usr/local/nagios/bin/$F s
+
+	for D in S 0 1 2 
+	do
+		#cd $BASEDIR/etc/rc${D}.d
+		#ln -s ../init.d/$G $STOP$G
+		installf $PKGINST $PKG_INSTALL_ROOT/etc/rc${D}.d/$STOP$G=../init.d/$G s
+	done
+
+	for D in 3
+	do
+		#cd $BASEDIR/etc/rc${D}.d
+		#ln -s ../init.d/$G $START$G
+		installf $PKGINST $PKG_INSTALL_ROOT/etc/rc${D}.d/$START$G=../init.d/$G s
+	done
+done
+
+installf $PKGINST /var/lock/mrtg d 0755 nagios nagios
+installf $PKGINST /var/log/opsview d 0755 nagios nagios
+
+installf -f $PKGINST
+
+/usr/sbin/chroot $BASEDIR /usr/bin/su - nagios -c /usr/local/nagios/installer/postinstall || die "Failed to complete postinstall tasks"
+
+# check to see if the database exists; if so, run upgrade steps
+# do it this way as previous packages may have been removed so cannot
+# tell by the presence if this is an upgrade
+/usr/sbin/chroot $BASEDIR /usr/bin/su - nagios -c "/usr/local/nagios/bin/db_opsview db_exists 2>/dev/null"
+
+if [ $? = 0 ]; then
+    # run post upgrade steps
+    /usr/sbin/chroot $BASEDIR /usr/bin/su - nagios -c /usr/local/nagios/installer/upgradedb.pl || die "Failed to run 'upgradedb.pl'"
+    /usr/sbin/chroot $BASEDIR /usr/bin/su - nagios -c /usr/local/nagios/bin/populate_db.pl || die "Failed to run 'populate_db.pl'"
+    if [ -f /tmp/opsview4_upgrade_config_generation.lock ] ; then
+        echo "Upgrading to Opsview 4 - you must activate Opsview now before reloading"
+    else 
+        /usr/sbin/chroot $BASEDIR /usr/bin/su - nagios -c "OPSVIEW_NOSTART=true /usr/local/nagios/bin/rc.opsview gen_config" || die "Failed to run 'rc.opsview gen_config'"
+    fi
+    /usr/sbin/chroot $BASEDIR /usr/bin/su - nagios -c "/usr/local/nagios/bin/rc.opsview start" || die "Failed to run 'rc.opsview start'"
+fi
+
+# a package upgrade has been detected
+if [ -f $UPGR_SCRIPT ]; then
+    # last step, remove the old package
+    sh $UPGR_SCRIPT &
+else
+    # start up the agent
+    /usr/sbin/chroot $BASEDIR /etc/init.d/opsview-agent restart
+
+    # start up opsview only if the opsview database exists
+    /usr/sbin/chroot $BASEDIR /usr/bin/su - nagios -c "/usr/local/nagios/bin/db_opsview db_exists 2>/dev/null && /etc/init.d/opsview restart"
+fi
+
+rm -f /usr/local/nagios/var/upgrade.lock
+
+exit 0

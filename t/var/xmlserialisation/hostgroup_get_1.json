@@ -1,0 +1,28 @@
+{
+      "hosts" : [],
+      "parent" : null,
+      "name" : "Opsview",
+      "id" : "1",
+      "children" : [
+         {
+            "name" : "alphaearly",
+            "ref": "/rest/config/hostgroup/9"
+         },
+         {
+            "name" : "singlehost",
+            "ref": "/rest/config/hostgroup/7"
+         },
+         {
+            "name" : "UK",
+            "ref": "/rest/config/hostgroup/3"
+         },
+         {
+            "name" : "UK2",
+            "ref": "/rest/config/hostgroup/6"
+         }
+      ],
+      "uncommitted" : "0",
+      "matpath": "Opsview,",
+      "is_leaf" : 0
+   }
+

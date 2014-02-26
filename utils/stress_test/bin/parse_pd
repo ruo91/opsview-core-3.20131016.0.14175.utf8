@@ -1,0 +1,232 @@
+#!/usr/bin/perl
+#
+# $Id$
+#
+
+# NOTES:
+#
+# "perldoc perlpod" for more info on using POD
+# "perldoc Getopt::Long" for more info on using command line options
+#   and imposing limits on what can be used with which switches
+# Any $<text>$ is a CVS/SVN keyword - do not alter!
+# When script is complete, use "perltidy -b -i=2 <script>" to format correctly
+
+use strict;
+use warnings;
+use Storable qw(nstore_fd retrieve_fd);
+use Fcntl qw(:DEFAULT :flock);
+use Data::Dumper;
+
+use Cwd;
+my ( $script, $scriptname, $scriptdir );
+$script = Cwd::abs_path($0);
+( $scriptname = $0 )      =~ s!^.*/!!;
+( $scriptdir  = $script ) =~ s!/.*?$!!;
+
+use Pod::Usage;
+use Getopt::Long qw(:config no_ignore_case bundling no_auto_abbrev);
+
+my $_VERS = sprintf( "%d.%d", q$Revision: 0.01 $ =~ m!(\d+)\.(\d+)! );
+my $_DATE = sprintf( "%s %s",
+    q$Date: 2000/01/01 00:00:00 $ =~ m!(\d.../\d./\d.) (\d.:\d.:\d.)! );
+
+my $VERSION = "$_VERS $_DATE";
+
+=head1 NAME
+
+<script name>
+
+=head1 SYNOPSIS
+
+S<< <check_fakescript> [-?hV] >>
+
+=head1 DESCRIPTION
+
+Script to provide realistic dummy results to nagios
+
+=head1 OPTIONS
+
+=over
+
+=cut
+
+#### Set up default options available for all scripts,
+# i.e. "<script> --version" or "<script> --help"
+# All command line options are store within a hash for easy access
+# This initialises hash and defines some entries in one go
+# See "perldoc perldata" for more info
+my %options = (
+    'help|h|?'  => 0,
+    'man'       => 0,
+    'version|V' => 0,
+    'debug:+'   => 0,
+);
+
+#### Document default options
+
+=item --help, -?, -h
+
+Display basic help 
+
+=item --man
+
+Display man page
+
+=item --debug [0-9], --debug [--debug [...]]
+
+Enable debugging mode (using more than once increases verbosity, or specify
+a level explicitly to a maximum of level 8) 
+
+=item --version, -V
+
+Show version information
+
+=cut
+
+#### End of options
+
+=back
+
+=head1 ARGUMENTS
+
+=over
+
+=item <filename>
+
+Name of file in the store directory to parse
+
+=back
+
+=cut
+
+#### Function prototypes, where requried ####
+sub my_die($@);
+sub logmsg($@);
+
+#### start of perl code ####
+
+# Getopt::Long can limit/expand on how switches are used.  This step
+# normalises the options hash to remove optional specifiers used by
+# Getopts::Long.  Show usage (from the inline POD) if any options unrecognised
+GetOptions( \%options, keys(%options) ) || pod2usage(
+    -verbose => 1,
+    -exitval => 3,
+);
+
+# output version and exit
+# i.e. "<script> --version" or "<script> -v"
+die("Version: $VERSION\n") if ( $options{version} );
+
+# output basic help text when -?, --help or -h used
+pod2usage(
+    -verbose => 1,
+    -exitval => 3,
+) if ( $options{'?'} || $options{help} );
+
+#output complete help text when -m|--man|-H|--HELP used
+pod2usage(
+    -verbose => 2,
+    -exitval => 3,
+) if ( $options{HELP} || $options{man} );
+
+#### global variables ####
+# Initialise debug variable correctly if not already set by --debug
+$options{debug} ||= 0;
+
+# Set an arbitrary max level of 8 for debug
+$options{debug} = 8 if ( $options{debug} > 8 );
+
+my $store_dir = "/usr/local/nagios/var/rw/stress";
+
+if ( !-d $store_dir ) {
+    my_die( 3, "$store_dir doesnt exist: $!\n" );
+}
+
+# {last_result} = last result given from the script
+# {last_result_count} = total number of rsult of last type
+# quick hack to make life easier with Storeable
+my %store;
+my $store = \%store;
+
+#### all sub-routines ####
+
+# description:
+#   given a level and a message, if level <= debug level, output message
+#   Allows for progressivly more output the higher the debug level, as
+#   given by the use of --debug. Saves on "expensive" 3rd party module
+# parameters:
+#   $1 = level --> level (to match debug level)
+#   $2 .. $n   --> list to pass to print
+# returns:
+#   nothing
+sub logmsg($@) {
+    print @_, $/ if ( shift() <= $options{debug} );
+}
+
+sub my_die($@) {
+    my $exit = shift;
+    print(@_);
+    exit $exit;
+}
+
+#### main ####
+
+if ( !$ARGV[0] ) {
+    pod2usage(
+        -msg     => "No filename provided",
+        -exitval => 3,
+        -verbose => 1,
+    );
+}
+my $storefile = "$store_dir/$ARGV[0]";
+open( STORE, "<", $storefile ) or die( "Couldn't open $storefile: $!\n" );
+flock( STORE, LOCK_SH );
+$store = retrieve_fd(*STORE);
+close(STORE);
+
+print "hashref\n";
+print Dumper \$store;
+print "hash\n";
+print Dumper \%store;
+
+__END__
+# Remaining POD for man page/help text
+
+=head1 NOTES
+
+Any further notes on running this code, its use, where it came from or who's
+bad idea it was.
+
+=head1 FILES
+
+Any (optional?) files referenced or used by the script
+
+=head1 AUTHOR AND COPYRIGHT
+
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This software is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Opsview; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+=back
+
+=head1 KNOWN BUGS
+
+Any known issues
+
+=head1 SEE ALSO
+
+L<perl>
+
+=cut

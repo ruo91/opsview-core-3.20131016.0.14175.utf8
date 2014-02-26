@@ -1,0 +1,54 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+# 	fakeslavegen {path}
+#
+# DESCRIPTION:
+#	Writes the config files for slaves.
+#	Will be name: "${monitoringserver.name}.txt"
+#	Format:
+# hostname\tservicename
+#	For use by nsca_injector
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin", "$Bin/../lib", "$Bin/../etc";
+use Opsview;
+use Opsview::Host;
+
+umask 027
+  ; # Requirements is that owner (nagios) can read/write, but group (nagios), can read
+
+my $path = shift @ARGV or die "Must specify a path";
+
+foreach my $ms ( Opsview::Monitoringserver->retrieve_all ) {
+    next if $ms->id == 1;
+    open FILE, "> $path/" . $ms->name . ".txt";
+    foreach my $host ( $ms->monitors ) {
+        my $resolved_servicechecks = $host->resolved_servicechecks;
+        foreach my $r (@$resolved_servicechecks) {
+            print FILE $host->name . "\t" . $r->{servicecheck}->name . $/;
+        }
+    }
+    close FILE;
+}

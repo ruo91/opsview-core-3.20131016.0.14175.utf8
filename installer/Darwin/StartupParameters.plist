@@ -1,0 +1,11 @@
+{
+  Description     = "Opsview";
+  Provides        = ("Opsview", "NSCA", "Nagios");
+  Uses            = ("Disks", "NFS");
+  Requires        = ("Web Server", "MySQL");
+  Messages =
+  {
+    start = "Starting Opsview";
+    stop = "Stopping Opsview";
+  };
+}

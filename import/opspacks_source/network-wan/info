@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.network_wan
+VERSION=1.0
+ALIAS=Network - WAN
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

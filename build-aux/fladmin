@@ -1,0 +1,190 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+#	fladmin [-r root_dir] {install|uninstall|devinstall} {filelist}
+#	fladmin [-r root_dir] -v version -s spec.in rpmspec {filelist}
+#	fladmin [-r root_dir] list
+#
+# DESCRIPTION:
+#	filelist admin
+#	Reads the filelist and installs or uninstalls accordingly
+#	list will find all files in the current directory downwards and
+#	create an initial filelist file
+#	devinstall is the same as an install, but will only do the action if the file does
+#	not currently exist (mainly for creating directory structures)
+#
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use Getopt::Std;
+use FindBin qw($Bin);
+$opts = {};
+getopts( "r:s:v:", $opts );
+
+$root = $opts->{r} || "/";
+$root =~ s%^/$%%; # Change / to nothing
+
+$action = shift;
+if ( $action !~ /^((un)?install|rpmspec|list|devinstall)$/ ) {
+    die "Must specify action (install, uninstall, rpmspec, list or devinstall)";
+}
+
+if ( $action eq "list" ) {
+    &do_list;
+    exit;
+}
+
+$filelist = shift;
+die "Must specify filelist" unless $filelist;
+
+if ( $action eq "rpmspec" ) {
+    die "Must specify a spec file"      unless $opts->{s};
+    die "Must specify a version number" unless $opts->{v};
+}
+
+open F, "$filelist" or die "Cannot open $filelist";
+if ( $action eq "uninstall" ) {
+
+    # Need to handle uninstalls in a reverse format
+    @lines = reverse <F>;
+}
+else {
+    @lines = <F>;
+}
+close F;
+
+my @dirs;
+
+foreach $_ (@lines) {
+    next if /^#|^\s*$/;
+    my ( $type, $o, $mode, $file, $src ) = split;
+
+    ( $owner, undef, $group ) =
+      $o =~ /^(\w+)([:.](\w+))?$/; # Separate to owner and group
+    ( $src = $file ) =~ s#^.*/## unless $src; # Default src to file of same name
+
+    $dstfile = $root . $file;                 # Prepend root
+    $dstfile =~ s%^//%/%;                     # Remove duplicate //s
+
+    # note: on some os's dirs with 0555 cannot have files created
+    # underneath by install, so catch those and store + fix later
+    if ( $type eq "d" and $mode =~ s/^(\d)5/${1}7/ ) {
+        push( @dirs, $dstfile );
+    }
+
+    #print "type=$type, file=$file, own=$owner, g=$group, mod=$mode, src=$src",$/;
+
+    if ( $action eq "install" or $action eq "devinstall" ) {
+        if ( $action eq "devinstall" && -e $file ) {
+            next;
+        }
+        if ($group) {
+            $grp_arg = "-g $group";
+        }
+        else {
+            $grp_arg = "";
+        }
+
+        if ( $type eq "d" ) {
+            system("$Bin/install-sh -d -o $owner $grp_arg -m $mode $dstfile")
+              == 0
+              or die "Cannot install dir $file";
+        }
+        elsif ( $type eq "f" or $type eq "c" ) {
+            system(
+                "$Bin/install-sh -c -o $owner $grp_arg -m $mode $src $dstfile")
+              == 0
+              or die "Cannot install file $file";
+        }
+        elsif ( $type eq "l" ) {
+            unlink $dstfile if ( -e $dstfile );
+            symlink $src, $dstfile or die "Cannot create symlink";
+        }
+
+    }
+    elsif ( $action eq "uninstall" ) {
+
+        # Ignore directories
+        if ( $type eq "f" or $type eq "l" ) {
+            unlink $file or die "Cannot unlink $file: $!";
+        }
+        elsif ( $type eq "c" ) {
+            rename $file, "$file.removed"
+              or die "Cannot rename config file $file: $!";
+        }
+    }
+    elsif ( $action eq "rpmspec" ) {
+        if ( $type eq "f" or $type eq "l" ) {
+            push @{ $a->{files} }, $file;
+        }
+        elsif ( $type eq "c" ) {
+            push @{ $a->{config} }, $file;
+        }
+        elsif ( $type eq "d" ) {
+            push @{ $a->{dirs} }, $file;
+        }
+    }
+}
+
+if ( $action eq "install" or $action eq "devinstall" ) {
+    foreach my $dir ( reverse(@dirs) ) {
+        system( "chmod u-w $dir" );
+    }
+}
+
+if ( $action eq "rpmspec" ) {
+    open S, $opts->{s} or die "Cannot open spec file " . $opts->{s} . ": $!";
+    { local undef $/; $spec = <S> };
+    close S;
+    $f = "";
+    foreach $type (qw(dirs config files)) {
+        $f .= "%$type\n";
+        $f .= join( "\n", @{ $a->{$type} } ) . "\n\n";
+    }
+    $spec =~ s/\@FILE_INFO\@/$f/;
+    $spec =~ s/\@VERSION\@/$opts->{v}/g;
+    print $spec;
+}
+
+sub do_list {
+    use File::Find;
+    find(
+        {
+            no_chdir => 1,
+            wanted   => \&callback
+        },
+        "."
+    );
+}
+
+sub callback {
+
+    #print "dir=$File::Find::dir _=$_ name=$File::Find::name",$/;
+    next if (/^\.$|CVS|^filelist$/);
+    s#^\./##;
+    ( $basename = $_ ) =~ s/.*\///;
+    if ( -f $_ ) {
+        print "f bin:bin 0444 $root/$basename $_", $/;
+    }
+    elsif ( -d $_ ) {
+        print "d bin:bin 0555 $root/$basename $_", $/;
+    }
+}

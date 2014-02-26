@@ -1,0 +1,164 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+# 	clone_host --username {username} --password {password --from {hostname} --total {total} [--delete]
+#
+# DESCRIPTION:
+#   Uses Opsview's REST API to get a host, and then clone it
+#   Cloned host will use the same name, but suffix with X, where X is the current total number of rows
+#   If delete is specified, then total acts as a total for the entire Opsview configuration, so if
+#   there are more than total number of hosts altogether, extra ones will get deleted
+#   Otherwise, will create a total of number of clones of the host
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin", "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+
+use Getopt::Long;
+use Opsview::API;
+use JSON::Any;
+use Data::Dump qw(dump);
+
+my $url_prefix = $ENV{OPSVIEW_URL_PREFIX} || "http://localhost";
+my $username;
+my $password;
+my $from;
+my $total;
+my $delete = 0;
+
+GetOptions(
+    "from|f=s"     => \$from,
+    "total|t=s"    => \$total,
+    "username|u=s" => \$username,
+    "password|p=s" => \$password,
+    "delete"       => \$delete,
+) or my_die( "Incorrect options" );
+
+my_die("Must specify username")    unless $username;
+my_die("Must specify password")    unless $password;
+my_die("Must specify cloned host") unless $from;
+my_die("Must specify total")       unless $total;
+
+my $j = JSON::Any->new;
+
+my $ua = Opsview::API->new(
+    username        => $username,
+    password        => $password,
+    url_prefix      => $url_prefix,
+    api_min_version => "2",
+    data_format     => "json",
+);
+
+$ua->login;
+
+$ua->get( "config/host?s.name=$from&cols=-id,-uncommitted" );
+
+my $result = $j->decode( $ua->content );
+
+if ( $result->{summary}->{rows} == 0 ) {
+    die( "Cannot find host: $from" );
+}
+if ( $result->{summary}->{rows} > 1 ) {
+    die( "Got more than one row: " . $result->{summary}->{rows} );
+}
+
+my $totalrows = $result->{summary}->{allrows};
+
+# Work out the highest id number
+$ua->get( "config/host?rows=all&cols=id" );
+my $allids = $j->decode( $ua->content );
+
+#print Data::Dump::dump($allids);
+
+my $maxid = 0;
+foreach my $hash ( @{ $allids->{list} } ) {
+    if ( $maxid < $hash->{id} ) {
+        $maxid = $hash->{id};
+    }
+}
+
+if ($delete) {
+    if ( $total >= $totalrows ) {
+        start_adding( $total - $totalrows );
+    }
+    else {
+        start_removing( $totalrows - $total );
+    }
+    print "Finished with total $total hosts\n";
+}
+else {
+    start_adding($total);
+    print "Finished\n";
+}
+
+sub start_adding {
+    my $todo     = shift;
+    my $c        = 0;
+    my $hostjson = $result->{list}->[0];
+
+    my $hostname_base = "$from";
+
+    my $suffix = $maxid;
+
+    while ( $todo > 0 ) {
+        $suffix++;
+        $c++;
+        $hostjson->{name} = "$hostname_base-$suffix";
+        $ua->post( "config/host", $j->encode($hostjson) );
+        $todo--;
+    }
+    print "Added $c hosts\n";
+}
+
+sub start_removing {
+    my $todo = shift;
+    my $c    = 0;
+    $ua->get( "config/host?cols=id&rows=all" );
+    my $result = $j->decode( $ua->content );
+    my @ids = sort { $b <=> $a } map { $_->{id} } @{ $result->{list} };
+    while ( $todo > 0 ) {
+        my $id = shift @ids;
+        $ua->delete( "config/host/$id" );
+        $c++;
+        $todo--;
+    }
+    print "Deleted $c hosts\n";
+}
+
+sub my_die {
+    print <<"USAGE";
+
+clone_host --username=username --password=password
+  --from=hostname --total=X [--delete]
+
+Will clone hostname X number of times.
+Name of host will be suffixed with -R where R is the current number of rows
+in hosts table
+
+Warning! If you use the --delete option, then the script will try to delete hosts, 
+in reverse ID order, until there are only X number of hosts left. 
+
+USAGE
+    die(@_);
+}

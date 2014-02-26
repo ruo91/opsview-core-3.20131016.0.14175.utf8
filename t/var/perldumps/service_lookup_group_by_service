@@ -1,0 +1,13 @@
+{
+  allrows => 25,
+  list    => [
+               { list => ["resolved_services"], name => "AFS" },
+               {
+                 list => ["cisco", "cisco1", "cisco2", "cisco3", "cisco4"],
+                 name => "Another exception",
+               },
+               { list => ["monitored_by_slave"], name => "Check Loadavg" },
+             ],
+  rows    => 7,
+  total   => 50,
+}

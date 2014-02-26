@@ -1,0 +1,109 @@
+$rulesets = {
+              '81' => {
+                        'rules' => [
+                                     {
+                                       'alertlevel' => '0',
+                                       'message' => 'OK',
+                                       'process' => '1',
+                                       'code' => 'This will not compile'
+                                     }
+                                   ],
+                        'servicename' => 'Test exceptions'
+                      },
+              '88' => {
+                        'rules' => [],
+                        'servicename' => 'snmptrap no freshness'
+                      },
+              '89' => {
+                        'rules' => [],
+                        'servicename' => 'snmptrap renotify'
+                      },
+              '79' => {
+                        'rules' => [
+                                     {
+                                       'alertlevel' => '1',
+                                       'message' => 'Device coldstarted',
+                                       'process' => '1',
+                                       'code' => '"${TRAPNAME}" =~ /SNMPv2-MIB::coldstart/i'
+                                     },
+                                     {
+                                       'alertlevel' => '0',
+                                       'message' => 'OK',
+                                       'process' => '1',
+                                       'code' => '1'
+                                     }
+                                   ],
+                        'servicename' => 'Coldstart'
+                      },
+              '82' => {
+                        'rules' => [
+                                     {
+                                       'alertlevel' => '0',
+                                       'message' => 'OK',
+                                       'process' => '1',
+                                       'code' => '0'
+                                     }
+                                   ],
+                        'servicename' => 'Another exception'
+                      }
+            };
+$advsnmptrap = {
+                 '192.168.10.23' => [
+                                    '79',
+                                    '81',
+                                    '82',
+                                    '88',
+                                    '89'
+                                  ],
+                 '192.168.10.20' => [
+                                    '79',
+                                    '81',
+                                    '82'
+                                  ],
+                 '67.207.142.209' => [
+                                       '79',
+                                       '81',
+                                       '82',
+                                       '88',
+                                       '89'
+                                     ],
+                 '10.20.20.20' => [
+                                    '79',
+                                    '81',
+                                    '82',
+                                    '88',
+                                    '89'
+                                  ],
+                 '192.168.10.22' => [
+                                    '79',
+                                    '81',
+                                    '82',
+                                    '88',
+                                    '89'
+                                  ]
+               };
+$hostip_lookup = {
+                   '192.168.10.23' => [
+                                      'cisco1'
+                                    ],
+                   '192.168.10.20' => [
+                                      'cisco'
+                                    ],
+                   '67.207.142.209' => [
+                                         'cisco1'
+                                       ],
+                   '10.20.20.20' => [
+                                      'cisco1'
+                                    ],
+                   '192.168.10.22' => [
+                                      'cisco2',
+                                      'cisco3'
+                                    ]
+                 };
+$trace = {
+           'cisco2' => 1,
+           'cisco1' => 1
+         };
+$debug = undef;
+$enabled = 1;
+1;

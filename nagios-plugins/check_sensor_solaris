@@ -1,0 +1,365 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#       Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MErcHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+
+#use lib qw ( /usr/local/nagios/lib );
+use DBI;
+use Time::HiRes qw(time);
+use Getopt::Std;
+
+# About us
+my $script         = "check_sensor_solaris";
+my $script_version = "0.1";
+my $script_description =
+  "Checks sensor values such as fan speed using ipmitool";
+my $verbose = 0; # set to 1 for debug output
+
+# Performance data - query execution time
+my $perfdata = "";
+
+my $retval       = 0;  # Our return value (default OK)
+my $retmsg       = ""; # The text we return in response
+my $warning      = "";
+my $critical     = "";
+my $sensor       = "";
+my $sensor_value = "";
+my @valid_operators =
+  ( 'string', 'str', 'search', 'lt', 'le', 'gt', 'ge', 'eq', 'ne' );
+
+# Check values
+my $match_val;
+my $match_op;
+
+# Command line arguments
+our ( $opt_h, $opt_H, $opt_D, $opt_s, $opt_w, $opt_c );
+getopts( "hDs:w:c:" );
+
+#  debug output
+if ($opt_D) {
+    $verbose = 1;
+}
+if ($opt_h) {
+    usage();
+    exit 0;
+}
+if ($opt_s) {
+    $sensor = $opt_s;
+}
+else {
+    print
+      "Must specify a sensor value to check.\nRun 'ipmitool -I bmc sensor' to list those found.\n";
+    usage();
+    exit 3;
+}
+if ($opt_w) {
+    $warning = $opt_w;
+}
+if ($opt_c) {
+    $critical = $opt_c;
+}
+
+# Print log messages if debug (verbose) is enabled
+sub logger {
+    my $logmsg = shift(@_);
+
+    if ( $verbose == 1 ) {
+        print "$logmsg\n";
+    }
+
+    return 0;
+}
+
+# Display our usage statement
+sub usage {
+    print <<EOF
+--------------------------------------------------------------------
+
+$script $script_version
+
+$script_description
+
+Usage: $script -s <sensor>
+
+Options: -s     Sensor name to check value for
+         -D     Enable debug output
+         -w     Warning criteria (see below)
+         -c     Critical criteria (see below)
+
+Warning and Critical Thresholds
+-------------------------------
+
+Warning and critical thresholds are specified in the format:
+
+    operator:value
+
+The available operators are:
+
+    lt - less than
+    le - less than or equal to
+    gt - greater than
+    ge - greater than or equal to
+    eq - equal to
+    ne - not equal to
+    str - string match
+
+--------------------------------------------------------------------
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This program is free software; you can redistribute it or modify
+it under the terms of the GNU General Public License
+------------------------------------------------------------------
+EOF
+
+}
+
+##########################################################################
+# evaluate_operators
+sub evaluate_operators {
+
+    # args:
+    # 1: Result from database
+    # 2: check (crit / warn)
+    # 3: level
+
+    my $sensor_result = shift;
+    my $match         = shift;
+    my $level         = shift;
+
+    # Make sure everything is defined properly
+    if (   not defined $sensor_result
+        or not defined $match
+        or not defined $level )
+    {
+        logger( "One of the match values is not defined!" );
+        print "WARNING: One of the match values is not defined!\n";
+        exit 1;
+    }
+
+    # Split into op and val
+    ( $match_op, $match_val ) = split( ':', $match );
+
+    # Run through the logic and evaluate
+    if ( not defined $match_op or $match_op eq "" ) {
+        print
+          "UNKNOWN: operator is blank in $level match \"$match\" Check command -c or -w syntax\n";
+        exit 3;
+    }
+    else {
+        $match_op = lc($match_op);
+    }
+
+    # Check the match type is recognised
+    my $found = 0;
+    my $val;
+    foreach $val (@valid_operators) {
+        if ( $val eq $match_op ) {
+            $found = 1;
+        }
+    }
+
+    if ( $found == 0 ) {
+        print "Operator $match_op not recognised in "
+          . lc($level)
+          . " criteria.\n";
+        exit 3;
+    }
+
+    if ( $match_op eq 'search' or $match_op eq 'str' ) {
+
+        # Change this to the correct operator
+        logger( "match operator set to 'search' instead of 'string', adjusting"
+        );
+        $match_op = 'string';
+    }
+
+    # I will have to do some checking to see if the values are numeric or strings
+    # Avoid perl barfing if the user inputs alpha when using numeric logic
+    if ( $sensor_result =~ /^[\d\.]+$/o ) {
+        logger( "$sensor_result is numeric" );
+    }
+    elsif ( $sensor_result =~ /^[\s\w\.\,\\\/]+$/o ) {
+        logger( "$sensor_result is alpha" );
+        if ( $match_op ne 'string' ) {
+            print
+              "UNKNOWN: Result \"$sensor_result\" is alphabetical for numeric match! Use string to search instead\n";
+            exit 3;
+        }
+    }
+    else {
+        logger( "$sensor_result seems to be alphanum" );
+        print
+          "UNKNOWN: Result $sensor_result is not numeric! Use string to search instead\n";
+        exit 3;
+    }
+
+    ####
+    # LT checks
+    if ( $match_op eq 'lt' ) {
+
+        # Neither -t or -d defined, use Regular logic
+        if ( $sensor_result < $match_val ) {
+
+            # Do a regular match
+            return "$level: $sensor_result is less than threshold $match_val";
+        }
+        else {
+            return "";
+        }
+    }
+    ####
+    # GT checks
+    elsif ( $match_op eq 'gt' ) {
+
+        # Regular logic
+        if ( $sensor_result > $match_val ) {
+            return
+              "$level: $sensor_result is greater than threshold ($match_val)";
+        }
+        else {
+            return "";
+        }
+    }
+    ####
+    # LE checks
+    elsif ( $match_op eq 'le' ) {
+
+        # Regular logic
+        if ( $sensor_result <= $match_val ) {
+
+            # Do a regular match
+            return
+              "$level: $sensor_result is less than or equal to threshold ($match_val)";
+        }
+        else {
+            return "";
+        }
+    }
+    ####
+    # GE checks
+    elsif ( $match_op eq 'ge' ) {
+
+        # Regular logic
+        if ( $sensor_result >= $match_val ) {
+            return
+              "$level: $sensor_result is greater than or equal to threshold ($match_val)";
+        }
+        else {
+            return "";
+        }
+    }
+    ####
+    # EQ checks
+    elsif ( $match_op eq 'eq' ) {
+
+        # Regular logic
+        if ( $sensor_result == $match_val ) {
+            return "$level: $sensor_result is equal to threshold ($match_val)";
+        }
+        else {
+            return "";
+        }
+    }
+    ####
+    # NE checks
+    elsif ( $match_op eq 'ne' ) {
+
+        # Regular logic
+        if ( $sensor_result != $match_val ) {
+            return
+              "$level: $sensor_result is not equal to threshold ($match_val)";
+        }
+        else {
+            return "";
+        }
+    }
+    ####
+    # String checks
+    elsif ( $match_op eq 'string' ) {
+
+        # do search match
+        logger( "$sensor_result =~ /$match_val/i" );
+        if ( $sensor_result =~ /$match_val/i ) {
+            return "$level: $sensor_result matches $match_val";
+        }
+        else {
+            return "";
+        }
+    }
+    else {
+        die(
+            "Can't match operator $match_op.. Is it misspelled or uppercase? "
+        );
+    }
+}
+
+open( CMD, '/usr/sfw/bin/ipmitool -I bmc sensor |' )
+  or die( "Cannot execute /usr/sfw/bin/ipmitool" );
+my $line;
+my $value_found = 0;
+while ( $line = <CMD> ) {
+    if ( $line =~ /^\Q$sensor / ) {
+        $line =~ s/^[^|]*\| ([^ ]*).*/$1/;
+        $sensor_value = $line;
+        chomp $sensor_value;
+
+        # Success!
+        $value_found = 1;
+    }
+}
+close(CMD);
+
+if ( !$value_found ) {
+    print "UNKNOWN - sensor $opt_s could not be found\n";
+    exit 3;
+}
+
+# Performance data if appropriate
+if ( $sensor_value =~ /^[\d.]+$/ ) {
+
+    # Sanitize sensor name
+    my $safe_sensor = $sensor;
+    $safe_sensor =~ s/[^a-zA-Z0-9\.]/_/g;
+    $perfdata = " $safe_sensor=$sensor_value";
+}
+
+# Check warning/critical values
+my $checkres;
+if ( !$critical eq "" ) {
+    $checkres = evaluate_operators( $sensor_value, $critical, "CRITICAL" );
+    if ( !$checkres eq "" ) {
+        print "$checkres | $perfdata\n";
+        exit 2;
+    }
+}
+
+if ( !$warning eq "" ) {
+    my $checkres = evaluate_operators( $sensor_value, $warning, "WARNING" );
+    if ( !$checkres eq "" ) {
+        print "$checkres | $perfdata\n";
+        exit 1;
+    }
+}
+
+# Everything must be OK!
+print "OK - sensor $sensor reports $sensor_value | $perfdata\n";
+exit 0;

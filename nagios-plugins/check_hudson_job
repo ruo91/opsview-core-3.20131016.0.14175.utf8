@@ -1,0 +1,131 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#    Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#    Author:	Robin Bramley, Opsview Limited.
+#	 Updates:	James Peel, Opsview Limited.
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+# DESCRIPTION:
+#    Check Hudson job status using the JSON API
+#
+
+use strict;
+use LWP::UserAgent;
+use JSON;
+
+my $retStr    = "Unknown - plugin error";
+my @alertStrs = ( "OK", "WARNING", "CRITICAL", "UNKNOWN" );
+my $exitCode  = 3;
+my $numArgs   = $#ARGV + 1;
+
+# check arguments
+if ( $numArgs != 2 && $numArgs != 4 ) {
+    print "Usage: check_hudson_job url jobname [username password]\n";
+    exit $exitCode;
+}
+
+my $jobName = $ARGV[1];
+
+my $ua = LWP::UserAgent->new;
+my $req = HTTP::Request->new( GET => $ARGV[0] );
+
+# perform basic auth if necessary
+if ( $numArgs == 4 ) {
+    $req->authorization_basic( $ARGV[2], $ARGV[3] );
+}
+
+# make request to Hudson
+my $res = $ua->request($req);
+
+# if we have a HTTP 200 OK response
+if ( $res->is_success ) {
+    my $json = new JSON;
+
+    # get content
+    my $obj = $json->decode( $res->content );
+
+    # loop counter
+    my $n = 0;
+
+    # loop through the jobs (this depends on 'overall' read permission
+    # AND 'jobs' read permission in a secure Hudson config)
+    while ( $obj->{'jobs'}[$n] ) {
+
+        # is this the job we're looking for?
+        if ( $obj->{'jobs'}[$n]->{name} eq $jobName ) {
+
+            if ( $obj->{'jobs'}[$n]->{color} eq "green" ) {
+                $retStr =
+                  "$obj->{'jobs'}[$n]->{name} = Build successful ($obj->{'jobs'}[$n]->{color})";
+                $exitCode = 0;
+            }
+            elsif ( $obj->{'jobs'}[$n]->{color} eq "green_anime" ) {
+                $retStr =
+                  "$obj->{'jobs'}[$n]->{name} = Build in progress, last build successful ($obj->{'jobs'}[$n]->{color})";
+                $exitCode = 0;
+            }
+            elsif ( $obj->{'jobs'}[$n]->{color} eq "blue" ) {
+                $retStr =
+                  "$obj->{'jobs'}[$n]->{name} = Build successful ($obj->{'jobs'}[$n]->{color})";
+                $exitCode = 0;
+            }
+            elsif ( $obj->{'jobs'}[$n]->{color} eq "blue_anime" ) {
+                $retStr =
+                  "$obj->{'jobs'}[$n]->{name} = Build in progress, last build successful ($obj->{'jobs'}[$n]->{color})";
+                $exitCode = 0;
+            }
+            elsif ( $obj->{'jobs'}[$n]->{color} eq "yellow" ) {
+                $retStr =
+                  "$obj->{'jobs'}[$n]->{name} = Build failed ($obj->{'jobs'}[$n]->{color})";
+                $exitCode = 1;
+            }
+            elsif ( $obj->{'jobs'}[$n]->{color} eq "yellow_anime" ) {
+                $retStr =
+                  "$obj->{'jobs'}[$n]->{name} = Build in progress, last build failed ($obj->{'jobs'}[$n]->{color})";
+                $exitCode = 1;
+            }
+            elsif ( $obj->{'jobs'}[$n]->{color} eq "red" ) {
+                $retStr =
+                  "$obj->{'jobs'}[$n]->{name} = Build failed ($obj->{'jobs'}[$n]->{color})";
+                $exitCode = 2;
+            }
+            elsif ( $obj->{'jobs'}[$n]->{color} eq "red_anime" ) {
+                $retStr =
+                  "$obj->{'jobs'}[$n]->{name} = Build in progress, last build failed ($obj->{'jobs'}[$n]->{color})";
+                $exitCode = 2;
+            }
+            else {
+                $retStr =
+                  "$obj->{'jobs'}[$n]->{name} = Build in unknown status ($obj->{'jobs'}[$n]->{color})";
+                $exitCode = 3;
+            }
+
+            last;
+        }
+        $n++;
+    }
+
+}
+else {
+    $retStr   = $res->status_line;
+    $exitCode = 1;
+}
+
+print $alertStrs[$exitCode] . " - $retStr\n";
+exit $exitCode;

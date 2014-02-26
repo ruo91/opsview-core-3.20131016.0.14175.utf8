@@ -1,0 +1,1557 @@
+#!/usr/bin/perl
+#
+# SYNTAX
+#   See help output (run with -h)
+#
+# DESCRIPTION
+#   Script to gather information to help with diagnosing problems
+#
+#   See also: http://docs.opsview.com/doku.php?id=opsview-core:opsview_diag
+#
+#   Should be self contained as far as possible so a single script can
+#   be downloaded onto a system and run without depending on a specific version
+#   of software or a dependancy being installed.
+#
+#   Should preferably be able to run on a 2.14 system without crashing
+#   and dying from unavailable perl modules or database queries
+#
+#   Output is not meant to be pretty, but machine/human parsable for all
+#   important stuff
+#
+# AUTHORS:
+#   Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+use 5.8.4;
+use lib '/usr/local/nagios/perl/lib';
+
+package Opsview::Diag::Output::Dokuwiki;
+use strict;
+use warnings;
+use Carp;
+use version; our $VERSION = qv( '0.01' );
+use Time::Interval;
+
+sub say { print @_, $/; }
+
+sub new {
+    my ( $class, %attrs ) = @_;
+    my $self = {%attrs};
+    return bless $self, $class;
+}
+
+sub head1 {
+    my ( $self, @text ) = @_;
+    say '';
+    say '====== ', @text, ' ======';
+}
+
+sub head2 {
+    my ( $self, @text ) = @_;
+    say '';
+    say '===== ', @text, ' =====';
+}
+
+sub head3 {
+    my ( $self, @text ) = @_;
+    say '';
+    say '==== ', @text, ' ====';
+}
+
+sub head4 {
+    my ( $self, @text ) = @_;
+    say '=== ', @text, ' ===';
+}
+
+sub head5 {
+    my ( $self, @text ) = @_;
+    say '== ', @text, ' ==';
+}
+
+sub head6 {
+    my ( $self, @text ) = @_;
+    say '= ', @text, ' =';
+}
+
+sub start_unnumbered_list {
+    my ($self);
+}
+
+sub unnumbered_list_item {
+    my ( $self, @text ) = @_;
+    my $attrs;
+    if ( ref $text[0] eq 'HASH' ) {
+        $attrs = shift @text;
+    }
+    print '  * ';
+    if ( $attrs->{highlight} ) {
+        say '**', join( ': ', @text ), '**';
+    }
+    else {
+        say join( ': ', @text );
+    }
+}
+
+sub end_unnumbered_list {
+    my ($self);
+}
+
+sub start_code {
+    my ($self);
+    say '<code>';
+}
+
+sub stop_code {
+    my ($self);
+    say '</code>';
+}
+
+sub start_table {
+    my ( $self, @headers ) = @_;
+    print '^', $_ foreach @headers;
+    print '^', $/;
+}
+
+sub table_row {
+    my ( $self, @data ) = @_;
+    print '|', defined $_ ? $_ : 'NaaN' foreach @data;
+    print '|', $/;
+}
+
+sub stop_table {
+    my ($self) = @_;
+}
+
+sub stringify_time {
+    my ( $self, %args ) = @_;
+    return parseInterval(
+        String => 1,
+        %args
+    );
+}
+
+1;
+
+package Opsview::Diag::Report::_base;
+use strict;
+use warnings;
+our @ISA = ( 'Opsview::Diag::Output::Dokuwiki' );
+use Carp;
+use English 'no-match-vars';
+use File::Basename;
+use version;
+our $VERSION = qv( '0.01' );
+
+#use File::Which qw(which);
+use File::Spec;
+
+sub say { print @_, $/; }
+
+sub new {
+    my ( $class, %attrs ) = @_;
+    my $self = {%attrs};
+
+    if (   !defined $self->{level}
+        || $self->{level} =~ m/\D/
+        || $self->{level} < 0
+        || $self->{level} > 3 )
+    {
+        $self->{level} = 2;
+    }
+    return bless $self, $class;
+}
+
+sub level {
+    my ( $self, $level ) = @_;
+
+    if ($level) {
+        $self->{level} = $level;
+    }
+
+    return $self->{level};
+}
+
+sub run {
+    my ($self) = @_;
+    ( my $title = ref($self) ) =~ s/.*:://;
+    $title = ucfirst($title);
+    $self->head1( 'Report: ', $title );
+    say 'Version: ', $VERSION;
+    say;
+
+    if ( !$self->{level} ) {
+        say ref($self), ': report incorrectly initialised';
+        return 0;
+    }
+    for my $level ( 1 .. $self->{level} ) {
+        $self->head2( $title, ' Level: ', $level );
+
+        my $method = 'run_level_' . $level;
+        $self->$method;
+        say;
+    }
+    return $self;
+}
+
+sub run_level_1 {
+    my ( $self, %attrs ) = @_;
+
+    #$self->head3(ref($self), ' Level 1');
+    say 'No output for level 1';
+}
+
+sub run_level_2 {
+    my ( $self, %attrs ) = @_;
+
+    #$self->head3(ref($self), ' Level 2');
+    say 'No output for level 2';
+}
+
+sub run_level_3 {
+    my ( $self, %attrs ) = @_;
+
+    #$self->head3(ref($self), ' Level 3');
+    say 'No output for level 3';
+}
+
+# Cannot use File::Slurp as possibly not on Solaris agent only systems
+# Do it quick-n-dirty way
+sub read_file {
+    my ( $self, $filename ) = @_;
+    return qx/cat $filename/;
+}
+
+sub cat_file {
+    my ( $self, $filename ) = @_;
+    $self->head3( 'File: ', basename($filename) );
+    if ( -r $filename ) {
+        print 'File: ', qx/ls -la $filename/;
+        $self->start_code;
+        my $contents = $self->read_file($filename);
+        print $contents;
+        $self->stop_code;
+    }
+    else {
+        say 'Cannot read file ', $filename;
+    }
+}
+
+sub list_directory {
+    my ( $self, $directory ) = @_;
+    $self->head3( 'Directory: ', basename($directory) );
+    if ( -d $directory ) {
+        $self->start_code;
+        my $output = qx/ls -ltra $directory 2>&1/;
+        print $output;
+        $self->stop_code;
+    }
+    else {
+        say 'Not a directory or does not exist: ', $directory;
+    }
+}
+
+sub run_binary {
+    my ( $self, $binary, @args ) = @_;
+    my $command = join( ' ', $binary, @args );
+
+    $self->head5( '"', $command, '"' );
+    my $binary_path;
+    if ( $binary !~ m!^/! ) {
+        $binary_path = $self->which($binary);
+    }
+    else {
+        $binary_path = $binary;
+    }
+    if ($binary_path) {
+        say 'Binary: ', qx/ls -la $binary_path/;
+        $self->start_code;
+        my $output = qx/$command 2>&1/;
+        print $output || 'No Output';
+        $self->stop_code;
+    }
+    else {
+        say "$binary not found on the system";
+    }
+}
+
+# could use File::Which but cannot know it will be on systems getting
+# agent info for.  This is basically ripped from File::Which
+my $Is_MacOS = ( $^O eq 'MacOS' );
+my @path_ext = ( '' );
+
+sub which {
+    my ( $self, $exec ) = @_;
+
+    return undef unless ($exec);
+
+    my $all     = wantarray;
+    my @results = ();
+
+    my @path = File::Spec->path();
+    unshift @path, File::Spec->curdir if $Is_MacOS;
+    for my $base ( map { File::Spec->catfile( $_, $exec ) } @path ) {
+        for my $ext (@path_ext) {
+            my $file = $base . $ext;
+
+            # print STDERR "$file\n";
+
+            if (
+                (
+                    -x $file or # executable, normal case
+                    (
+                        $Is_MacOS # MacOS doesn't mark as executable so we check -e
+                        and -e _
+                    )
+                )
+                and !-d _
+              )
+            { # and finally, we don't want dirs to pass (as they are -x)
+
+                # print STDERR "-x: ", -x $file, " -e: ", -e _, " -d: ", -d _, "\n";
+
+                return $file unless $all;
+                push @results, $file; # Make list to return later
+            }
+        }
+    }
+
+    if ($all) {
+        return @results;
+    }
+    else {
+        return undef;
+    }
+}
+
+sub run_on_all_servers {
+    my ( $self, @command ) = @_;
+    $self->head3( '"', join( ' ', @command ), '"' );
+    $self->head4( 'Running on master' );
+    $self->run_binary(@command);
+    eval {
+        require Opsview::Monitoringclusternode;
+        Opsview::Monitoringclusternode->import;
+    };
+    if ( !$@ ) {
+        for my $node ( Opsview::Monitoringclusternode->retrieve_all_activated )
+        {
+            $self->head4( 'Running on slave "', $node->name, '"' );
+            my @ssh_command = $node->ssh_command(@command);
+            if ( getpwuid($EUID) ne 'nagios' ) {
+                @ssh_command = (
+                    'su', '-', 'nagios', '-c',
+                    q{'} . join( ' ', @ssh_command, ) . q{'}
+                );
+
+                #unshift(@ssh_command, 'su','-','nagios','-c',join(' ',@ssh_command ) );
+            }
+            $self->run_binary(@ssh_command);
+        }
+    }
+}
+
+sub get_single_database_value {
+    my ( $self, $dbh, @sql ) = @_;
+    my $sql = join( ' ', @sql );
+
+    return ( $dbh->selectcol_arrayref($sql) )->[0];
+}
+
+sub get_database_table_sizes {
+    my ( $self, $dbh ) = @_;
+
+    my %table_space_used;
+
+    # get a list of rows and usage for all table
+    say '  Note: allocated space includes both data and index disk usage';
+    $self->start_code;
+    my $sth = $dbh->prepare( 'SHOW TABLE STATUS' );
+    $sth->execute;
+    while ( my $row = $sth->fetchrow_hashref() ) {
+        $table_space_used{ $row->{name} } =
+          $row->{data_length} + $row->{index_length};
+        say 'Table: ',    $row->{name};
+        say '  - rows: ', $row->{rows};
+        say '  - allocated (data + index): ',
+          $self->b_to_mb( $table_space_used{ $row->{name} } ), 'MB';
+        say '  - allocated but unused: ', ( $row->{data_free} ) / 1024, 'MB';
+    }
+    $self->stop_code;
+}
+
+sub get_database_oldest_datetime_age {
+    my ( $self, $dbh ) = @_;
+    $self->start_table( 'Table', 'Column', 'Oldest Date' );
+    my $sth = $dbh->prepare( 'SHOW TABLE STATUS' );
+    $sth->execute;
+    while ( my $row = $sth->fetchrow_hashref() ) {
+        my $table_sth = $dbh->column_info( undef, undef, $row->{name}, '%' );
+        $table_sth->execute;
+        while ( my $table_row = $table_sth->fetchrow_hashref() ) {
+            if ( $table_row->{TYPE_NAME} eq 'DATETIME' ) {
+                my $sql =
+                    'SELECT MIN('
+                  . $table_row->{COLUMN_NAME}
+                  . ') FROM '
+                  . $row->{name};
+                my $oldest = $self->get_single_database_value( $dbh, $sql );
+                $self->table_row(
+                    $row->{name},
+                    $table_row->{COLUMN_NAME},
+                    $oldest || 'Empty'
+                );
+            }
+        }
+    }
+    $self->stop_table;
+}
+
+# always round up
+sub b_to_kb {
+    my ( $self, $bytes ) = @_;
+    return int( $bytes / 1024 ) + 1;
+}
+
+sub b_to_mb {
+    my ( $self, $bytes ) = @_;
+    return int( $self->b_to_kb($bytes) / 1024 ) + 1;
+}
+
+1;
+
+package Opsview::Diag::Report::all;
+use strict;
+use warnings;
+our @ISA = ( 'Opsview::Diag::Report::_base' );
+use version;
+our $VERSION = qv( '0.01' );
+
+# this class should remain empty
+
+1;
+
+package Opsview::Diag::Report::system;
+use strict;
+use warnings;
+our @ISA = ( 'Opsview::Diag::Report::_base' );
+use version;
+our $VERSION = qv( '0.01' );
+
+sub say { print @_, $/; }
+
+my $package_search = qr/(?:opsview|nrpe|nagios|ALT)/;
+
+sub run_dpkg_commands {
+    my ( $self, %attrs ) = @_;
+    my $dpkg = $self->which( 'dpkg' );
+    my @packages;
+
+    foreach my $entry (qx/$dpkg -l/) {
+        chomp($entry);
+        my ($pkgname) = $entry =~ m/^\w+\s+(\S+)\s/;
+        next if ( !$pkgname );
+        next unless ( $pkgname =~ m/$package_search/ );
+        push @packages, $pkgname;
+    }
+
+    say 'Packages: ', join( ' ', sort @packages );
+    if (@packages) {
+        for my $package ( sort @packages ) {
+            $self->run_binary( $dpkg, '-s', $package );
+        }
+    }
+}
+
+sub run_yum_commands {
+    my ( $self, %attrs ) = @_;
+    my $rpm = $self->which( 'rpm' );
+    my @packages;
+    foreach my $entry (qx/$rpm -qa/) {
+        chomp($entry);
+        my $pkgname = $entry;
+        next if ( !$pkgname );
+        next unless ( $pkgname =~ m/$package_search/ );
+        push @packages, $pkgname;
+    }
+    say 'Packages: ', join( ' ', @packages );
+    if (@packages) {
+        for my $package ( sort @packages ) {
+            $self->run_binary( $rpm, '-qi', $package );
+        }
+    }
+}
+
+sub run_pkginfo_commands {
+    my ( $self, %attrs ) = @_;
+    my $pkginfo = $self->which( 'pkginfo' );
+    my @packages;
+    foreach my $entry (qx/$pkginfo/) {
+        chomp($entry);
+        my ($pkgname) = $entry =~ m/^\w+\s+(\S+)\s/;
+        next if ( !$pkgname );
+        next unless ( $pkgname =~ m/$package_search/ );
+        push @packages, $pkgname;
+    }
+    say 'Packages: ', join( ' ', @packages );
+    if (@packages) {
+        for my $package ( sort @packages ) {
+            $self->run_binary( $pkginfo, '-l', $package );
+        }
+    }
+}
+
+sub get_package_information {
+    my ( $self, %attrs ) = @_;
+
+    say 'List of installed Opsview packages ';
+    if ( $self->which('dpkg') ) {
+        $self->run_dpkg_commands();
+    }
+    elsif ( $self->which('rpm') ) {
+        $self->run_yum_commands();
+    }
+    elsif ( my $pkginfo = $self->which('pkginfo') ) {
+        $self->run_pkginfo_commands();
+    }
+}
+
+sub run_level_1 {
+    my ( $self, %attrs ) = @_;
+
+    $self->run_on_all_servers( 'lsb_release', '-a' );
+    $self->run_on_all_servers( 'df',          '-k' );
+    $self->run_on_all_servers( 'uname',       '-a' );
+    $self->run_on_all_servers( 'cat',         '/proc/meminfo' );
+    $self->run_on_all_servers( 'cat',         '/proc/cpuinfo' );
+    $self->run_on_all_servers( 'psrinfo',     '-v' );
+    $self->run_on_all_servers( 'cat',         '/etc/issue' );
+    $self->run_on_all_servers( 'prtdiag',     '-lv' );
+    $self->run_on_all_servers( 'uptime' );
+
+    $self->get_package_information();
+}
+
+sub run_level_2 {
+    my ( $self, %attrs ) = @_;
+
+    $self->run_on_all_servers( 'facter' );
+    $self->run_on_all_servers( 'vmstat', '5 5' );
+    $self->run_binary( 'cat',
+        '/usr/local/nagios/var/log/create_and_send_configs.debug'
+    );
+}
+
+sub run_level_3 {
+    my ( $self, %attrs ) = @_;
+
+    $self->run_on_all_servers( 'ps',      'auxww' );
+    $self->run_on_all_servers( 'netstat', '-na' );
+
+    # Lists processes associated with ports. Returns something different on Sol10
+    $self->run_on_all_servers( 'netstat', '-nap' );
+
+    $self->run_on_all_servers( '/sbin/lsmod' );
+    $self->run_on_all_servers( 'cat', '/proc/modules' );
+    $self->run_on_all_servers( 'cat', '/proc/interrupts' );
+    $self->run_on_all_servers( 'dmesg' );
+    $self->run_on_all_servers( 'cat', '/var/log/messages' );
+    $self->run_on_all_servers( 'cat', '/var/log/syslog' );
+    $self->list_directory( '/dev' );
+}
+
+1;
+
+# NOTE: use 'require' and 'import' to allow use on non-opsview systems
+package Opsview::Diag::Report::opsview;
+use strict;
+use warnings;
+our @ISA = ( 'Opsview::Diag::Report::_base' );
+use version;
+our $VERSION = qv( '0.01' );
+use lib '/usr/local/nagios/lib';
+my $opsview_dbh;
+my $schema;
+eval {
+    require Opsview::Config;
+    Opsview::Config->import;
+    require Opsview::Host;
+    Opsview::Host->import;
+    require Opsview::Servicecheck;
+    Opsview::Servicecheck->import;
+    require Opsview::HostServicecheck;
+    Opsview::HostServicecheck->import;
+    require Opsview::Systempreference;
+    Opsview::Systempreference->import;
+    require Opsview::Monitoringserver;
+    Opsview::Monitoringserver->import;
+    require Opsview::Monitoringclusternode;
+    Opsview::Monitoringclusternode->import;
+    require Opsview::Config::Web;
+    Opsview::Config::Web->import;
+    require Opsview;
+    Opsview->import;
+
+    $opsview_dbh = Opsview->db_Main;
+
+    require Opsview::Schema;
+    Opsview::Schema->import;
+
+    $schema = Opsview::Schema->my_connect;
+
+    require Runtime::Searches;
+    Runtime::Searches->import;
+
+    require Time::Interval;
+    Time::Interval->import;
+};
+
+sub say { print @_, $/; }
+
+sub run_level_1 {
+    my ( $self, %attrs ) = @_;
+
+    my $uuid;
+    eval { $uuid = Opsview::Systempreference->uuid };
+    if ($@) {
+        $uuid = "not available";
+    }
+    else {
+        $uuid = "unknown" unless $uuid;
+    }
+
+    my $web_config = Opsview::Config::Web->web_config;
+    my $build_os =
+      $self->read_file( '/usr/local/nagios/etc/opsview_build_os' );
+    chomp($build_os);
+
+    $self->start_unnumbered_list;
+    $self->unnumbered_list_item( 'UUID',            lc($uuid) );
+    $self->unnumbered_list_item( 'Opsview Version', $web_config->{version} );
+    $self->unnumbered_list_item(
+        'Opsview Build',
+        $web_config->{build} || 'DEVEL'
+    );
+    $self->unnumbered_list_item( 'Build OS', $build_os || 'Unknown' );
+    $self->unnumbered_list_item( 'Total Monitoring Servers',
+        Opsview::Monitoringserver->retrieve_all->count );
+    $self->unnumbered_list_item( 'Total Monitoring Clusters ',
+        Opsview::Monitoringclusternode->retrieve_all->count );
+    $self->unnumbered_list_item( 'Total Contacts',
+        $schema->resultset('Contacts')->count );
+    $self->unnumbered_list_item( 'Total Hosts',
+        Opsview::Host->retrieve_all->count );
+    $self->unnumbered_list_item( 'Total Services',
+        Opsview::HostServicecheck->retrieve_all->count );
+
+    my $rs = $schema->resultset( 'Keywords' );
+    $self->unnumbered_list_item( 'Total Keywords', $rs->count );
+
+    my $total_keywords = 0;
+    while ( my $keyword = $rs->next ) {
+        $total_keywords += $keyword->count_all_services;
+    }
+    $self->unnumbered_list_item( 'Total Active Keyword Services',
+        $total_keywords );
+    $self->end_unnumbered_list;
+}
+
+sub run_level_2 {
+    my ( $self, %attrs ) = @_;
+
+    $self->head3( 'Keywords' );
+    $self->start_unnumbered_list;
+
+    my $rs = $schema->resultset( 'Keywords' );
+    while ( my $keyword = $rs->next ) {
+        $self->unnumbered_list_item( $keyword->name,
+            $keyword->count_all_services );
+    }
+    $self->end_unnumbered_list;
+
+    $self->head3( 'Last 10 opsview reloads' );
+    $self->start_table(
+        'ID',                 'Durations (seconds)',
+        'Duration (minutes)', 'Started',
+        'Ended'
+    );
+    my $sth = $opsview_dbh->prepare(
+        'SELECT *,ROUND(duration / 60) AS minutes FROM reloadtimes ORDER BY id DESC LIMIT 10;'
+    );
+    $sth->execute;
+    while ( my $row = $sth->fetchrow_hashref() ) {
+        $self->table_row(
+            $row->{id},
+            $row->{duration},
+            $row->{minutes},
+            $row->{start_config} ? scalar( localtime( $row->{start_config} ) )
+            : undef,
+            $row->{end_config} ? scalar( localtime( $row->{end_config} ) )
+            : undef,
+        );
+    }
+    $self->stop_table;
+
+    $self->cat_file( '/usr/local/nagios/etc/opsview_build_os' );
+
+    $self->head3( 'Monitoring Servers Status' );
+    $self->start_code;
+    my $servers = Opsview::Monitoringserver->retrieve_all;
+    while ( my $server = $servers->next ) {
+        my @nodes = map { $_->name } $server->nodes;
+        my $nodes = join( ',', @nodes );
+        $nodes ||= $server->host->name;
+        say 'Server Name: ', $server->name, ' (', $nodes, ') - ',
+          $server->activated ? 'Activated' : 'NOT Activated';
+        my $hosts          = $server->monitors;
+        my $count_services = 0;
+        while ( my $host = $hosts->next ) {
+            my $services = $host->servicechecks;
+            $count_services += $services;
+        }
+        say '- Hosts: ',   $hosts;
+        say '- Services ', $count_services;
+    }
+    $self->stop_code;
+
+    my $monitoring_servers_group =
+      Opsview::Hostgroup->search( name => 'Monitoring Servers' )->first;
+    my $admin_contact;
+    eval {
+        $admin_contact =
+          $schema->resultset('Contacts')->search( { username => 'admin' } )
+          ->first;
+    };
+    if ($@) {
+        $admin_contact =
+          $schema->resultset('Contacts')->search( { name => 'admin' } )->first;
+    }
+
+    my $statii =
+      Runtime::Searches->list_services( $admin_contact,
+        { 'hostgroupid' => $monitoring_servers_group->id },
+      );
+
+    use Data::Dump qw(dump);
+    foreach my $host ( @{ $statii->list } ) {
+
+        #warn dump ($host);
+        my $title = $host->{name};
+        if ( $host->{alias} ) {
+            $title .= ' (' . $host->{alias} . ')';
+        }
+        $self->head4($title);
+        $self->head5( 'Summary' );
+        $self->start_unnumbered_list();
+        $self->unnumbered_list_item(
+            { highlight => ( $host->{state} eq 'up' ? 0 : 1 ) },
+            'State', $host->{state} );
+        $self->unnumbered_list_item(
+            'State Duration',
+            $self->stringify_time( seconds => $host->{state_duration} || 0 )
+        );
+        $self->unnumbered_list_item( 'Highest State',
+            $host->{summary}->{highest} || 0 );
+        $self->unnumbered_list_item( 'Total Services',
+            $host->{summary}->{total} || 0 );
+        $self->unnumbered_list_item( 'Handled Services',
+            $host->{summary}->{handled} || 0 );
+
+        my $unhandled = $host->{summary}->{unhandled} || 0;
+        $self->unnumbered_list_item( { highlight => $unhandled },
+            'Unhandled Services', $unhandled );
+        $self->unnumbered_list_item( 'OK Services',
+            $host->{summary}->{ok} || 0 );
+        $self->unnumbered_list_item( 'Warning Services',
+            $host->{summary}->{warning} || 0 );
+        $self->unnumbered_list_item( 'Critical Services',
+            $host->{summary}->{critical} || 0 );
+        $self->end_unnumbered_list();
+
+        $self->head5( 'Services' );
+
+        foreach my $service ( @{ $host->{services} } ) {
+            $self->head6( $service->{name} );
+            $self->start_unnumbered_list();
+
+            #$self->unnumbered_list_item( 'Service Name', $service->{name} );
+            $self->unnumbered_list_item(
+                { highlight => ( $service->{state} eq 'ok' ? 0 : 1 ) },
+                'State', $service->{state} );
+            $self->unnumbered_list_item(
+                'State Duration',
+                $self->stringify_time(
+                    seconds => $service->{state_duration} || 0
+                )
+            );
+            $self->unnumbered_list_item( 'Output', $service->{output} );
+            $self->unnumbered_list_item( 'Last Check', $service->{last_check}
+            );
+            $self->unnumbered_list_item( { highlight => $service->{unhandled} },
+                'Unhandled', $service->{unhandled} );
+            $self->end_unnumbered_list();
+        }
+    }
+    $self->head3( 'Master Server Information' );
+    $self->run_binary( 'crontab', '-l -u nagios' );
+    $self->run_binary( 'ps',      '-fu nagios' );
+    $self->run_binary( 'id',      'nagios' );
+    $self->run_binary( 'id',      'www-data' );
+    $self->run_binary( 'id',      'apache2' );
+    $self->run_binary( 'id',      'apache' );
+
+    $self->list_directory( '/usr/local/nagios/var/ndologs' );
+
+    $self->head3( 'Nagios Statistics' );
+    $self->run_on_all_servers( '/usr/local/nagios/bin/nagiostats' );
+
+    $self->head3( '"Alert Every Failure" checks' );
+    say 'The following checks have "Alert Every Failure" set';
+    my $checks = Opsview::Servicecheck->search( { volatile => 1, } );
+    while ( my $check = $checks->next ) {
+        say '  - ', $check->name;
+    }
+}
+
+sub run_level_3 {
+    my ( $self, %attrs ) = @_;
+
+    say 'Full user agent list:';
+    my $useragents = [];
+    eval {
+        $useragents =
+          $opsview_dbh->selectcol_arrayref( "SELECT id FROM useragents" );
+    };
+    say join( $/, @$useragents );
+
+    $self->cat_file( '/var/log/opsview/opsviewd.log' );
+    $self->cat_file( '/var/log/opsview/opsview-web.log' );
+    $self->cat_file( '/usr/local/nagios/var/nagios.log' );
+}
+
+1;
+
+package Opsview::Diag::Report::runtime;
+use strict;
+use warnings;
+our @ISA = ( 'Opsview::Diag::Report::_base' );
+use version;
+our $VERSION = qv( '0.01' );
+my $runtime_dbh;
+eval {
+    require DateTime;
+    DateTime->import;
+    require Runtime;
+    Runtime->import;
+    require Runtime;
+    Runtime->import;
+    require Opsview::Systempreference;
+    Opsview::Systempreference->import;
+    $runtime_dbh = Runtime->db_Main;
+};
+
+sub say { print @_, $/; }
+
+sub run_level_1 {
+    my ( $self, %attrs ) = @_;
+    $self->head3( 'Oldest data in specific tables' );
+    $self->get_database_oldest_datetime_age($runtime_dbh);
+}
+
+sub run_level_2 {
+    my ( $self, %attrs ) = @_;
+
+    $self->head3( 'List of Runtime tables sizes' );
+    $self->get_database_table_sizes($runtime_dbh);
+}
+
+1;
+
+package Opsview::Diag::Report::smsgateway;
+use strict;
+use warnings;
+our @ISA = ( 'Opsview::Diag::Report::_base' );
+use version;
+our $VERSION = qv( '0.01' );
+use Config;
+
+sub say { print @_, $/; }
+
+my $smsconfig;
+
+my $sms_base;
+my $sms_bin;
+my $sms_lib;
+my @possible_bases =
+  ( '/opt/opsview/smsgateway', '/usr/local/smsgateway', '/usr/local/sms4nms', );
+
+sub smsgateway_enabled {
+    my ( $self, ) = @_;
+
+    if ( !defined($sms_base) ) {
+        say 'Looking for SMSGateway installation directory';
+        BASE_CHECK: for my $possible_base (@possible_bases) {
+            say "- checking $possible_base";
+            if ( -e $possible_base ) {
+                $sms_base = $possible_base;
+                $sms_bin  = $sms_base;
+                $sms_bin .= '/bin' if ( -d $sms_base . '/bin' );
+                $sms_lib = $sms_base;
+                $sms_lib .= '/lib' if ( -d $sms_base . '/lib' );
+                last BASE_CHECK;
+            }
+        }
+        $sms_base = 0 if ( !defined($sms_base) );
+    }
+
+    if ( !$sms_base ) {
+        say 'Unable to find smsgateway installation';
+        return 0;
+    }
+    return 1;
+}
+
+sub read_config {
+    my ( $self, %attrs ) = @_;
+
+    return unless ( $self->smsgateway_enabled );
+
+    if ( !$smsconfig ) {
+        push( @INC, $sms_base );
+        push( @INC, $sms_lib );
+        push( @INC, $sms_base . '/perl/lib' );
+        push( @INC, $sms_base . '/perl/lib/' . $Config{archname} );
+
+        eval { require Altinity::SMSGateway; };
+        if ($@) {
+            print $@;
+            return;
+        }
+        eval { $smsconfig = Altinity::SMSGateway->start(); };
+        if ($@) {
+            print $@;
+            return;
+        }
+    }
+    return $smsconfig;
+}
+
+sub run_level_1 {
+    my ( $self, %attrs ) = @_;
+    return unless ( $self->smsgateway_enabled );
+
+    $self->run_binary( 'id', 'nagios' );
+
+    $self->list_directory($sms_bin);
+    {
+        local $ENV{PERL5LIB} = join( ':', $sms_base, $sms_lib, @INC );
+        say "Using PERL5LIB of: $ENV{PERL5LIB}";
+        $self->run_binary( $sms_bin . '/device_admin', 'show', 'primary', );
+        $self->run_binary( $sms_bin . '/device_admin', 'show', 'secondary', );
+        $self->run_binary( $sms_bin . '/message_admin', 'status', );
+    }
+
+    $self->head3( 'SMSGateway Configuration' );
+    $self->start_code;
+    my $smsconfig = $self->read_config;
+    foreach my $key ( sort keys( %{$smsconfig} ) ) {
+        if ( $key =~ m/dbpasswd/xsm ) {
+            say "$key => ***************";
+        }
+        elsif ( $key eq 'logfile' ) {
+            foreach my $log ( @{ $smsconfig->{logfile} } ) {
+                say "logfile => $log";
+            }
+        }
+        else {
+            say "$key => ", $smsconfig->{$key};
+        }
+    }
+    $self->stop_code;
+
+    $self->head3( 'profiles' );
+    push( @INC, $sms_base );
+    push( @INC, $sms_lib );
+    push( @INC, $sms_base . '/perl/lib' );
+    push( @INC, $sms_base . '/perl/lib/' . $Config{archname} );
+
+    # Altinity::Profile is held within Altinity::SMSGateway
+    eval { require Altinity::SMSGateway };
+    if ($@) {
+        print $@;
+        return;
+    }
+    my $profiles;
+    eval {
+        $profiles =
+          Altinity::Profile->dbh->selectall_hashref( qq{SELECT * FROM profiles},
+            [qw/ id /] );
+    };
+    if ($@) {
+        print $@;
+        return;
+    }
+
+    foreach my $profile ( keys %{$profiles} ) {
+        $self->head4( "profile details for id $profile" );
+        $self->start_code;
+        foreach my $key ( sort keys( %{ $profiles->{$profile} } ) ) {
+            print "$key => ", $profiles->{$profile}->{$key} || 'NULL', $/;
+        }
+        $self->stop_code;
+    }
+
+    $self->head3( 'devices' );
+    my $devices =
+      Altinity::Device->dbh->selectall_hashref( qq{SELECT * FROM devices},
+        [qw/ id /] );
+    foreach my $device ( keys %{$devices} ) {
+        $self->head4( "device details for id $device" );
+        $self->start_code;
+        foreach my $key ( sort keys( %{ $devices->{$device} } ) ) {
+            if ( $key eq 'port' ) {
+                my $port = $devices->{$device}->{$key};
+                say "$key => ", $port || 'NULL', ' (', qx/ls -la $port/, ')';
+            }
+            else {
+                print "$key => ", $devices->{$device}->{$key} || 'NULL', $/;
+            }
+        }
+        $self->stop_code;
+
+        $self->head4( 'Checking modem baud rates' );
+        $self->start_code;
+        for my $baud (qw/ 300 1200 2400 4800 9600 19200 38400 57600 115200 /) {
+            say 'baudrate: ', $baud;
+            my $modem =
+              Device::Gsm->new( port => $devices->{$device}->{port} );
+            if ( $modem->connect( baudrate => $baud ) ) {
+                $modem->attention;
+                $modem->verbose(1);
+                $modem->echo(1);
+                $modem->atsend( 'ATZ' . $/ );
+                say $modem->answer() || 'No answer';
+
+                #say "connected";
+            }
+            else {
+                say 'failed to connect';
+            }
+        }
+        $self->stop_code;
+    }
+}
+
+sub run_level_2 {
+    my ( $self, %attrs ) = @_;
+    return unless ( $self->smsgateway_enabled );
+
+    $self->run_binary( $sms_base . '/bin/message_admin', 'list', 'failed', );
+
+}
+
+sub run_level_3 {
+    my ( $self, %attrs ) = @_;
+    return unless ( $self->smsgateway_enabled );
+
+    $self->list_directory( '/var/opt/opsview/smsgateway' );
+    $self->cat_file( '/var/opt/opsview/smsgateway/modem.log' );
+    $self->cat_file( '/var/opt/opsview/smsgateway/smsqueued.log' );
+    $self->cat_file( '/var/opt/opsview/smsgateway/smsqueued.err' );
+
+    $self->cat_file( '/var/log/modem.log' );
+    $self->cat_file( $sms_base . '/var/smsqueued.log' );
+    $self->cat_file( $sms_base . '/var/smsqueued.err' );
+}
+
+1;
+
+package Opsview::Diag::Report::agent;
+use strict;
+use warnings;
+our @ISA = ( 'Opsview::Diag::Report::_base' );
+use version;
+our $VERSION = qv( '0.01' );
+
+sub say { print @_, $/; }
+
+sub run_level_1 {
+    my ( $self, %attrs ) = @_;
+
+    $self->run_binary( '/usr/local/nagios/bin/nrpe' );
+}
+
+sub run_level_2 {
+    my ( $self, %attrs ) = @_;
+}
+
+sub run_level_3 {
+    my ( $self, %attrs ) = @_;
+
+    $self->cat_file( '/usr/local/nagios/etc/nrpe.cfg' );
+    $self->list_directory( '/usr/local/nagios/etc/nrpe_local' );
+
+    foreach my $file ( glob('/usr/local/nagios/etc/nrpe_local/*') ) {
+        $self->cat_file($file);
+    }
+}
+
+1;
+
+package Opsview::Diag::Report::mysql;
+use strict;
+use warnings;
+our @ISA = ( 'Opsview::Diag::Report::_base' );
+use version;
+our $VERSION = qv( '0.01' );
+my $dbh;
+eval {
+    require Opsview;
+    Opsview->import;
+    $dbh = Opsview->db_Main;
+};
+
+sub say { print @_, $/; }
+
+sub run_level_1 {
+    my ( $self, %attrs ) = @_;
+
+    if ( !$dbh ) {
+        print 'Unable to connect to database', $/;
+        return;
+    }
+
+    say 'MySQL Version: ',
+      $self->get_single_database_value( $dbh, 'SELECT VERSION()' );
+
+    # look for specific variable settings
+    my @variables = (
+        qw/
+          innodb_buffer_pool_size
+          innodb_file_per_table
+          innodb_flush_log_at_trx_commit
+          table_cache
+          query_cache_size
+          key_buffer_size
+          max_allowed_packet
+          /
+    );
+
+    $self->start_table( 'Variable', 'Value' );
+
+    for my $variable ( sort @variables ) {
+        my $sql = qq/ SHOW VARIABLES LIKE '/ . $variable . qq/'/;
+        $self->table_row( $variable,
+            ( $dbh->selectrow_array($sql) )[1] || 'unknown'
+        );
+    }
+}
+
+sub run_level_2 {
+    my ( $self, %attrs ) = @_;
+
+    if ( !$dbh ) {
+        return;
+    }
+
+    $self->start_unnumbered_list;
+
+    my $variables_ref =
+      $dbh->selectall_hashref( 'SHOW VARIABLES', 'variable_name' );
+    foreach my $key ( sort keys %$variables_ref ) {
+        $self->unnumbered_list_item(
+            $key . ' = ' . $variables_ref->{$key}{value}
+        );
+    }
+
+    $self->end_unnumbered_list;
+}
+
+sub run_level_3 {
+    my ( $self, %attrs ) = @_;
+
+    if ( !$dbh ) {
+        return;
+    }
+
+    my $tables_ref =
+      $dbh->selectall_hashref( 'SELECT * FROM information_schema.TABLES',
+        'table_name' );
+
+    my $schema = '';
+
+    #<<< dont let perltidy do this bit
+
+    # sort list by schema and then table name
+    # use schwartzian transform for speed and efficency
+    TABLE: foreach my $table (
+        map { $_->[0] }
+        sort {
+            $a->[1]->{table_schema} cmp $b->[1]->{table_schema}
+            ||
+            $a->[1]->{table_name} cmp $b->[1]->{table_name}
+        }
+        map { [ $_, $tables_ref->{$_} ] }
+        keys %$tables_ref
+    ) {
+    #>>>
+        next TABLE
+          if ( $tables_ref->{$table}->{table_schema} eq 'information_schema' );
+
+        if ( $schema ne $tables_ref->{$table}->{table_schema} ) {
+            $schema = $tables_ref->{$table}->{table_schema};
+
+            $self->head3( 'Database: ', $schema );
+        }
+        $self->head4( 'Table: ', $schema, '.', $table );
+        $self->start_unnumbered_list;
+        foreach my $key ( sort keys %{ $tables_ref->{$table} } ) {
+            $self->unnumbered_list_item(
+                $key . ' = "'
+                  . (
+                    defined( $tables_ref->{$table}{$key} )
+                    ? $tables_ref->{$table}{$key}
+                    : q{}
+                  )
+                  . '"'
+            );
+
+        }
+        $self->end_unnumbered_list;
+    }
+}
+
+1;
+
+package Opsview::Diag;
+use strict;
+use warnings;
+our @ISA = ( 'Opsview::Diag::Output::Dokuwiki' );
+use Carp;
+use version;
+our $VERSION = qv( '0.01' );
+use English qw( -no_match_vars );
+use Net::Domain qw(hostfqdn);
+use Socket;
+
+$OUTPUT_AUTOFLUSH = 1;
+
+sub say { print @_, $/; }
+
+my @categories;
+
+sub new {
+    my ( $class, %attrs ) = @_;
+    my $self = {%attrs};
+    foreach my $category ( sort keys %::Opsview::Diag::Report:: ) {
+        next if ( $category =~ m/_base/ );
+        $category =~ s/::.*//;
+        push( @categories, $category );
+    }
+    return bless $self, $class;
+}
+
+sub list_categories {
+    my ($self) = @_;
+    return @categories;
+}
+
+sub check_category {
+    my ( $self, $category ) = @_;
+    return scalar( grep { $_ eq $category } @categories ) ? 1 : 0;
+}
+
+sub initialise_reports {
+    my ( $self, @reports ) = @_;
+
+    # if parameters contain all:, only run all: and not everything else too
+    # otherwise there will be duplication of effort
+    if ( my @all = grep {/all:/} @reports ) {
+        my @orig_reports = @reports;
+        my ($level) = $all[-1] =~ m/:(\d)/;
+        @reports = ();
+        foreach my $report ( $self->list_categories ) {
+            next if ( $report eq 'all' );
+            push( @reports, "$report:$level" );
+        }
+
+        # honour given report levels for specificaly named reports
+        foreach my $rep (@orig_reports) {
+            my ( $title, $level ) = $rep =~ m/^(\w+):(\d)$/;
+            next if ( $title eq 'all' );
+            map { $_ =~ s/^$title:\d/$title:$level/ } @reports;
+
+        }
+    }
+
+    $self->head1( 'Opsview Diag ', $VERSION, ' on ', hostfqdn() );
+
+    $self->start_unnumbered_list();
+    $self->unnumbered_list_item( 'Version',  $VERSION );
+    $self->unnumbered_list_item( 'Date',     scalar localtime );
+    $self->unnumbered_list_item( 'Reports',  join( ' ', @reports ) );
+    $self->unnumbered_list_item( 'Hostname', hostfqdn() );
+    $self->unnumbered_list_item( 'Run as', scalar getpwuid($EFFECTIVE_USER_ID)
+    );
+    $self->end_unnumbered_list();
+
+    my %report_object_for;
+
+    foreach my $report ( sort @reports ) {
+        my ( $category, $level ) = split( /:/, $report );
+        if ( !$self->check_category($category) ) {
+            die 'Invalid category ', $category, $/;
+        }
+
+        if ( !$report_object_for{$category} ) {
+            no strict 'refs';
+            eval {
+                $report_object_for{$category} =
+                  ( 'Opsview::Diag::Report::' . $category )
+                  ->new( level => $level );
+            };
+            if ($@) {
+                die "Cannot load/run the report for '$category': ", $@;
+            }
+        }
+        else {
+            warn "Setting level for $category to $level";
+            $report_object_for{$category}->level($level);
+        }
+    }
+
+    foreach my $report ( keys %report_object_for ) {
+        push( @{ $self->{reports} }, $report_object_for{$report} );
+    }
+
+    return $self;
+}
+
+sub run_reports {
+    my ($self) = @_;
+
+    foreach my $report ( @{ $self->{reports} } ) {
+        $report->run;
+    }
+    return $self;
+}
+
+1;
+
+package main;
+use version;
+our $VERSION = qv( '0.01' );
+
+use Getopt::Long qw(:config no_ignore_case bundling no_auto_abbrev);
+use Pod::Usage;
+
+sub say { print @_, $/; }
+
+my %options = (
+    'help|h|?'          => 0,
+    'man'               => 0,
+    'version|V'         => 0,
+    'debug:+'           => 0,
+    'file|f=s'          => 0,
+    'email|e=s'         => 0,
+    'support|s'         => 0,
+    'list_categories|l' => 0,
+);
+
+GetOptions( \%options, keys(%options) ) || pod2usage( -verbose => 1 );
+pod2usage( -verbose => 1 ) if ( $options{'?'}  || $options{help} );
+pod2usage( -verbose => 2 ) if ( $options{HELP} || $options{man} );
+say 'opsview_diag version ', $VERSION if ( $options{version} );
+
+my $diag = Opsview::Diag->new();
+
+if ( $options{list_categories} ) {
+    say 'Categories available are:';
+
+    foreach my $category ( $diag->list_categories ) {
+        say ' - ', $category;
+    }
+    exit 0;
+}
+
+my $diag_report;
+my $file_fh;
+my $old_STDOUT;
+my $old_STDERR;
+
+if ( $options{email} || $options{support} || $options{file} ) {
+    open( $old_STDOUT, '>&STDOUT' ) or die 'Cannot dup STDOUT: ', $!, $/;
+    open( $old_STDERR, '>&STDERR' ) or die 'Cannot dup STDERR: ', $!, $/;
+    close(STDOUT);
+    open( STDOUT, '>', \$diag_report )
+      or die 'Cannot reopen STDOUT to in memory file: ', $!, $/;
+    close(STDERR);
+    open( STDERR, '>', \$diag_report )
+      or die 'Cannot reopen STDERR to in memory file: ', $!, $/;
+}
+
+if ( $options{file} ) {
+    open( $file_fh, '>', $options{file} )
+      or die "Unable to write to $options{file}: $!", $/;
+}
+
+if ( !@ARGV ) {
+    unshift( @ARGV, 'opsview:1' );
+}
+
+$diag->initialise_reports(@ARGV);
+$diag->run_reports();
+
+if ( $options{file} ) {
+    print {$file_fh} $diag_report
+      || die "Unable to write to $options{file}: $!", $/;
+    close($file_fh) || die "Unable to close file $options{file}: $!", $/;
+    say 'Report written to ', $options{file}, $/;
+}
+
+if ( $options{email} || $options{support} ) {
+    open( STDERR, '>&', $old_STDERR ) or die 'Cannot restore STDERR: ', $!, $/;
+    open( STDOUT, '>&', $old_STDOUT ) or die 'Cannot restore STDOUT: ', $!, $/;
+
+    my $email_to;
+    if ( $options{email} ) {
+        if ($email_to) {
+            $email_to .= ',';
+        }
+        $email_to .= $options{email};
+    }
+    if ( $options{support} ) {
+        if ($email_to) {
+            $email_to .= ',';
+        }
+        $email_to .= 'opsview_diag@opsview.com';
+    }
+
+    open( my $send_email,
+        '|-', 'mailx -s " opsview_diag report " ' . $email_to );
+    print {$send_email} $diag_report;
+    close $send_email;
+    say 'opsview_diag report emailed to ', $email_to;
+}
+
+__END__
+
+=pod
+
+=head1 NAME
+
+opsview_diag
+
+=head1 SYNOPSIS
+
+opsview_diag <category>:<level>
+
+opsview_diag all:1
+
+opsview_diag opsview:2 system:1
+
+=head1 DESCRIPTION
+
+Diagnostic script - used to gather information from an Opsview system to help
+trace problems.
+
+Output can be put into a file (for examination) or directly emailed.  Default
+is to output to screen.
+
+This tool is best run as the C<< root >> user (to allow for access to
+messages or syslog files) but should otherwise be run as the C<< nagios >> user
+
+NOTE: The output is not meant to be pretty but functional and parsable
+
+=head1 OPTIONS
+
+=over 2
+
+=item -f <filename>
+
+Generate the report in the given file
+
+=item -e <email>[,<email>]
+
+Email the report to the provided email addresses
+
+=item -s
+
+Email the report to the Opsview support email address
+
+=item -l
+
+List all categories available
+
+=back
+
+=head1 PARAMETERS
+
+Parameters are S<< <category>:<level> >> which are further detailed below.  If
+no report is given a default of C<< opsview:1 >> will be used.
+
+NOTE: if S<< all >> is used, this overrides all other parameters
+
+=head2 Categories
+
+The list of available categories can be obtained from
+
+S<< opsview_diag -l >>
+
+and includes, but is not limited to,
+
+=over 2
+
+=item all
+
+=item system
+
+=item opsview
+
+=back
+
+=head3 The 'all' Category
+
+The C< all:1 > category will run through all available categories running
+a level 1 scan.  If C<< all >> is included anywhere in the list of
+parameters, all other parameters are ignored and only the last C<< all >>
+specified is run at the given level. A report of C<< report:0 >> will
+disable the given report.
+
+=head2 Levels
+
+The level is a number from 1 to 3, 1 being minimum, 3 being maxiumum and
+includes data as follows:
+
+=over 2
+
+=item 0 - Disable report (only when C<< all:X >> used)
+
+=item 1 - Versions, revisions and statistics
+
+=item 2 - Contents of some important files and directories
+
+=item 3 - Tarred files and directories
+
+=back
+
+=head1 SEE ALSO
+
+L<http://docs.opsview.com/doku.php?id=opsview-core:opsview_diag>

@@ -1,0 +1,72 @@
+#!/usr/bin/perl
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+# Don't forget to change above as cannot do from this script!
+my $YEAR = 2013;
+
+use strict;
+use File::Next;
+
+my $error_handler = sub {
+    warn( "Error handler with @_" );
+};
+my $descend_filter = sub {
+         $_ ne "var"
+      && $_ ne "perl"
+      && $_ ne "nmis"
+      && ( !-l "$File::Next::dir/$_" );
+};
+
+my $dir = shift @ARGV || ".";
+
+my $files = File::Next::files( { descend_filter => $descend_filter }, $dir );
+
+while ( defined( my $file = $files->() ) ) {
+    next if $file =~ /\.svn/;
+    next if $file =~ /update_copyrights/;
+    next if $file =~ /opsview.test.db/;
+    next if $file =~ m%patches/%;
+    next if $file =~ /\.tar(\.gz)?$/;
+    next if $file =~ /\.(dll|png|gif|tiff|pdf|svg|tif)$/;
+
+    my $changes = 0;
+    print $file. ": ";
+    open( FH, "+<", $file );
+    my @array = <FH>;
+    @array = map {
+        $changes
+          += s/copyright[-\s,A-Za-z\(\)0-9]*?(Altinity|opsera)\s*(Limited|ltd)([\s\.]*All rights reserved)+/Copyright (C) 2003-$YEAR Opsview Limited. All rights reserved/ig;
+        $changes
+          += s/&copy\; \d+ (Opsera|Opsview) Limited/&copy\; $YEAR Opsview Limited/ig;
+        $changes
+          += s/Copyright \(C\) 20\d\d-20\d\d (Opsera|Opsview) Limited. All rights reserved/Copyright (C) 2003-$YEAR Opsview Limited. All rights reserved/ig;
+        $changes
+          += s%((?i:Opsera|Opsview) Limited</a> )20\d\d( All Rights Reserved)%$1$YEAR$2%g;
+        $changes += s%Opsera (LTD|Limited)%Opsview Limited%g;
+        $changes += s%www\.opsera\.com%www.opsview.com%g;
+        $changes += s%<p>&copy; \d{4} <a%<p>&copy; $YEAR <a%g;
+        $_
+    } @array;
+    if ($changes) {
+        seek FH, 0, 0 or die "Seeking: $!";
+        print FH @array or die "Printing: $!";
+        truncate( FH, tell(FH) ) or die "Truncating: $!";
+    }
+    close FH;
+    print $/;
+}

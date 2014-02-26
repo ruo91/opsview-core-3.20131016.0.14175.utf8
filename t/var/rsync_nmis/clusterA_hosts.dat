@@ -1,0 +1,6 @@
+cisco2	192.168.10.22	opslave	opslaveclusterB
+cisco3	192.168.10.22	opslaveclusterC	opslave
+monitored_by_cluster	monitored_by_clusterip	opslaveclusterB	opslaveclusterC
+monitored_by_slave	monitored_by_slave	opslaveclusterC	opslaveclusterB
+resolved_services	resolved_services	opslave	opslaveclusterC
+toclone	toclone	opslaveclusterB	opslave

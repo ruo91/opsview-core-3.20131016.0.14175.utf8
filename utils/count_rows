@@ -1,0 +1,64 @@
+#!/usr/bin/perl
+#
+# Output number of rows in each table
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use warnings;
+use strict;
+use lib "/usr/local/nagios/perl/lib";
+use lib "/usr/local/nagios/lib";
+use lib "/usr/local/nagios/etc";
+
+my $db = shift;
+
+if ( !$db || $db !~ m/(?:Runtime|Opsview)/i ) {
+    die( "Database must be one of Opsview or Runtime\n" );
+}
+
+$db = ucfirst($db);
+
+eval "require $db";
+die $@ if $@;
+
+my $dbh = $db->db_Main;
+
+my $sql;
+my $sth;
+my @tables;
+
+$sth = $dbh->prepare( "show tables" );
+$sth->execute;
+
+my %tables;
+
+while ( my $row = $sth->fetchrow_arrayref ) {
+    my $table = $row->[0];
+
+    #printf "%40s - ",$table;
+
+    my $sth1 = $dbh->prepare( "SELECT COUNT(1) FROM $table" );
+    $sth1->execute;
+    my $row1 = $sth1->fetchrow_arrayref;
+
+    #print $row1->[0],$/;
+
+    $tables{$table} = $row1->[0];
+}
+
+printf '%40s - %d%s', $_, $tables{$_}, $/
+  foreach ( sort { $tables{$a} <=> $tables{$b} } keys(%tables) );

@@ -1,0 +1,151 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+# 	opsview_api2 -u username -p password [-f file] [-d {perl|yml|xml|json} ] [-T] VERB PATH
+#
+# DESCRIPTION:
+# 	Interface to Opsview's API2 mechanism to make changes to the Opsview database via command line
+#   See http://docs.opsview.com/doku.php?id=opsview-core:restapi for more details
+#	You can specify the filename as "-" to use stdin
+#   The default prefix is http://localhost. Use the environment variable OPSVIEW_URL_PREFIX to change
+#   -d specifies the type of input data. Default is perl. There is no attempt to parse this input data - it
+#     is passed straight through to the API
+#   -T will put output through a tidy library to make response look nice
+#   Output will be the output from the API
+#   The return code will be 0 if the user agent says the API call was successful (usually HTTP status code in the 200-299 range)
+#   Hidden syntax! -G to generate a .testcase file
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+package main;
+
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin", "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+
+use Getopt::Long;
+use Data::Dumper;
+use Opsview::API;
+
+my $url_prefix = $ENV{OPSVIEW_URL_PREFIX} || "http://localhost";
+
+my $testcase = 0;
+my $username;
+my $password;
+my $data_format;
+my $pretty = 0;
+my $content_file;
+my $help;
+
+GetOptions(
+    "testcase|G"       => \$testcase,
+    "data-format|d=s"  => \$data_format,
+    "pretty|T"         => \$pretty,
+    "username|u=s"     => \$username,
+    "password|p=s"     => \$password,
+    "content-file|f=s" => \$content_file,
+    "url-prefix|l=s"   => \$url_prefix,
+    "help|h"           => \$help,
+) or my_die( "Incorrect options" );
+
+if ($help) {
+    print_usage();
+    exit;
+}
+
+my $verb = shift @ARGV || my_die( "Must specify a VERB" );
+$verb = lc($verb);
+
+my %valid_verbs = (
+    get    => 1,
+    post   => 1,
+    delete => 1,
+    put    => 1,
+);
+unless ( $valid_verbs{$verb} ) {
+    my_die( "Invalid verb $verb" );
+}
+
+my $path = shift @ARGV || my_die( "Must specify a path" );
+
+my $ua = Opsview::API->new(
+    username        => $username,
+    password        => $password,
+    url_prefix      => $url_prefix,
+    api_min_version => "2",
+    data_format     => $data_format,
+    pretty          => $pretty,
+);
+
+$ua->login;
+
+my $data;
+if ( my $file = $content_file ) {
+    local $/ = undef;
+    if ( $file eq "-" ) {
+        $data = <>;
+    }
+    else {
+        if ( !-e $file ) {
+            my_die( "File '$file' does not exist" );
+        }
+        open F, $file or my_die( "Cannot open '$file'" );
+        $data = <F>;
+        close F;
+    }
+}
+
+$ua->$verb( $path, $data );
+if ($testcase) {
+    print uc($verb) . " /rest/$path\n";
+    if ($data) {
+        print $data. "\n";
+    }
+    print "ENDCONTENT\n";
+}
+print $ua->content;
+print $/;
+
+sub my_die {
+    print_usage();
+    die(@_);
+}
+
+sub print_usage {
+    print <<"USAGE";
+
+opsview_rest --username=username --password=password
+   [--data-format={json|xml|perl} - to set input/output data format. Defaults to perl]
+   [--pretty                - to make output nicely formatted]
+   [--content-file=filename - for pushing to web server when updating]
+   [--url-prefix            - to point to a different instance of Opsview. Default localhost]
+   {VERB - GET/PUT/POST/DELETE}
+   URL - will be prefixed with /rest
+
+Example:
+  opsview_rest --username=admin --password=initial GET info
+  opsview_rest --username=admin --password=initial GET config/host/1
+  opsview_rest --username=admin --password=initial --data-format=json --pretty GET config/host
+
+See http://docs.opsview.com/doku.php?id=opsview-core:restapi for more details
+USAGE
+}

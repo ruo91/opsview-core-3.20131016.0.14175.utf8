@@ -1,0 +1,19 @@
+{
+      "name" : "INTERFACE",
+      "id" : "2",
+      "servicechecks" : [
+         {
+            "ref" : "/rest/config/servicecheck/101",
+            "name" : "Discards"
+         },
+         {
+            "ref" : "/rest/config/servicecheck/100",
+            "name" : "Errors"
+         },
+         {
+            "ref" : "/rest/config/servicecheck/95",
+            "name" : "Interface"
+         }
+      ]
+    }
+

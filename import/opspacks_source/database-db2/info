@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.database_db2
+VERSION=1.0
+ALIAS=Database - DB2
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

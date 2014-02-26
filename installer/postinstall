@@ -1,0 +1,149 @@
+#!/bin/sh
+# 
+#
+# postinstall [slave]
+#
+#	This is the generic postinstall script
+#	Assumes is for master unless $1=slave
+#	Run as nagios user
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+die() { echo $1; exit 1; }
+
+# have to cater for solaris
+# Also, only use single [ ] for test evaluations
+id | grep "uid=0(" >/dev/null
+if [ $? -eq 0 ] ; then
+	die "Cannot run as root"
+fi
+
+tmpfile=/tmp/opsview-postinstall.$$
+rm -f $tmpfile
+
+if [ "$1" = "slave" ] ; then
+	cp -f /usr/local/nagios/share/slave_index.html /usr/local/nagios/share/index.html
+	cronfile=/usr/local/nagios/installer/crontab-slave.nagios
+else
+	# Because of a change in the reload display screen, remove the config_output file if it exists
+	# Otherwise the red status light will show when Opsview is running fine
+	rm -f /usr/local/nagios/var/rw/config_output
+
+	cronfile=/usr/local/nagios/installer/crontab.nagios
+	if [ ! -f "/usr/local/nagios/etc/opsview.conf" ] &&
+	   [ -f "/usr/local/nagios/etc/opsview.conf.rpmsave" ]; then
+		cp /usr/local/nagios/etc/opsview.conf.rpmsave /usr/local/nagios/etc/opsview.conf
+	fi
+	if [ ! -f "/usr/local/nagios/etc/opsview.conf" ] ; then
+        # This must be set with passwords of changeme so that it is consistent with previous settings
+        # Need to do this earlier in install cycle if we want to set random passwords here
+        /usr/local/nagios/installer/create_initial_opsview_conf changeme
+		chown nagios:nagios /usr/local/nagios/etc/opsview.conf
+		chmod 640 /usr/local/nagios/etc/opsview.conf
+	fi
+	perl -I/usr/local/nagios/perl/lib -MData::UUID -i -pe '
+BEGIN: { $ug = new Data::UUID; $uuid = $ug->to_string( $ug->create ); }
+s/^\$authtkt_shared_secret\s*=\s*"shared-secret-please-change";$/\$authtkt_shared_secret = "$uuid";/;
+s/TKTAuthSecret "shared-secret-please-change"/TKTAuthSecret "$uuid"/;
+' /usr/local/nagios/etc/opsview.conf
+
+    /usr/local/nagios/installer/update_opsview_conf
+fi
+
+slave=44
+offset=10
+# these two will be updated by the slavenode.id file
+CLUSTER_TOTAL=1
+ID_WITHIN_CLUSTER=1
+
+# Set up slave specific jobs to run at different times within the cluster
+# so there are are fewer IO conflicts
+if [ -f /usr/local/nagios/etc/slavenode.id ]; then
+    # Check to see if new format or old and act appropriately
+    # format will be changed on a successful reload
+    lines=`wc -l /usr/local/nagios/etc/slavenode.id | awk '{print $1}'`
+    if [ $lines -gt 1 ]; then
+        . /usr/local/nagios/etc/slavenode.id
+    fi
+    if [ $ID_WITHIN_CLUSTER -gt $CLUSTER_TOTAL ]; then
+        ID_WITHIN_CLUSTER=$CLUSTER_TOTAL
+    fi
+    slave=`perl -le '$x=(( 60 / shift ) * shift ) + shift; print int($x)' $CLUSTER_TOTAL $ID_WITHIN_CLUSTER $offset`
+    if [ $slave -gt 59 ]
+    then
+        slave=`perl -le "print $slave - 60"`
+    fi
+fi
+
+# Add crontabs
+crontab -l 2>/dev/null | perl -ne '$start=1 if (/^# OPSVIEW-START/); print $_ unless ($start); $start=0 if (/^# OPSVIEW-END/)' > $tmpfile
+cat $cronfile | sed -e "s/%SLAVE%/$slave/" >> $tmpfile
+crontab $tmpfile || die "Could not create nagios' crontab"
+# Touch the stat file for our plugin to work on fresh installs
+touch /usr/local/nagios/var/opsview_cronjobs.stat
+
+
+# NMIS install
+# TODO: interface.csv should be catered for as part of a type=config
+if [ ! -f "/usr/local/nagios/nmis/var/interface.csv" ] ; then
+	cat - <<EOF > /usr/local/nagios/nmis/var/interface.csv || die "Cannot write to interface.csv"
+# THE FIRST LINE NON COMMENT IS THE HEADER LINE AND REQUIRED
+Description	collect	ifAdminStatus	ifDescr	ifIndex	ifLastChange	ifOperStatus	ifSpeed	ifType	ipAdEntAddr	ipAdEntNetMask	ipSubnet	ipSubnetBits	node	portAdminSpeed	portDuplex	portIfIndex	portIndex	portModuleIndex	portSpantreeFastStart	sysName	vlanPortVlan
+EOF
+	chmod 0644 /usr/local/nagios/nmis/var/interface.csv || die "Cannot chmod"
+	# not needed if run as nagios
+	#chown nagios:nagios /usr/local/nagios/nmis/var/interface.csv || die "Cannot chown"
+fi
+
+touch /usr/local/nagios/nmis/var/event.dat || die "Cannot touch event.dat"
+chmod 0644 /usr/local/nagios/nmis/var/event.dat || die "Cannot chmod"
+chown nagios:nagios /usr/local/nagios/nmis/var/event.dat || die "Cannot chown"
+
+# Currently done in install_slave - should be moved here?
+#touch /usr/local/nagios/nmis/logs/nmis.log || die "Cannot touch nmis.log"
+#chmod 0664 /usr/local/nagios/nmis/logs/nmis.log || die "Cannot chmod"
+#chown nagios:nagcmd /usr/local/nagios/nmis/logs/nmis.log || die "Cannot chown"
+
+touch /usr/local/nagios/nmis/logs/event.log || die "Cannot touch event.log"
+chmod 0644 /usr/local/nagios/nmis/logs/event.log || die "Cannot chmod"
+chown nagios:nagios /usr/local/nagios/nmis/logs/event.log || die "Cannot chown"
+
+# upgrade tidyups - remove left over files from plugins when they move into var/plugins
+for file in \
+    /usr/local/nagios/var/check_snmp_cisco_linkstatus.db \
+    /usr/local/nagios/var/check_snmp_linkstatus.v3.db \
+; do
+    if [ -f $file ]; then
+        rm $file
+    fi
+done
+
+# Run one off NMIS tasks - need to use directly rather than call_nmis as configs would not be created yet
+# Hide the NMIS error messages, as NMIS will raise an error due to config file that won't appear until a reload
+PERL5LIB=/usr/local/nagios/perl/lib:$PERL5LIB /usr/local/nagios/nmis/bin/nmis.pl type=config > /dev/null 2>&1
+
+# Run plugins for post-install
+# $1 = slave for slave systems
+for plugin in /usr/local/nagios/opsview-plugins/postinstall/*; do
+	[ -x "$plugin" ] && $plugin $1
+done
+
+rm -f $tmpfile

@@ -1,0 +1,494 @@
+host {
+host_name=monitored_by_slave
+last_check=1264582563
+current_state=1
+last_state=1
+last_hard_state=1
+plugin_output=CHECK_NRPE: Socket timeout after 10 seconds.
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+service {
+host_name=monitored_by_slave
+service_description=Check Loadavg
+last_check=1264586582
+current_state=2
+last_state=2
+last_hard_state=2
+plugin_output=CHECK_NRPE: Error - Could not complete SSL handshake.
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+servicecomment {
+host_name=monitored_by_slave
+service_description=Check Loadavg
+entry_type=1
+source=1
+persistent=1
+entry_time=1262264324
+expires=0
+expire_time=0
+author=admin
+comment_data=Test comment
+}
+service {
+host_name=monitored_by_slave
+service_description=/
+last_check=1264586514
+current_state=2
+last_state=2
+last_hard_state=2
+plugin_output=CHECK_NRPE: Error - Could not complete SSL handshake for {me}
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+service {
+host_name=monitored_by_slave
+service_description=TCP/IP
+last_check=1264586659
+current_state=0
+last_state=0
+last_hard_state=0
+plugin_output=OK - monitored_by_slave: rta 3.924ms, lost 0%
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+service {
+host_name=monitored_by_slave
+service_description=SSH
+last_check=1264586594
+current_state=0
+last_state=0
+last_hard_state=0
+plugin_output=TCP OK - 0.001 second response time on port 22
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+service {
+host_name=monitored_by_slave
+service_description=Check Memory
+last_check=1264586649
+current_state=2
+last_state=2
+last_hard_state=2
+plugin_output=CHECK_NRPE: Error - Could not complete SSL handshake.
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+service {
+host_name=monitored_by_slave
+service_description=VNC
+last_check=1264586409
+current_state=0
+last_state=0
+last_hard_state=0
+plugin_output=TCP OK - 0.002 second response time on port 5900
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+host {
+host_name=cisco3
+last_check=1264580816
+current_state=1
+last_state=1
+last_hard_state=1
+plugin_output=PING CRITICAL - Packet loss = 100%
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+hostdowntime {
+host_name=cisco3
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Leaf': test future downtime
+}
+service {
+host_name=cisco3
+service_description=snmptrap renotify
+last_check=1264586309
+current_state=0
+last_state=0
+last_hard_state=0
+plugin_output=(No output returned from plugin)
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+servicedowntime {
+host_name=cisco3
+service_description=snmptrap renotify
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Leaf': test future downtime
+}
+service {
+host_name=cisco3
+service_description=Passive set_stale
+last_check=1264586309
+current_state=1
+last_state=1
+last_hard_state=1
+plugin_output=**Disk failure** on *sd1* - see [internal wiki](http://opsview.org) < 10
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+servicedowntime {
+host_name=cisco3
+service_description=Passive set_stale
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Leaf': test future downtime
+}
+service {
+host_name=cisco3
+service_description=Passive renotify
+last_check=1264586309
+current_state=0
+last_state=0
+last_hard_state=0
+plugin_output=(No output returned from plugin)
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+servicedowntime {
+host_name=cisco3
+service_description=Passive renotify
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Leaf': test future downtime
+}
+service {
+host_name=cisco3
+service_description=Passive no freshness
+last_check=1260870977
+current_state=0
+last_state=0
+last_hard_state=0
+plugin_output=Service assumed OK - no results received
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+servicecomment {
+host_name=cisco3
+service_description=Passive no freshness
+entry_type=1
+source=1
+persistent=1
+entry_time=1262264324
+expires=0
+expire_time=0
+author=admin
+comment_data=Test comment - new one
+}
+servicecomment {
+host_name=cisco3
+service_description=Passive no freshness
+entry_type=1
+source=1
+persistent=1
+entry_time=1262264324
+expires=0
+expire_time=0
+author=admin
+comment_data=Test comment
+}
+servicecomment {
+host_name=cisco3
+service_description=Passive no freshness
+entry_type=1
+source=1
+persistent=1
+entry_time=1262264324
+expires=0
+expire_time=0
+author=admin
+comment_data=Test comment - new one yet another
+}
+servicedowntime {
+host_name=cisco3
+service_description=Passive no freshness
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Leaf': test future downtime
+}
+service {
+host_name=cisco3
+service_description=Test exceptions
+last_check=1263904158
+current_state=0
+last_state=0
+last_hard_state=0
+plugin_output=(No output returned from plugin)
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+servicedowntime {
+host_name=cisco3
+service_description=Test exceptions
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Leaf': test future downtime
+}
+service {
+host_name=cisco3
+service_description=Coldstart
+last_check=1264582494
+current_state=1
+last_state=1
+last_hard_state=1
+plugin_output=**Disk failure** on *sd1* - see [internal wiki](http://opsview.org) < 10
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+servicedowntime {
+host_name=cisco3
+service_description=Coldstart
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Leaf': test future downtime
+}
+service {
+host_name=cisco3
+service_description=snmptrap no freshness
+last_check=1260870977
+current_state=0
+last_state=0
+last_hard_state=0
+plugin_output=Service assumed OK - no results received
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+servicedowntime {
+host_name=cisco3
+service_description=snmptrap no freshness
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Leaf': test future downtime
+}
+service {
+host_name=cisco3
+service_description=snmptrap set_stale
+last_check=1264586309
+current_state=1
+last_state=1
+last_hard_state=1
+plugin_output=**Disk failure** on *sd1* - see [internal wiki](http://opsview.org) < 10
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+servicedowntime {
+host_name=cisco3
+service_description=snmptrap set_stale
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Leaf': test future downtime
+}
+service {
+host_name=cisco3
+service_description=Another exception
+last_check=1264586309
+current_state=0
+last_state=0
+last_hard_state=0
+plugin_output=(No output returned from plugin)
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+servicedowntime {
+host_name=cisco3
+service_description=Another exception
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Leaf': test future downtime
+}
+host {
+host_name=opslave
+last_check=1264586248
+current_state=1
+last_state=1
+last_hard_state=1
+plugin_output=CRITICAL - Socket timeout after 15 seconds
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+hostdowntime {
+host_name=opslave
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Monitoring Servers': test future downtime
+}
+service {
+host_name=opslave
+service_description=Check Loadavg
+last_check=1264586644
+current_state=3
+last_state=3
+last_hard_state=3
+plugin_output=check_load: Could not parse arguments
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+servicedowntime {
+host_name=opslave
+service_description=Check Loadavg
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Monitoring Servers': test future downtime
+}
+service {
+host_name=opslave
+service_description=/
+last_check=1264586673
+current_state=0
+last_state=0
+last_hard_state=0
+plugin_output=DISK OK - free space: / 2214 MB (61% inode=86%):
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+servicedowntime {
+host_name=opslave
+service_description=/
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Monitoring Servers': test future downtime
+}
+service {
+host_name=opslave
+service_description=Mysql Query
+last_check=1264586444
+current_state=3
+last_state=3
+last_hard_state=3
+plugin_output=Usage: check_mysql_query -q SQL_query [-w warn] [-c crit] [-H host] [-P port] [-s socket]
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+servicedowntime {
+host_name=opslave
+service_description=Mysql Query
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Monitoring Servers': test future downtime
+}
+service {
+host_name=opslave
+service_description=SSH
+last_check=1264586474
+current_state=0
+last_state=0
+last_hard_state=0
+plugin_output=TCP OK - 0.024 second response time on port 22
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+servicedowntime {
+host_name=opslave
+service_description=SSH
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Monitoring Servers': test future downtime
+}
+service {
+host_name=opslave
+service_description=Check Memory
+last_check=1264586549
+current_state=0
+last_state=0
+last_hard_state=0
+plugin_output=Usage: real 34% (85/251 MB), buffer: 34 MB, cache: 123 MB, swap: 0% (0/235 MB)
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+servicedowntime {
+host_name=opslave
+service_description=Check Memory
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Monitoring Servers': test future downtime
+}
+service {
+host_name=opslave
+service_description=VNC
+last_check=1264586594
+current_state=2
+last_state=2
+last_hard_state=2
+plugin_output=Connection refused
+problem_has_been_acknowledged=0
+has_been_checked=1
+}
+servicedowntime {
+host_name=opslave
+service_description=VNC
+entry_time=1262254781
+start_time=1293790764
+end_time=1293797964
+fixed=1
+duration=7200
+author=admin
+comment=Host group 'Monitoring Servers': test future downtime
+}

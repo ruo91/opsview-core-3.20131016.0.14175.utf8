@@ -1,0 +1,228 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#	Written by Neil Ferguson
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use Getopt::Std;
+use Storable qw(lock_store lock_retrieve);
+
+# About us
+my $script             = "check_diskiops_solaris";
+my $script_version     = "0.1";
+my $script_description = "Checks IOPS on a specified disk using kstat";
+
+my $retval      = 0;  # Innocent until proven guilty
+my $retmsg      = ""; # Text to return from plugin
+my $warn_read   = 0;
+my $crit_read   = 0;
+my $warn_write  = 0;
+my $crit_write  = 0;
+my $iops_in     = 0;
+my $iops_out    = 0;
+my $cur_reads   = 0;
+my $prev_reads  = 0;
+my $cur_writes  = 0;
+my $prev_writes = 0;
+my $disk;
+
+# Our data store
+my $store;
+my $store_dir = "/usr/local/nagios/var";
+my $store_fn  = "$store_dir/$script.dat";
+my $storename;
+
+# Command line arguments
+our ( $opt_h, $opt_d, $opt_w, $opt_c, $opt_x, $opt_y );
+getopts( "hd:w:c:x:y:" );
+if ($opt_h) {
+    usage();
+    exit 0;
+}
+if ($opt_d) {
+    $disk = $opt_d;
+}
+else {
+    print "Must specify disk to check IOPS for\n";
+    usage();
+    exit 3;
+}
+if ($opt_w) {
+    unless ( $opt_w =~ /^[\d]+$/ ) {
+        print "Warning must be an integer\n";
+        exit 3;
+    }
+
+    $warn_read = $opt_w;
+}
+if ($opt_c) {
+    unless ( $opt_c =~ /^[\d]+$/ ) {
+        print "Critical must be an integer\n";
+        exit 3;
+    }
+
+    $crit_read = $opt_c;
+}
+if ($opt_x) {
+    unless ( $opt_x =~ /^[\d]+$/ ) {
+        print "Warning must be an integer\n";
+        exit 3;
+    }
+
+    $warn_write = $opt_x;
+}
+if ($opt_y) {
+    unless ( $opt_y =~ /^[\d]+$/ ) {
+        print "Critical must be an integer\n";
+        exit 3;
+    }
+
+    $crit_write = $opt_y;
+}
+
+# We do this after option parsing so that we can display help output
+# even if this Solaris-specific module is not available
+eval "use Sun::Solaris::Kstat";
+if ($@) {
+    print $@;
+    exit 3;
+}
+
+sub two_dp {
+    my $val = shift(@_);
+    return int( $val * 100 ) / 100;
+}
+
+sub usage {
+    print <<EOF
+--------------------------------------------------------------------
+$script $script_version
+
+$script_description
+
+Usage: $script -d disk [...]
+
+Options: -d     Disk to check
+         -w     Warning threshold, read IOPS
+         -c     Critical threshold, read IOPS
+         -x     Warning threshold, write IOPS
+         -y     Critical threshold, write IOPS
+
+
+--------------------------------------------------------------------     
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved  
+         
+This program is free software; you can redistribute it or modify
+it under the terms of the GNU General Public License
+------------------------------------------------------------------
+EOF
+
+}
+
+# Performance data
+if ( $warn_read == 0 ) {
+    $warn_read = "";
+}
+if ( $crit_read == 0 ) {
+    $crit_read = "";
+}
+if ( $warn_write == 0 ) {
+    $warn_write = "";
+}
+if ( $crit_write == 0 ) {
+    $crit_write = "";
+}
+
+my $kstat     = Sun::Solaris::Kstat->new();
+my $disk_type = $disk;
+$disk_type =~ s/^([a-z]+).*/$1/;
+
+my $disk_num = $disk;
+$disk_num =~ s/^[^0-9]*([0-9]+)/$1/;
+
+if (   !exists( $kstat->{$disk_type} )
+    || !exists( $kstat->{$disk_type}{$disk_num} ) )
+{
+    print "UNKNOWN - Disk $disk could not be found\n";
+    exit 3;
+}
+
+$cur_reads  = $kstat->{$disk_type}{$disk_num}{$disk}{reads};
+$cur_writes = $kstat->{$disk_type}{$disk_num}{$disk}{writes};
+
+# Retrieve previous info if it exists
+$storename = "disk_${disk}";
+if ( -f $store_fn ) {
+    $store = lock_retrieve($store_fn);
+}
+
+if ($store) {
+    my $elapsed = ( time() - $store->{$storename}[0] );
+    $prev_reads  = $store->{$storename}[1];
+    $prev_writes = $store->{$storename}[2];
+    $iops_in     = two_dp( ( $cur_reads - $prev_reads ) / $elapsed );
+    $iops_out    = two_dp( ( $cur_writes - $prev_writes ) / $elapsed );
+
+    # Display 0 for counter rollover, not a very large negative number
+    if ( $iops_in < 0 ) {
+        $iops_in = 0;
+    }
+
+    # Display 0 for counter rollover, not a very large negative number
+    if ( $iops_out < 0 ) {
+        $iops_out = 0;
+    }
+}
+else {
+    $iops_in  = 0;
+    $iops_out = 0;
+}
+
+$store->{$storename} = [ time(), $cur_reads, $cur_writes ];
+lock_store( $store, $store_fn );
+
+$retmsg =
+  "- ${disk} ${iops_in} IOPS read, ${iops_out} IOPS write | ${disk}_rd=$iops_in;$warn_read;$crit_read ${disk}_wr=$iops_out;$warn_write;$crit_write\n";
+
+# Alert level
+if (   ( $crit_read > 0 && $iops_in > $crit_read )
+    || ( $crit_write > 0 && $iops_out > $crit_write ) )
+{
+    $retval = 2;
+}
+elsif (( $warn_read > 0 && $iops_in > $warn_read )
+    || ( $warn_write > 0 && $iops_out > $warn_write ) )
+{
+    $retval = 1;
+}
+
+# Show appropriate message
+if ( $retval == 0 ) {
+    print "OK $retmsg";
+}
+elsif ( $retval == 1 ) {
+    print "WARNING $retmsg";
+}
+else {
+    print "CRITICAL $retmsg";
+}
+
+exit $retval;

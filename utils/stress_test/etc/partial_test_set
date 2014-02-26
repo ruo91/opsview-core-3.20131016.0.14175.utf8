@@ -1,0 +1,111 @@
+{
+	check_fakescript => {
+		perfdata => {
+			format => "it1=%d;%.6fb;%.3f;%d it2=%d;%d",
+			output => [ 5, 100, 100, 10, -15, 5 ],
+		},
+        response => { high => "1.0062784318403", low => "0.025" },
+        result   => {
+                      CRITICAL => "26.9270833333333",
+                      OK => "70.7291666666667",
+                      UNKNOWN => "1.09375",
+                      WARNING => "1.25",
+                      total => 1920,
+                    },
+	},
+  check_icmp => {
+        perfdata => {
+                      "format" => "rta=%.3fms;%.3f;%.3f;0 pl=%d%%;%d;%d;; ",
+                      output   => [1, -200, -500, 100, -40, -80],
+                    },
+        result   => {},
+      },
+  check_nrpe => {
+        response => { high => "0.417689125977025", low => "0.0235" },
+        result   => { CRITICAL => "38.9789949481521", OK => "61.0210050518479", total => 3761 },
+      },
+  check_opsview_master => {
+        response => { high => "1.0062784318403", low => "0.025" },
+        result   => {
+                      CRITICAL => "26.9270833333333",
+                      OK => "70.7291666666667",
+                      UNKNOWN => "1.09375",
+                      WARNING => "1.25",
+                      total => 1920,
+                    },
+      },
+  check_ping => {
+        response => { high => "4.50850797002136", low => "0.0390531616210937" },
+        result   => {
+                      CRITICAL => "58.41255256741",
+                      OK => "39.057143866841",
+                      UNKNOWN => "0.978902357140333",
+                      WARNING => "1.55140120860869",
+                      total => 28297,
+                    },
+      },
+  "check_snmp_interfaces" => {
+        response => { high => "2.2180474029193", low => "0.175" },
+        result   => {
+                      CRITICAL => "28.4829721362229",
+                      OK => "68.7306501547988",
+                      UNKNOWN => "1.03199174406605",
+                      WARNING => "1.75438596491228",
+                      total => 1938,
+                    },
+      },
+  "check_snmp_linkstatus" => {
+        response => { high => "3.17446575573605", low => "0.03689453125" },
+        result   => {
+                      CRITICAL => "4.93640870877344",
+                      OK => "86.7428325070058",
+                      UNKNOWN => "3.31968096572537",
+                      WARNING => "5.00107781849537",
+                      total => 4639,
+                    },
+      },
+  check_snmp_sysinfo => {
+        response => { high => "2.0860768227181", low => "0.1645" },
+        result   => {
+                      CRITICAL => "28.5344381149663",
+                      OK => "68.9280165717245",
+                      UNKNOWN => "0.828586224754013",
+                      WARNING => "1.70895908855515",
+                      total => 1931,
+                    },
+      },
+  "check_snmp_tcpcurrestab" => {
+        response => { high => "3.4802155319561", low => "0.102" },
+        result   => {
+                      CRITICAL => "28.1972265023112",
+                      OK => "68.1561376476631",
+                      UNKNOWN => "1.54083204930663",
+                      WARNING => "2.10580380071905",
+                      total => 1947,
+                    },
+      },
+  check_snmp_uptime => {
+        response => { high => "2.10476848033", low => "0.158" },
+        result   => {
+                      CRITICAL => "28.0330407847186",
+                      OK => "68.6112545172948",
+                      UNKNOWN => "1.03252452245741",
+                      WARNING => "2.32318017552917",
+                      total => 1937,
+                    },
+      },
+  check_tcp => {
+        perfdata => {
+                      "format" => "time=%.6fs;%.6f;%.6f;%.6f;%.6f",
+                      output   => [1, 0, 0, 0, 10],
+                    },
+        response => { high => "4.2038873437877", low => "0.0181875" },
+        result   => {
+                      CRITICAL => "52.3448928663626",
+                      OK => "44.9617072541089",
+                      UNKNOWN => "1.00679803803459",
+                      WARNING => "1.68660184149385",
+                      total => 11621,
+                    },
+      },
+}

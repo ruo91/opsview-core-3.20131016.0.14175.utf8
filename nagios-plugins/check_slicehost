@@ -1,0 +1,232 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use warnings;
+use Nagios::Plugin::WWW::Mechanize;
+use XML::Simple;
+use Data::Dumper;
+
+# override the Nagios::Plugin::WWW::Mechanize get function to exit WARNING
+# if the serivce is 'temporarily disabled'
+local *Nagios::Plugin::WWW::Mechanize::wrap_mech_call;
+*Nagios::Plugin::WWW::Mechanize::wrap_mech_call = sub {
+    my ( $self, $method, @args ) = @_;
+    $self->timer_start;
+    my $res = $self->mech->$method(@args);
+    if ( !$self->mech->success ) {
+        if ( $self->mech->content =~ m/temporarily disabled/ ) {
+            $self->nagios_exit( WARNING,
+                join( ' ', $self->mech->status, '-', $self->mech->content )
+            );
+        }
+        else {
+            $self->nagios_exit( CRITICAL,
+                join( ' ', $self->mech->status, '-', $self->mech->content )
+            );
+        }
+    }
+    $self->timer_end;
+    $res;
+};
+
+my $np = Nagios::Plugin::WWW::Mechanize->new(
+    shortname => "SLICEHOST",
+    usage     => "To check slice host status or bandwidth
+  check_slicehost --apikey KEY -n slicename [--bandwidth] [-v] [-w] [-c]
+  check_slicehost --apikey KEY -n slicename --status",
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help =>
+      "-w, --warning=INTEGER:INTEGER. Warning if total bandwidth is outside INTEGER:INTEGER",
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help =>
+      "-c, --critical=INTEGER:INTEGER. Critical if total bandwidth is outside INTEGER:INTEGER",
+);
+
+$np->add_arg(
+    spec => "slice|n=s",
+    help =>
+      "-n, --slice=slice name. Tries to find information about this slice",
+    required => 0,
+
+);
+
+#mandatory argument apikey
+$np->add_arg(
+    spec     => "apikey|k=s",
+    help     => "-apikey, --apikey=apikey for authorisation ",
+    required => 1,
+);
+
+$np->add_arg(
+    spec => "bandwidth",
+    help => "--bandwidth\n   To report on bandwidth (default mode)",
+);
+
+$np->add_arg(
+    spec => "status",
+    help =>
+      "--status\n   To report on status. Will return CRITICAL if slice is not in active state",
+);
+
+$np->getopts;
+
+my $mode = "bandwidth";
+if ( $np->opts->status ) {
+    $mode = "status";
+}
+
+my $apikey = $np->opts->apikey;
+my $url    = 'https://' . $apikey . '@api.slicehost.com/slices.xml?';
+$np->get( "$url" );
+my $content = $np->content;
+
+#creating object
+my $xml = new XML::Simple;
+
+#If  XML file doesnt exists then stops execution of programm
+my $data;
+if ( $data = $xml->XMLin($content) eq " " ) {
+    $np->nagios_exit( UNKNOWN, "Cannot get XML data " );
+}
+
+#read the XML file
+$data = $xml->XMLin($content);
+
+#print Dumper($data);
+
+# create second  object of XML:Simple
+# The ForceArray option is a Boolean flag that tells XML::Simple to turn XML elements into regular indexed arrays instead of hashes.
+my $xmls = new XML::Simple( ForceArray => 1 );
+my $datax = $xmls->XMLin($content);
+
+#print Dumper($datax);
+
+#executes if slice name is not specified
+if ( !$np->opts->slice ) {
+
+    # access <slice> array
+    # $i is local variable used as index to acces array
+    my $i = 0;
+
+    #@slice_list is array which collects slice names dynamically
+    my @slice_list;
+    foreach my $e ( @{ $datax->{slice} } ) {
+
+        #appending slicenames to array @slice_list
+        unshift( @slice_list, $datax->{slice}->[$i]->{name}->[0] );
+        $i++;
+    }
+    my $valuex = scalar @slice_list;
+    print $valuex;
+    $np->nagios_exit( UNKNOWN,
+        "slice name argument missing -n, " . "valid slices: @slice_list, "
+    );
+}
+
+#new variable $slicename initiated with the supplied -n slicename argument
+my $slice_name = $np->opts->slice;
+
+# $i is local variable used as index to acces array
+my $i = 0;
+
+#@slice_list is array which collects slice names dynamically
+my @slice_list;
+foreach my $e ( @{ $datax->{slice} } ) {
+
+    #appending slicenames to array @slice_list
+    unshift( @slice_list, $datax->{slice}->[$i]->{name}->[0] );
+    $i++;
+}
+
+my %states = map { ( $_ => 1 ) } @slice_list;
+if ( !exists $states{$slice_name} ) {
+    $np->nagios_exit( UNKNOWN,
+        "cannot get $slice_name, " . "valid slices: @slice_list, "
+    );
+}
+
+#defining the variables
+my $bw_in  = 0;
+my $bw_out = 0;
+my $status;
+$i = 0;
+foreach my $e ( @{ $datax->{slice} } ) {
+    if ( $datax->{slice}->[$i]->{name}->[0] eq $slice_name ) {
+        $status = $datax->{slice}->[$i]->{status}->[0];
+        $bw_in  = $datax->{slice}->[$i]->{'bw-in'}->[0]->{content};
+        $bw_out = $datax->{slice}->[$i]->{'bw-out'}->[0]->{content};
+    }
+    $i++;
+}
+
+#stop execution if $status is not defined or not initiated
+if ( !$status ) {
+    $np->nagios_exit( UNKNOWN, "Slice status not defined" );
+}
+
+#stop execution if the $status is defined but it is not equal to "active"
+if ( defined $status && $status ne "active" ) {
+    if ( $mode eq "bandwidth" ) {
+        $np->nagios_exit( UNKNOWN,
+            "Slice is not active. The current status is " . $status );
+    }
+    else {
+        $np->nagios_exit( CRITICAL,
+            "Slice is not active. The current state is $status"
+        );
+    }
+}
+
+#defining the threshold values
+my $threshold = $np->set_thresholds(
+    warning  => $np->opts->warning,
+    critical => $np->opts->critical
+);
+
+#my variable to get toatl bandwith utilization
+my $totalbandwidth = $bw_in + $bw_out;
+
+my $message = "$slice_name, status: $status";
+
+#adding performance data
+if ( $mode eq "bandwidth" ) {
+    $np->add_perfdata(
+        label     => "bandwidth_used",
+        value     => $totalbandwidth,
+        threshold => $threshold,
+        uom       => "GB",
+    );
+    $message .= ", total bandwidth utilisation: ${totalbandwidth}GB";
+}
+
+$np->nagios_exit(
+    return_code => $np->check_threshold($totalbandwidth),
+    message     => $message,
+);
+1

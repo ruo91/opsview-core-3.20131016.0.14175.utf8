@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.application_jasperreports
+VERSION=1.0
+ALIAS=Application - JasperReports
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

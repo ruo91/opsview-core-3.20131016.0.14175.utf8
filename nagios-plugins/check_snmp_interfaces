@@ -1,0 +1,166 @@
+#!/usr/bin/perl
+#
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+use strict;
+use warnings;
+
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+
+my $np = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => "check_snmp_interfaces",
+    version   => "2.3",
+    blurb     => "Tracks status of Ethernet interfaces",
+    snmp      => {
+        "snmp-version" => 1,
+        "snmp-timeout" => 2,
+    },
+);
+
+$np->getopts;
+
+my $hostname = $np->opts->hostname;
+my $s        = $np->snmp;
+
+my $firsttime        = 0;
+my $change           = 0;
+my $error            = 0;
+my $interfacesup     = 0;
+my $interfacesdown   = 0;
+my @currentstatus    = ();
+my @previousstatus   = ();
+my $oid_sysDescr     = ".1.3.6.1.2.1.1.1.0";
+my $baseifdescr      = ".1.3.6.1.2.1.2.2.1.2";
+my $baseifoperstatus = ".1.3.6.1.2.1.2.2.1.8";
+my $returnstring     = "";
+
+my $statusfile = "/usr/local/nagios/var/status_$hostname.db";
+readstatus();
+
+if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+    if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+        print "Agent not responding\n";
+        exit(3);
+    }
+}
+
+# Scans interfaces
+my $counter = 0;
+
+my $table = $s->get_table( -baseoid => $baseifoperstatus );
+foreach my $oid ( keys %$table ) {
+    my $status = $table->{$oid};
+
+    my ($interface_oid_number) = ( $oid =~ /(\d+)$/ );
+
+    push( @currentstatus, $status );
+    if ( $status == 1 ) {
+        $interfacesup++;
+    }
+    else {
+        $interfacesdown++;
+    }
+
+    # set an initial value
+    $previousstatus[$counter] = $status if ( !$previousstatus[$counter] );
+
+    if ( $status != $previousstatus[$counter] ) {
+        $s->get_request( "$baseifdescr.$interface_oid_number" );
+        my $interfacedescr;
+        eval {
+            $interfacedescr =
+              $s->var_bind_list()->{"$baseifdescr.$interface_oid_number"};
+        };
+        if ($@) {
+            $interfacedescr = 'unknown interface';
+        }
+        if ( $status < $previousstatus[$counter] ) {
+            append( "$interfacedescr now UP " );
+            $change = 1;
+        }
+        else {
+            append( "$interfacedescr DOWN! " );
+            $change = 1;
+        }
+    }
+    $counter++;
+}
+
+# Close the session
+$s->close();
+
+writestatus();
+
+if ( $firsttime == 1 ) {
+    $change = 0;
+}
+my $perfstats = "in_use=$interfacesup down=$interfacesdown total=$counter";
+if ( $error == 0 ) {
+    if ( $change == 0 ) {
+        print
+          "Status is OK - Interfaces: $interfacesup UP, $interfacesdown DOWN|$perfstats\n";
+        exit 0;
+    }
+    elsif ( $change == 1 ) {
+        print "Status is a Warning Level - $returnstring |$perfstats\n";
+        exit 1;
+    }
+    else {
+        print "Plugin error! SNMP status unknown\n";
+        exit 1;
+    }
+}
+else {
+    print "Status is Warning Level - $returnstring |$perfstats\n";
+    exit 1;
+}
+
+exit 0;
+
+sub readstatus {
+    if ( -e "$statusfile" ) {
+        open STATUSFILE, "<$statusfile"
+          or die "Can't open file $statusfile: $1";
+        @previousstatus = <STATUSFILE>;
+        close STATUSFILE;
+    }
+    else {
+        $firsttime = 1;
+    }
+}
+
+sub writestatus {
+    open STATUSFILE, ">$statusfile" or die "Can't open file $statusfile: $1";
+    foreach my $line (@currentstatus) {
+        print STATUSFILE "$line\n";
+    }
+    close STATUSFILE;
+}
+
+sub append {
+    my ($appendstring) = @_;
+    $returnstring = "$returnstring$appendstring";
+}
+

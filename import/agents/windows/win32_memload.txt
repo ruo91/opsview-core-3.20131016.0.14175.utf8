@@ -1,0 +1,5 @@
+NRPE_NT Plugin, MEMORY Load, GX Networks, Stephen Strudwick
+
+usage: memload warning threshold(%) critical threshold(%)
+
+example: 70 90

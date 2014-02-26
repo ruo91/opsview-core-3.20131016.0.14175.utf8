@@ -1,0 +1,9 @@
+Can update the DBIx::Class schema classes. This script will do it for you:
+
+perl -I/usr/local/nagios/lib -MDBIx::Class::Schema::Loader=make_schema_at,dump_to_dir:./lib -e 'make_schema_at("Opsview::Schema", {debug => 1 },["dbi:mysql:dbname=opsview","opsview","changeme"] )'
+
+However, will expect the checksum to be fixed. This is a pain as there will have been some fixes to the schema. See these:
+  http://trac.opsview.org/changeset/1489
+  http://trac.opsview.org/changeset/1477#file3
+
+A manual update of the classes is possible instead.

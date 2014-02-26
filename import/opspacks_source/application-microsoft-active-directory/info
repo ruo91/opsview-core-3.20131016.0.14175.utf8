@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.application_microsoft_active_directory
+VERSION=1.0
+ALIAS=Application - Microsoft Active Directory
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

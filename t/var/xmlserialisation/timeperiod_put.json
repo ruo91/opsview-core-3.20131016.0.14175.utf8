@@ -1,0 +1,46 @@
+{
+      "sunday" : "00:00-24:00",
+      "friday" : "00:00-09:00,17:00-24:00",
+      "name" : "nonworkhours",
+      "servicecheck_notification_periods" : [
+         {
+            "ref" : "/rest/config/servicecheck/26",
+            "name" : "TFTP"
+         },
+         {
+            "ref" : "/rest/config/servicecheck/43",
+            "name" : "Whois"
+         }
+      ],
+      "servicecheck_check_periods" : [
+         {
+            "ref" : "/rest/config/servicecheck/43",
+            "name" : "Whois"
+         }
+      ],
+      "monday" : "00:00-09:00,17:00-24:00",
+      "tuesday" : "00:00-09:00,17:00-24:00",
+      "saturday" : "00:00-24:00",
+      "wednesday" : "00:00-08:00",
+      "thursday" : "00:00-09:00,17:00-24:00",
+      "id" : "3",
+      "host_check_periods" : [
+         {
+            "ref" : "/rest/config/host/22",
+            "name" : "monitored_by_cluster"
+         },
+         {
+            "ref" : "/rest/config/host/4",
+            "name" : "monitored_by_slave"
+         }
+      ],
+      "alias" : "Non-work Hours",
+      "host_notification_periods" : [
+         {
+            "ref" : "/rest/config/host/12",
+            "name" : "toclone"
+         }
+      ],
+      "uncommitted" : "1"
+   }
+

@@ -1,0 +1,82 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+# 	import_agentinfo dir
+#
+# DESCRIPTION:
+#	Looks in dir for an agent.yml file. Imports into Opsview database
+#	Agent file in YAML format
+#	Foreach plugin listed, if plugin_name.txt exists, will import that in
+#	as a help for that plugin ONLY IF it doesn't already exist as a server
+#	side plugin
+#
+# EXAMPLE agent.yml:
+#
+# name: Linux
+# command: check_nrpe -H $HOSTADDRESS$ -c $PLUGINNAME$ -a '$ARGS$'
+# plugins:
+#  - check_disk
+#  - check_load
+#  - check_swap
+#  - check_linux_specifically
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use FindBin qw($Bin);
+use lib "/usr/local/nagios/perl/lib", "$Bin/../perl", "$Bin/../lib",
+  "$Bin/../etc";
+use Config::Any::YAML;
+use Opsview;
+use Opsview::Plugin;
+
+my $dir = shift @ARGV;
+die "Must specify a directory containing agent.yml" unless $dir;
+
+die "Directory $dir must contain agent.yml" unless ( -e "$dir/agent.yml" );
+
+my $config = Config::Any::YAML->load("$dir/agent.yml")
+  or die "Cannot read agent.yml";
+
+my $agent = Opsview::Agent->find_or_create( { name => $config->{name} } );
+$agent->command( $config->{command} );
+$agent->update;
+
+foreach my $p ( @{ $config->{plugins} } ) {
+    my ($plugin) = Opsview::Plugin->search( { name => $p } );
+    if ( !$plugin ) {
+        die "Must provide a help file for $p as $dir/$p.txt"
+          unless ( -e "$dir/$p.txt" );
+        my $help;
+        open F, "$dir/$p.txt" or die "Error opening $dir/$p.txt";
+        { local $/ = undef; $help = <F>; }
+        close F;
+        Opsview::Plugin->create(
+            {
+                name     => $p,
+                help     => $help,
+                onserver => 0
+            }
+        );
+    }
+}
+
+$agent->set_plugins_to( $config->{plugins} );

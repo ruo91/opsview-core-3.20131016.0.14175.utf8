@@ -1,0 +1,534 @@
+#!/usr/bin/perl -w
+#
+# SYNTAX:
+#	opsview_sync_ldap [-t] [-a] [-y] [-n]
+#
+# DESCRIPTION:
+#	Syncs the contacts table with data from ldap
+#	-t tests the LDAP connection and exits after the first bind
+#	-a will show all the LDAP attributes for a particular user
+#	-y will actually commit changes to the database, otherwise only display the changes. Will also reload when finished unless ...
+#	-n will stop the reload of Opsview
+#	Requires /usr/local/opsview-web/opsview_web_local.yml to be set with ldap details
+#
+# ACKNOWLEDGEMENTS:
+#	A lot of portions of this script is copied from Catalyst::Plugin::ConfigLoader
+#	and Catalyst::Authentication::Store::LDAP::Backend. Credit to those authors
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use Getopt::Std;
+use FindBin qw($Bin);
+use lib "/usr/local/nagios/perl/lib", "/usr/local/nagios/lib";
+use lib "$Bin/../lib",                "$Bin/../etc";
+use Net::LDAP;
+use Data::Dump qw(dump);
+use XML::Simple;
+use Opsview::Schema;
+use Opsview::Config::Web;
+use Opsview::Auditlog;
+use Opsview::Utils qw(escape_xml_data);
+
+my $started = 0;
+
+END {
+    if ($started) { Opsview::Auditlog->system( "opsview_sync_ldap: End" ); }
+}
+
+my $opts = {};
+getopts( "aytnu:p:", $opts ) or die "Incorrect options";
+
+my $cfg = Opsview::Config::Web->web_config;
+
+my $ldapcfg = $cfg->{authentication}->{realms}->{ldap}->{store};
+die "No configuration for ldap found" unless $ldapcfg;
+
+$ldapcfg->{ldap_server_options}                  ||= {};
+$ldapcfg->{start_tls_options}                    ||= {};
+$ldapcfg->{user_search_options}                  ||= {};
+$ldapcfg->{opsview_sync}->{group_search_options} ||= {};
+
+# Connect to LDAP
+my $ldap = Net::LDAP->new( $ldapcfg->{ldap_server},
+    %{ $ldapcfg->{ldap_server_options} } )
+  or die $@;
+if ( exists $ldapcfg->{start_tls} && $ldapcfg->{start_tls} =~ /(1|true)/i ) {
+    my $mesg;
+    $mesg = $ldap->start_tls( %{ $ldapcfg->{start_tls_options} } );
+    die "TLS Error: " . $mesg->error if $mesg->is_error;
+}
+
+my $binddn = $ldapcfg->{binddn};
+my $bindpw = $ldapcfg->{bindpw};
+if ( $binddn eq "anonymous" ) {
+    my $mesg = $ldap->bind;
+    die "Error on bind: " . $mesg->error if $mesg->is_error;
+}
+else {
+    if ($bindpw) {
+        my $mesg = $ldap->bind( $binddn, 'password' => $bindpw );
+        die "Error on initial bind: " . $mesg->error if $mesg->is_error;
+    }
+    else {
+        my $mesg = $ldap->bind($binddn);
+        die "Error on initial bind with no password: " . $mesg->error
+          if $mesg->is_error;
+    }
+}
+
+if ( $opts->{t} ) {
+    print "Able to connect to LDAP successfully", $/;
+
+    require Catalyst::Authentication::Store::LDAP::Backend;
+    my $username = $opts->{u};
+    my $password = $opts->{p};
+    if ($username) {
+        print "Checking username $username\n";
+        my $backend =
+          Catalyst::Authentication::Store::LDAP::Backend->new($ldapcfg);
+        my $user = $backend->find_user( { name => $username } );
+        die "No user found for $username" unless $user;
+
+        print "Found user $username\n";
+
+        if ($password) {
+            print "Checking password for $username\n";
+            my $rc = $user->check_password( $opts->{p} );
+            print(
+                ( $rc == 1 ) ? "Password successful\n" : "Password incorrect\n"
+            );
+        }
+    }
+    exit;
+}
+
+Opsview::Auditlog->system( "opsview_sync_ldap: Start" );
+$started = 1;
+
+# Read each group file
+my $ldap_dir = $ldapcfg->{opsview_sync}->{group_dir};
+opendir GROUPS, $ldap_dir
+  or die "Cannot find ldap definition directory $ldap_dir";
+my @groups = grep !/^\./, readdir GROUPS;
+closedir GROUPS;
+
+unless (@groups) {
+    die "No groups defined in $ldap_dir";
+}
+
+my %seen_users;
+
+my $commits = [];
+
+foreach my $g ( sort(@groups) ) {
+    my $group_xml;
+    {
+        local $/ = undef;
+        open F, "$ldap_dir/$g" or die "Cannot read $g";
+        $group_xml = <F>;
+        close F;
+    }
+
+    # Trim .xml suffix if present
+    $g =~ s/\.xml$//;
+
+    # Check to see if the groupname is different from the filename
+    $g = get_real_groupname( $g, $group_xml );
+
+    my $users = get_users_in_group($g);
+
+    foreach my $user (@$users) {
+
+        # Keep a list of already seen
+        my $username = $user->{ $ldapcfg->{user_field} };
+        if ( exists $seen_users{$username} ) {
+            warn "$username is in multiple groups in LDAP - Ignoring group $g";
+
+            # if we've already seen the user, don't process it again
+            next;
+        }
+        $seen_users{$username}++;
+
+        if ( $opts->{a} ) {
+            print "LDAP attributes for $username: " . dump($user) . $/;
+        }
+
+        my $user_xml = replace_user_data( $group_xml, $user );
+
+        if ( !$user_xml ) {
+            warn 'Errors parsing group xml file "', $g, '"', $/;
+
+            if ( !$opts->{a} ) {
+                warn 'Rerun script with "-a" to see all valid attributes', $/;
+            }
+            exit 255;
+        }
+
+        my $user_data = XMLin(
+            $user_xml,
+            KeyAttr    => [],
+            ForceArray => [qw(hostgroup servicegroup)]
+        );
+
+        # remove any provided groupname
+        delete $user_data->{groupname};
+        push @$commits, $user_data;
+    }
+}
+
+# Connect to database
+my $reload_required = 0;
+my $schema          = Opsview::Schema->my_connect;
+
+# Calculate which users to remove
+my @current_users =
+  $schema->resultset("Contacts")->search( { realm => "ldap" } );
+
+my %delete_users;
+foreach my $user (@current_users) {
+    my $username = $user->username;
+    unless ( $seen_users{$username} ) {
+        $delete_users{$username}++;
+    }
+}
+
+my $method = "synchronise";
+
+# Show commits if we're not actually going to make the changes
+unless ( $opts->{y} ) {
+    print "Deleting: " . join( ", ", keys %delete_users ) . $/;
+    print "Commits ($method): " . dump($commits) . $/;
+    exit;
+}
+
+# Let's update the database!
+my @users_synced;
+my $rs = $schema->resultset( 'Contacts' );
+foreach my $commit (@$commits) {
+
+    # Some deprecated values due to notification profiles work
+    my $deprecated_keys = {
+        host_notification_options    => 1,
+        notification_level           => 1,
+        notification_period          => 1,
+        service_notification_options => 1,
+        use_email                    => 1,
+        use_mobile                   => 1,
+        live_feed                    => 1,
+    };
+    my @variables;
+
+    # Save new form variables
+    if ( ref( $commit->{variables} ) eq "ARRAY" ) {
+        @variables = @{ $commit->{variables} };
+    }
+
+    # Do some tranformations due to 3.9.0's changed contacts table
+    # Only do this if username is in the field. If so, assume old style
+    if ( $commit->{username} ) {
+        $commit->{fullname}    = delete $commit->{name};
+        $commit->{name}        = delete $commit->{username};
+        $commit->{description} = delete $commit->{comment};
+    }
+
+    # XML::Simple seems to put an empty hash instead of an empty string. This changes it
+    # We also convert some old arrays to squash down a bit, while supporting new XML schemes
+    # Also XML::Simple does something funny with keywords when only one attribute is given
+    my $convert_to_arrayrefs = sub {
+        my ( $key_multiple, $key_singular ) = @_;
+        my $value = $commit->{$key_multiple}->{$key_singular};
+        if ( ref( $commit->{$key_multiple} ) eq "ARRAY" ) {
+        }
+        elsif ( ref($value) eq "ARRAY" ) {
+            $commit->{$key_multiple} = $value;
+        }
+        elsif ( ref($value) eq "HASH" ) {
+            $commit->{$key_multiple} = [$value];
+        }
+        elsif ( ref( $commit->{$key_multiple} ) eq "HASH"
+            && scalar keys %{ $commit->{$key_multiple} } > 0 )
+        {
+            $commit->{$key_multiple} = [ $commit->{$key_multiple} ];
+        }
+        else {
+            $commit->{$key_multiple} = [];
+        }
+    };
+    foreach my $key ( keys %$commit ) {
+        if ( exists $deprecated_keys->{$key} ) {
+            delete $commit->{$key};
+            next;
+        }
+
+        if ( ref( $commit->{$key} ) eq "HASH" ) {
+            if ( $key eq "hostgroups" ) {
+                $convert_to_arrayrefs->( "hostgroups", "hostgroup" );
+            }
+            elsif ( $key eq "servicegroups" ) {
+                $convert_to_arrayrefs->( "servicegroups", "servicegroup" );
+            }
+            elsif ( $key eq "keywords" ) {
+                $convert_to_arrayrefs->( "keywords", "keyword" );
+            }
+            elsif ( scalar keys %{ $commit->{$key} } == 0 ) {
+                $commit->{$key} = "";
+            }
+        }
+
+        # Some fields changed to variables. Amend here
+        if ( $key eq "email" ) {
+            push @variables,
+              {
+                name  => "EMAIL",
+                value => delete $commit->{$key}
+              };
+        }
+        if ( $key eq "atom_collapsed" ) {
+            push @variables,
+              {
+                name  => "RSS_COLLAPSED",
+                value => delete $commit->{$key}
+              };
+        }
+        if ( $key eq "atom_max_age" ) {
+            push @variables,
+              {
+                name  => "RSS_MAXIMUM_AGE",
+                value => delete $commit->{$key}
+              };
+        }
+        if ( $key eq "atom_max_items" ) {
+            push @variables,
+              {
+                name  => "RSS_MAXIMUM_ITEMS",
+                value => delete $commit->{$key}
+              };
+        }
+        if ( $key eq "mobile" ) {
+            push @variables,
+              {
+                name  => "PAGER",
+                value => delete $commit->{$key}
+              };
+        }
+
+        #Remove apostrophes from LDAP names
+        if ( $key eq "fullname" ) {
+            $commit->{$key} =~ s/\'/ /g;
+        }
+
+    }
+    if (@variables) {
+        $commit->{variables} = \@variables;
+    }
+
+    $commit->{realm} = "ldap";
+    print "Syncing ($method): " . dump($commit) . $/;
+    my $obj;
+
+    eval { $obj = $rs->synchronise($commit) };
+    if ($@) {
+        print "Error synchronising " . $commit->{name} . ": $@" . $/;
+    }
+    else {
+        push @users_synced, $commit->{name};
+        $reload_required = 1;
+    }
+}
+
+my @users_deleted;
+foreach my $username ( keys %delete_users ) {
+    my $user = $schema->resultset("Contacts")->find( { name => $username } );
+    $user->delete;
+    print "Deleted $username", $/;
+    push @users_deleted, $username;
+    $reload_required = 1;
+}
+
+my $text =
+  "opsview_sync_ldap ($method): " . ( scalar @users_deleted ) . " deleted";
+if (@users_deleted) {
+    $text .= " (" . join( ", ", @users_deleted ) . ")";
+}
+$text .= "; " . ( scalar @users_synced ) . " added";
+if (@users_synced) {
+    $text .= " (" . join( ", ", @users_synced ) . ")";
+}
+Opsview::Auditlog->system($text);
+
+if ( !$opts->{n} && $reload_required ) {
+    system( "/usr/local/nagios/bin/rc.opsview", "gen_config" );
+}
+print "Finished", $/;
+
+sub get_users_in_group {
+    my $groupname = shift;
+
+    # Search for each group
+    my @searchopts;
+    push @searchopts, 'base' => $ldapcfg->{opsview_sync}->{group_basedn};
+    push @searchopts, 'filter' =>
+      replace_filter( $ldapcfg->{opsview_sync}->{group_filter}, $groupname );
+    push @searchopts, 'scope' => $ldapcfg->{opsview_sync}->{group_scope};
+    push @searchopts, %{ $ldapcfg->{opsview_sync}->{group_search_options} };
+
+    my $search = $ldap->search(@searchopts);
+
+    my $count = $search->count;
+    if ( $count < 1 ) {
+        print "Search options used:\n";
+        my %h = (@searchopts);
+        foreach my $k ( keys %h ) {
+            print "$k => " . $h{$k} . "\n";
+        }
+        die "Could not find group $groupname in LDAP";
+    }
+    if ( $count > 1 ) {
+        die "Got more than one group in LDAP directory for group $groupname";
+    }
+
+    # For each group, get list of users to create in Opsview
+    # Keep a list of users seen
+    my $group = $search->pop_entry;
+
+    my $member_field = $ldapcfg->{opsview_sync}->{group_member_field}
+      || "member";
+    my @members = $group->get_value($member_field);
+    my @users;
+
+    my $user_basedn = $ldapcfg->{user_basedn};
+    foreach my $m (@members) {
+        my @member_search;
+
+        # If the member is fully qualified, just get that object
+        # The assumption is that a fully qualified dn for the user will have the same basedn as the user search
+        if ( $m =~ /$user_basedn$/i ) {
+            push @member_search, 'base'  => $m;
+            push @member_search, 'scope' => 'base';
+
+            # Not sure why below is necessary - search will not find without a filter
+            push @member_search,
+              'filter' => replace_filter( $ldapcfg->{user_filter}, "*" );
+
+            # Else, it must just be a username. Search using the user search information
+            # There is an assumption that the member information is the same format as the user information
+            # IE, if the user information is "steve", then the member is "steve" as well and not "1001"
+        }
+        else {
+            push @member_search, 'base'  => $user_basedn;
+            push @member_search, 'scope' => $ldapcfg->{user_scope};
+            push @member_search,
+              'filter' => replace_filter( $ldapcfg->{user_filter}, $m );
+            push @member_search, %{ $ldapcfg->{user_search_options} };
+        }
+
+        my $results = $ldap->search(@member_search);
+
+        if ( my $userentry = $results->pop_entry ) {
+            if ( $results->pop_entry ) {
+                die "Got more than one entry with base=$m";
+            }
+
+            my $attrhash;
+            foreach my $attr ( $userentry->attributes ) {
+                my @attrvalues = $userentry->get_value($attr);
+                if ( scalar(@attrvalues) == 1 ) {
+                    $attrhash->{ lc($attr) } = $attrvalues[0];
+                }
+                else {
+                    $attrhash->{ lc($attr) } = \@attrvalues;
+                }
+            }
+            push @users, $attrhash;
+        }
+        else {
+
+            # couldn't find the user listed in the group
+            # so drop it on the floor
+            warn "Couldn't find user with $m";
+        }
+    }
+
+    return \@users;
+}
+
+sub replace_filter {
+    my ( $filter, $replace ) = @_;
+    $filter =~ s/\%s/$replace/g;
+    return $filter;
+}
+
+sub replace_user_data {
+    my ( $xml, $userinfo ) = @_;
+
+    # Find all %NAME% occurances and replace with $userinfo->{NAME}
+    my $key;
+    my $errors = 0;
+    while ( ($key) = ( $xml =~ /%(\w+)%/ ) ) {
+        my $value;
+        $value = $userinfo->{ lc($key) };
+        if ( ref($value) eq 'ARRAY' ) {
+
+            # if it's an arrayref, take the first value
+            # until you get a scalar
+            until ( ref($value) eq '' ) {
+                $value = $value->[0];
+            }
+        }
+        $value = escape_xml_data($value);
+        if ($value) {
+            $xml =~ s/%(\w+)%/$value/;
+        }
+        else {
+            warn 'WARNING: "', $key, '" does not exist as an attribute on ',
+              $userinfo->{ $ldapcfg->{user_field} }, $/;
+            $xml =~ s/%(\w+)%/UNKNOWN_ATTRIBUTE/;
+
+            # collect errors rater than return here so all elements are checked in this run
+            $errors++;
+        }
+    }
+    if ($errors) {
+        return;
+    }
+    return $xml;
+}
+
+sub get_real_groupname {
+    my ( $name, $xml ) = @_;
+
+    # sanity check
+    if ( defined($xml) ) {
+        my $parsed = XMLin(
+            $xml,
+            KeyAttr    => [],
+            ForceArray => [qw(hostgroup servicegroup)]
+        );
+
+        # if a groupname attribute exists, return it
+        if ( defined( $parsed->{groupname} ) ) {
+            $name = $parsed->{groupname};
+        }
+    }
+
+    return $name;
+}

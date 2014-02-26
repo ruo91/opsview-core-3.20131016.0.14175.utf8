@@ -1,0 +1,23 @@
+#!/usr/bin/perl
+# Dummy file2sock
+# Returns different errors based on socket coming in
+
+use warnings;
+use strict;
+
+my ( $s, $file, $d, $socket, $t, $unix ) = @ARGV;
+
+die "Arguments changed!"
+  unless ( $s eq "-s" && $d eq "-d" && $t eq "-t" && $unix eq "unix" );
+
+if ( $socket eq "normal" ) {
+    exit 0;
+}
+elsif ( $socket eq "connection_refused" ) {
+    print "Cannot open destination socket: Connection refused\n";
+    exit 1;
+}
+else {
+    print $socket;
+    exit 1;
+}

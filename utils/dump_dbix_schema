@@ -1,0 +1,28 @@
+#!/usr/bin/perl
+# Quick script to dump the dbix::class schema into /tmp
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use DBIx::Class::Schema::Loader qw(make_schema_at dump_to_dir:/tmp/schema);
+
+my $db = shift @ARGV || "Opsview";
+
+make_schema_at(
+    "${db}::Schema",
+    { debug => 1 },
+    [ "dbi:mysql:dbname=" . lc($db), "opsview", "changeme" ]
+);

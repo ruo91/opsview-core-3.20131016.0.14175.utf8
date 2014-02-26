@@ -1,0 +1,171 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#	Written by Neil Ferguson
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use Getopt::Std;
+
+# About us
+my $script         = "check_diskerr_solaris";
+my $script_version = "0.1";
+my $script_description =
+  "Checks for hard or transport errors on the specified disk using kstat";
+
+my $retval        = 0;  # Innocent until proven guilty
+my $retmsg        = ""; # Text to return from plugin
+my $warn_hard     = 0;
+my $crit_hard     = 0;
+my $warn_trans    = 0;
+my $crit_trans    = 0;
+my $hard_errs     = 0;
+my $trans_errs    = 0;
+my $hard_errs     = 0;
+my $prev_nread    = 0;
+my $trans_errs    = 0;
+my $prev_nwritten = 0;
+my $disk;
+
+# Command line arguments
+our ( $opt_h, $opt_d, $opt_w, $opt_c, $opt_x, $opt_y );
+getopts( "hd:w:c:x:y:" );
+if ($opt_h) {
+    usage();
+    exit 0;
+}
+if ($opt_d) {
+    $disk = $opt_d;
+}
+else {
+    print "Must specify disk to check errors for\n";
+    usage();
+    exit 3;
+}
+if ($opt_w) {
+    unless ( $opt_w =~ /^[\d]+$/ ) {
+        print "Warning must be an integer\n";
+        exit 3;
+    }
+
+    $warn_hard = $opt_w;
+}
+if ($opt_c) {
+    unless ( $opt_c =~ /^[\d]+$/ ) {
+        print "Critical must be an integer\n";
+        exit 3;
+    }
+
+    $crit_hard = $opt_c;
+}
+if ($opt_x) {
+    unless ( $opt_x =~ /^[\d]+$/ ) {
+        print "Warning must be an integer\n";
+        exit 3;
+    }
+
+    $warn_trans = $opt_x;
+}
+if ($opt_y) {
+    unless ( $opt_y =~ /^[\d]+$/ ) {
+        print "Critical must be an integer\n";
+        exit 3;
+    }
+
+    $crit_trans = $opt_y;
+}
+
+# We do this after option parsing so that we can display help output
+# even if this Solaris-specific module is not available
+eval "use Sun::Solaris::Kstat";
+if ($@) {
+    print $@;
+    exit 3;
+}
+
+sub usage {
+    print <<EOF
+--------------------------------------------------------------------
+$script $script_version
+
+$script_description
+
+Usage: $script -d disk [...]
+
+Options: -d     Disk to check
+         -w     Warning threshold, hard errors
+         -c     Critical threshold, hard errors
+         -x     Warning threshold, transport errors
+         -y     Critical threshold, transport errors
+
+
+--------------------------------------------------------------------     
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved  
+         
+This program is free software; you can redistribute it or modify
+it under the terms of the GNU General Public License
+------------------------------------------------------------------
+EOF
+
+}
+
+my $kstat     = Sun::Solaris::Kstat->new();
+my $disk_type = $disk;
+$disk_type =~ s/^([a-z]+).*/$1/;
+
+my $disk_num = $disk;
+$disk_num =~ s/^[^0-9]*([0-9]+)/$1/;
+
+if (   !exists( $kstat->{$disk_type} )
+    || !exists( $kstat->{$disk_type}{$disk_num} ) )
+{
+    print "UNKNOWN - Disk $disk could not be found\n";
+    exit 3;
+}
+
+$hard_errs =
+  $kstat->{ $disk_type . "err" }{$disk_num}{ $disk . ",err" }{"Hard Errors"};
+$trans_errs =
+  $kstat->{ $disk_type . "err" }{$disk_num}{ $disk . ",err" }
+  {"Transport Errors"};
+
+$retmsg =
+  "- ${disk} has $hard_errs hard errors and $trans_errs transport errors | ${disk}_hard_errs=$hard_errs;; ${disk}_trans_errs=$trans_errs;;\n";
+
+# Alert level
+if ( $hard_errs > $crit_hard || $trans_errs > $crit_trans ) {
+    $retval = 2;
+}
+elsif ( $hard_errs > $warn_trans || $trans_errs > $warn_trans ) {
+    $retval = 1;
+}
+
+# Show appropriate message
+if ( $retval == 0 ) {
+    print "OK $retmsg";
+}
+elsif ( $retval == 1 ) {
+    print "WARNING $retmsg";
+}
+else {
+    print "CRITICAL $retmsg";
+}
+
+exit $retval;

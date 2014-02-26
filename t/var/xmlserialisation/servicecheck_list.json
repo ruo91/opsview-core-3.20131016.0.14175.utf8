@@ -1,0 +1,47 @@
+{
+   "summary": {
+   "page" : 1,
+   "allrows" : "103",
+   "totalrows" : "103",
+   "rows" : "6",
+   "totalpages" : 18
+   },
+   "list" : [
+      {
+         "ref" : "/rest/config/servicecheck/47",
+         "name" : "/",
+         "id" : "47",
+         "description" : "Utilisation of / partition"
+      },
+      {
+         "ref" : "/rest/config/servicecheck/52",
+         "name" : "/boot",
+         "id" : "52",
+         "description" : "Utilisation of /boot partition"
+      },
+      {
+         "ref" : "/rest/config/servicecheck/51",
+         "name" : "/export",
+         "id" : "51",
+         "description" : "Utilisation of /export partition"
+      },
+      {
+         "ref" : "/rest/config/servicecheck/50",
+         "name" : "/home",
+         "id" : "50",
+         "description" : "Utilisation of /home partition"
+      },
+      {
+         "ref" : "/rest/config/servicecheck/49",
+         "name" : "/usr",
+         "id" : "49",
+         "description" : "Utilisation of /usr partition"
+      },
+      {
+         "ref" : "/rest/config/servicecheck/48",
+         "name" : "/var",
+         "id" : "48",
+         "description" : "Utilisation of /var partition"
+      }
+   ]
+}

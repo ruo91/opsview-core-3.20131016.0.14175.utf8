@@ -1,0 +1,494 @@
+#!/usr/bin/perl
+#
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use lib qw ( /usr/local/nagios/lib );
+use Net::SNMP;
+use Getopt::Std;
+
+$script         = "check_perfstats";
+$script_version = "2.0";
+
+$metric          = 1;
+$oid_sysDescr    = ".1.3.6.1.2.1.1.1.0";
+$hrSysInterrupts = ".1.3.6.1.4.1.2021.11.7.0";
+$hrSysContext    = ".1.3.6.1.4.1.2021.11.8.0";
+$ssSwapIn        = ".1.3.6.1.4.1.2021.11.3.0";
+$ssSwapOut       = ".1.3.6.1.4.1.2021.11.4.0";
+$ssIOSent        = ".1.3.6.1.4.1.2021.11.5.0";
+$ssIORecieve     = ".1.3.6.1.4.1.2021.11.6.0";
+$ssCpuIdle       = ".1.3.6.1.4.1.2021.11.11.0";
+$memTotalSwap    = ".1.3.6.1.4.1.2021.4.3.0";
+$memAvailSwap    = ".1.3.6.1.4.1.2021.4.4.0";
+$memTotalReal    = ".1.3.6.1.4.1.2021.4.5.0";
+$memTotalFree    = ".1.3.6.1.4.1.2021.4.6.0";
+$memShared       = ".1.3.6.1.4.1.2021.4.13.0";
+$memBuffer       = ".1.3.6.1.4.1.2021.4.14.0";
+$memCached       = ".1.3.6.1.4.1.2021.4.15.0";
+$memSwapError    = ".1.3.6.1.4.1.2021.4.100.0";
+
+$ipaddress    = "192.168.10.30";
+$version      = "1";
+$timeout      = 2;
+$warning      = 90;
+$critical     = 95;
+$status       = 0;
+$returnstring = "";
+
+$defaultcommunity = "public";               # Default community string
+$configfilepath   = "/usr/local/nagios/etc";
+
+my $port = 161;
+
+# Do we have enough information?
+if ( @ARGV < 1 ) {
+    print "Too few arguments\n";
+    usage();
+}
+
+getopts( "hH:C:w:c:p:" );
+if ($opt_h) {
+    usage();
+    exit(0);
+}
+if ($opt_H) {
+    $hostname = $opt_H;
+
+    # print "Hostname $opt_H\n";
+}
+else {
+    print "No hostname specified\n";
+    usage();
+}
+if ($opt_C) {
+    $defaultcommunity = $opt_C;
+
+    # print "Using community $opt_C\n";
+}
+else {
+
+    # print "Using community $community\n";
+}
+if ($opt_p) {
+    $port = $opt_p;
+}
+
+# Create the SNMP session
+my ( $s, $e ) = Net::SNMP->session(
+    -community => return_snmpcommunity($hostname),
+    -hostname  => $hostname,
+    -version   => $version,
+    -timeout   => $timeout,
+    -port      => $port,
+);
+
+main();
+
+# Close the session
+$s->close();
+
+if ( $returnstring eq "" ) {
+    $status = 3;
+}
+
+if ( $status == 0 ) {
+    print "Status is OK - $returnstring\n";
+
+    # print "$returnstring\n";
+}
+elsif ( $status == 1 ) {
+    print "Status is a WARNING level - $returnstring\n";
+}
+elsif ( $status == 2 ) {
+    print "Status is CRITICAL - $returnstring\n";
+}
+else {
+    print "Status is UNKNOWN\n";
+}
+
+exit $status;
+
+sub main {
+
+    # I/O
+
+    if ( !defined( $s->get_request($hrSysInterrupts) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $interrupts = $s->var_bind_list()->{$_};
+
+        #print "$interrupts\n";
+    }
+
+    if ( !defined( $s->get_request($hrSysContext) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $contextswitches = $s->var_bind_list()->{$_};
+
+        #print "$contextswitches\n";
+    }
+
+    if ( !defined( $s->get_request($ssSwapIn) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $swapin = $s->var_bind_list()->{$_};
+    }
+
+    if ( !defined( $s->get_request($ssSwapOut) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $swapout = $s->var_bind_list()->{$_};
+    }
+
+    if ( !defined( $s->get_request($ssIOSent) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $iosent = $s->var_bind_list()->{$_};
+    }
+
+    if ( !defined( $s->get_request($ssIORecieve) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $iorecieve = $s->var_bind_list()->{$_};
+    }
+
+    # CPU
+
+    if ( !defined( $s->get_request($ssCpuIdle) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $cpuidle = $s->var_bind_list()->{$_};
+        $cpuutil = 100 - $cpuidle;
+
+        #print "$cpuutil\n";
+    }
+
+    #Swap
+
+    if ( !defined( $s->get_request($memTotalSwap) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $totalswap = $s->var_bind_list()->{$_};
+
+        #print "$totalmem\n";
+    }
+
+    if ( !defined( $s->get_request($memAvailSwap) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $availswap = $s->var_bind_list()->{$_};
+
+        #print "$totalmem\n";
+    }
+
+    #Memory
+
+    if ( !defined( $s->get_request($memTotalReal) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $totalmem = $s->var_bind_list()->{$_};
+
+        #print "$totalmem\n";
+    }
+
+    if ( !defined( $s->get_request($memTotalFree) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $freemem = $s->var_bind_list()->{$_};
+
+        #print "$totalmem\n";
+    }
+
+    if ( !defined( $s->get_request($memShared) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $sharedmem = $s->var_bind_list()->{$_};
+
+        #print "$sharedmem\n";
+    }
+
+    if ( !defined( $s->get_request($memBuffer) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $buffermem = $s->var_bind_list()->{$_};
+
+        #print "buff $buffermem\n";
+    }
+    if ( !defined( $s->get_request($memCached) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $cachedmem = $s->var_bind_list()->{$_};
+
+        # print "$cachedmem\n";
+    }
+
+    $stemp           = 100 / $totalswap;
+    $usedswappercent = ( $totalswap - $availswap ) * $stemp;
+
+    $mtemp = 100 / $totalmem;
+    $sysmem =
+      ( $totalmem - ( $freemem + $sharedmem + $buffermem + $cachedmem ) );
+
+    $freemempercent   = $freemem * $mtemp;
+    $sharedmempercent = $sharedmem * $mtemp;
+    $buffermempercent = $buffermem * $mtemp;
+    $cachedmempercent = $cachedmem * $mtemp;
+    $sysmempercent    = $sysmem * $mtemp;
+
+    #Errors
+
+    if ( !defined( $s->get_request($memSwapError) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+            return 1;
+        }
+        else {
+            $returnstring = "SNMP OID does not exist";
+            $status       = 1;
+            return 1;
+        }
+    }
+    foreach ( $s->var_bind_names() ) {
+        $swaperrors = $s->var_bind_list()->{$_};
+
+        #print "$swaperrors\n";
+    }
+
+    # $temp = sprintf "Result %.2f ($ladescription)", $cpuavg ;
+
+    $temp =
+      sprintf
+      "STATS: (interrupts/sec: $interrupts), (context switches/sec: $contextswitches), (CPU util: $cpuutil %%), (MEMORY: system: %.0f %%, free: %.0f %%, shared: %.0f %%, buffered: %.0f %%, cached: %.0f %%), (SWAP: used: %.0f %%, in: $swapin kB/s, out $swapout kB/s, errors: $swaperrors), (I/O: send: blocks/s $iosent, recieve: $iorecieve blocks/s), ",
+      $sysmempercent, $freemempercent, $sharedmempercent, $buffermempercent,
+      $cachedmempercent, $usedswappercent;
+    append($temp);
+
+    $status = 0;
+
+}
+
+sub usage {
+    print << "USAGE";
+
+$script v$script_version
+
+Returns performance stats for Linux / Unix systems
+
+Usage: $script -H <hostname> -c <community> [...]
+Options: -H 		Hostname or IP address
+         -p 		Port (default: 161)
+         -C 		Community (default is public)
+	 
+USAGE
+    exit 1;
+}
+
+sub append {
+    my $appendstring = @_[0];
+    $returnstring = "$returnstring$appendstring";
+}
+
+sub errorhandler {
+    my $returnstring = @_[0];
+    print "$returnstring\n";
+}
+
+####################################################################
+# Returns the SNMP community string for a given hostname / IP      #
+####################################################################
+
+sub return_snmpcommunity {
+    my $requiredhostname = @_[0];
+    my $returncommunity  = "public";
+    my $tempcommunity    = "";
+    my $temphostname     = "";
+
+    my $row     = 0;
+    my $nullval = 0;
+
+    if ( -e "$configfilepath/livehosttable.db" ) {
+        open INFILE, "<$configfilepath/livehosttable.db"
+          or die "Can't open file $configfilepath/livehosttable.db $1";
+        foreach $line (<INFILE>) {
+            (
+                $temphostname, $nullval, $nullval, $nullval, $nullval, $nullval,
+                $nullval, $tempcommunity
+            ) = split( /:/, $line );
+            if ( $temphostname eq $requiredhostname ) {
+                if ( $tempcommunity eq "" ) {
+                    $returncommunity = $defaultcommunity;
+                }
+                else {
+                    $returncommunity = $tempcommunity;
+
+                    # print "lookup for $temphostname successful: $tempcommunity\n";
+                }
+                last;
+            }
+        }
+    }
+    else {
+    }
+    close INFILE;
+    return ($returncommunity);
+}

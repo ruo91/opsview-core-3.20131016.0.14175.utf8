@@ -1,0 +1,291 @@
+#!/usr/bin/perl
+#
+# $Id$
+#
+
+# NOTES:
+#
+# "perldoc perlpod" for more info on using POD
+# "perldoc Getopt::Long" for more info on using command line options
+#   and imposing limits on what can be used with which switches
+# Any $<text>$ is a CVS/SVN keyword - do not alter!
+# When script is complete, use "perltidy -b -i=2 <script>" to format correctly
+
+# all "use" statements
+use strict;   # ALWAYS USE! Helps to catch bugs and problems much faster
+use warnings; # ALWAYS USE! Helps to catch bugs and problems much faster
+
+# find the path to the script directory and the script name
+use Cwd;
+my ( $script, $scriptname, $scriptdir );
+$script = Cwd::abs_path($0);
+( $scriptname = $script ) =~ s!^.*/!!;
+( $scriptdir  = $script ) =~ s!$scriptname$!!;
+
+# Pull in functions to use inline POD as output for help options
+use Pod::Usage;
+
+# Pull in functions to parse the command line options
+# Configure command line options to be case sensitive, and allow
+# -v -a -x as -vax (different to --vax).  Long options must also use --'s
+# Also stop long options being abreviated to uniqueness
+use Getopt::Long qw(:config no_ignore_case bundling no_auto_abbrev);
+
+# Version information, as from CVS
+my $_VERS = sprintf( "%d.%d", q$Revision: 0.01 $ =~ m!(\d+)\.(\d+)! );
+my $_DATE = sprintf( "%s %s",
+    q$Date: 2000/01/01 00:00:00 $ =~ m!(\d.../\d./\d.) (\d.:\d.:\d.)! );
+
+my $VERSION = "$_VERS $_DATE"; # Combined for script version (-V output)
+
+# Start of POD (Perl Online Documentation)
+#   Use "perldoc <script>" or "<script> --help" to read POD
+
+=head1 NAME
+
+check_nagios_log
+
+=head1 SYNOPSIS
+
+S<< check_nagios_log [-?hV] [logfile] >>
+
+=head1 DESCRIPTION
+
+Parse a nagios.log file show when the daemon crashed
+
+=head1 OPTIONS
+
+=over
+
+=cut
+
+#### Set up default options available for all scripts,
+# i.e. "<script> --version" or "<script> --help"
+# All command line options are stored within a hash for easy access
+# This initialises hash and defines some entries in one go
+# See "perldoc perldata" for more info
+my %options = (
+    'help|h|?'  => 0,
+    'man'       => 0,
+    'version|V' => 0,
+    'debug:+'   => 0,
+);
+
+#### Document default options
+
+=item --help, -?, -h
+
+Display basic help 
+
+=item --man
+
+Display man page
+
+=item --debug [0-9], --debug [--debug [...]]
+
+Enable debugging mode (using more than once increases verbosity, or specify
+a level explicitly to a maximum of level 8) 
+
+=item --version, -V
+
+Show version information
+
+=cut
+
+#### Addition options, documented as necessary
+$options{'all|a'} = "";
+
+=item --all, -a
+
+Show all stop/start events, not just crashes
+
+=cut
+
+#### End of options
+
+=back
+
+=head1 ARGUMENTS
+
+=over
+
+=item [nagios.log]
+
+Nagios log file to parse, defaults to /usr/local/nagios/var/nagios.log
+
+=back
+
+=cut
+
+#### start of perl code ####
+
+# Getopt::Long can limit/expand on how switches are used.  This step
+# normalises the options hash to remove optional specifiers used by
+# Getopts::Long.  Show usage (from the inline POD) if any options unrecognised
+GetOptions( \%options, keys(%options) ) || pod2usage( -verbose => 1 );
+
+# output version and exit
+# i.e. "<script> --version" or "<script> -v"
+die("Version: $VERSION\n") if ( $options{version} );
+
+# output basic help text when -?, --help or -h used
+pod2usage( -verbose => 1 ) if ( $options{'?'} || $options{help} );
+
+#output complete help text when -m|--man|-H|--HELP used
+pod2usage( -verbose => 2 ) if ( $options{HELP} || $options{man} );
+
+#### global variables ####
+# Initialise debug variable correctly if not already set by --debug
+$options{debug} ||= 0;
+
+# Set an arbitrary max level of 8 for debug
+$options{debug} = 8 if ( $options{debug} > 8 );
+
+my $format   = "%-26s %-26s %-26s %-8s %-10s\n";
+my $prevline = "";
+my $curline;
+my $lastsig;
+
+#### all sub-routines ####
+
+# description:
+#   given a level and a message, if level <= debug level, output message
+#   Allows for progressivly more output the higher the debug level, as
+#   given by the use of --debug. Saves on "expensive" 3rd party module
+# parameters:
+#   $1 = level --> level (to match debug level)
+#   $2 .. $n   --> list to pass to print
+# returns:
+#   nothing
+sub logmsg($@) {
+    print @_, $/ if ( shift() <= $options{debug} );
+}
+
+sub c {
+    return "" unless ( $_[0] );
+    return scalar localtime(shift);
+}
+
+sub output_lines($$$$$) {
+    ( my $logfile = shift ) =~ s!.*/!!;
+    my $line     = shift;
+    my $prevline = shift;
+    my $curline  = shift;
+    my $type     = shift;
+    my @line;
+
+    my $crash   = "";
+    my $restart = "";
+
+    if ($prevline) {
+        @line = split( / /, $prevline );
+        ( $crash = $line[0] ) =~ s/^\[(\d+)\]/$1/;
+    }
+    if ($curline) {
+        @line = split( / /, $curline );
+        ( $restart = $line[0] ) =~ s/^\[(\d+)\]/$1/;
+    }
+    printf $format, $logfile, c($crash), c($restart), $line, $type;
+}
+
+#### main ####
+
+$ARGV[0] ||= "/usr/local/nagios/var/nagios.log";
+
+printf $format, "Logfile:", "Crashed:", "Restarted:", "Line", "Type";
+
+foreach (@ARGV) {
+    my $logfile = $_;
+
+    logmsg( 1, "Checking $logfile" );
+
+    open( LOGFILE, "<", $logfile ) || die( "Couldnt read $logfile: $!\n" );
+    while (<LOGFILE>) {
+        if (m/ starting.../) {
+            logmsg( 1, "Found restart on line $." );
+            if ( !$options{all} && $prevline !~ m/deinitialized successfully./ )
+            {
+                my $type = "crash";
+                $type = "startup" if ( $. == 1 );
+                output_lines( $logfile, $., $prevline, $_, $type );
+            }
+            elsif ( $options{all} ) {
+                my $type;
+                if ($lastsig) {
+                    $lastsig = " ($lastsig)";
+                }
+
+                SWITCH: foreach ($prevline) {
+                    m/deinitialized/ && do {
+                        $type = "daemon stopped$lastsig";
+                        last SWITCH;
+                    };
+                    m/SIGHUP/ && do {
+                        $type = "restart$lastsig";
+                        last SWITCH;
+                    };
+                    m/SIGSEGV/ && do {
+                        $type = "crash$lastsig";
+                        last SWITCH;
+                    };
+                    do {
+                        if ( $. != 1 ) {
+                            $type = "possible crash$lastsig";
+                        }
+                        else {
+                            $type = "startup";
+                        }
+                    };
+                }
+                output_lines( $logfile, $., $prevline, $_, $type );
+            }
+            $lastsig = "";
+        }
+
+        $prevline = $_;
+        $lastsig = $1 if (m/Caught (SIG\w+)/);
+    }
+    close(LOGFILE);
+}
+
+__END__
+# Remaining POD for man page/help text
+
+=head1 NOTES
+
+This script can help to show when the nagios daemon crashes, but further analysis 
+of system log files may be necessary
+
+=head1 FILES
+
+F<< /usr/local/nagios/var/nagios.log >>
+F<< /usr/local/nagios/var/archives/nagios-xxxxx.log >>
+
+=head1 AUTHOR AND COPYRIGHT
+
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This software is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Opsview; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+=head1 KNOWN BUGS
+
+None known at this time
+
+=head1 SEE ALSO
+
+L<perl>
+L<nagios>
+
+=cut

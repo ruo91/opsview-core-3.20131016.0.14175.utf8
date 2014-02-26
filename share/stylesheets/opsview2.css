@@ -1,0 +1,1896 @@
+/*
+
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This file is part of Opsview
+
+Opsview is free software; you can redistr><td class='dataVar'bofy
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+Opsview is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Opsview; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+*/
+html {
+	height: 100%;
+	max-height: 100%;
+	padding: 0;
+	margin: 0;
+	border: 0;
+	background: #fff;
+	font-size: 8pt;
+    font-family: Verdana, Arial, Helvetica, sans-serif;
+    color: #333333;
+}
+body {
+	max-height: 100%;
+	min-width: 876px;
+	min-height: 300px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+li.external_menu_icon a img {
+    display: block;
+    float: left;
+    padding-bottom: 5px;
+    padding-right: 4px;
+}
+
+/* Global link styles */
+a:link, a:visited {
+    text-decoration: none;
+    color: #490A73;
+}
+a:hover, a:active {
+    text-decoration: underline;
+    color: #490A73;
+}
+
+h2 { font-size: 18px }
+
+form {
+	padding: 0 0 0 0;
+	margin: 0 0 0 0;
+}
+#sidebar {
+	display: block;
+	width: 165px;
+	top: 0;
+	left: 0;
+	position: absolute;
+}
+#main_form {
+	position: relative; /* peekaboo bug fix for IE6 - see http://www.brownbatterystudios.com/sixthings/2007/01/06/css-first-aid-for-ie-peekaboo-bug */
+	min-width: 0; /* peekaboo bug fix for IE7 */
+}
+#main_content {
+	padding-left: 30px;
+	padding-right: 30px;
+    clear: both;
+}
+.main_view {
+	margin-left: 168px;
+}
+#sidebar,#main_content {
+	padding-bottom: 30px;	/* To push past the footer */
+}
+#footer {
+	position:fixed;
+	bottom: 0;
+	left: 0;
+	margin: 0;
+	padding: 0;
+	padding-top: 5px;
+	border-top: 1px solid #DDD000;
+	background-color: #F5F5F5;
+	color: #AAA000;
+	width: 100%;
+	height: 20px;
+	font-size: 8pt;
+	z-index: 6;
+}
+#footer a:visited, #footer a:link, #footer a:hover, #footer a:active {
+	color: #AAA000;
+	font-weight: normal;
+	text-decoration: none;
+	display: inline;
+	cursor: pointer;
+}
+#footerbox {
+	margin: 0 auto;
+	padding-top: 15px;
+}
+
+#footerbox.community {
+	width: 770px;
+}
+
+#footerbox.enterprise {
+   width: 630px;
+   }
+
+#footerbox.enterprise #version_info {
+	margin-top: 10px;
+	}
+#footerbox div.productname {
+    margin-bottom: 0.5em;
+}
+
+#footer_logo {
+    height: 66px;
+    width: 200px;
+    display: block;
+    float: left;
+    padding-top: 0;
+    padding-bottom: 30px;
+    padding-right: 15px;
+}
+
+#refresh_button_container {
+    float: left;
+}
+#refresh_status {
+    background-color: #FFF8DC;
+    border: 1px solid #FFDB58;
+    color: #3E2155;
+    display: none;
+    font-family: sans-serif;
+    font-size: 7pt;
+    padding-right: 4px;
+    position:absolute;
+    text-align: right;
+    width: 180px;
+    z-index:2000;
+}
+#refresh_status .error { color: #FF5555; }
+#refresh_status .onhover { display: none; }
+#refresh_status .nohover { display: block; }
+#refresh_status:hover .onhover { display: block; }
+#refresh_status:hover .nohover { display: none; }
+
+.error_dialog {
+    position: fixed; z-index: 2000;
+    width: 50%; height: 20%;
+    left: 25%; top: 25%;
+    border: 1px solid red;
+    padding: 5%;
+    color: red; background-color: white;
+    font-size: 200%;
+    text-align: center; vertical-align: middle;
+}
+.error_dialog span {
+    vertical-align: middle;
+}
+
+table.list {
+	width: 99%;	/* IE6 doesn't like 100% */
+}
+
+body.wrapper_miniwindow {
+	text-align: left;
+	font-family: arial,serif;
+	background-color: #FFFFFF;
+	color: #333333;
+	font-size: 8pt;
+	padding-top: 1em;
+	padding-bottom: 1em;
+	padding-left: 0.25em;
+	padding-right: 0.25em;
+	min-width: 50px;
+	min-height: 50px;
+}
+
+img.menu, img.logo {
+	width: 20px;
+	height: 20px;
+}
+img.menu {
+	cursor: pointer;
+}
+div#menu {
+	min-width: 120px;
+}
+div#menu a:visited, div#menu a:link, div.action_box a:visited, div.action_box a:link {
+	color: #3E2155;
+	font-weight: normal;
+	text-decoration: none;
+	display: inline;
+	cursor: pointer;
+}
+div#menu a:hover, div#menu a:active, div.action_box a:hover, div.action_box a:active {
+	color: white;
+	background-color: #654D77;
+}
+.menu_title_link a:visited, .menu_title_link a:active, .menu_title_link a:link {
+	color: #333 !important;
+	font-weight: bold !important;
+}
+.menu_title_link a:hover {
+	background-color: transparent !important;
+	text-decoration: underline !important;
+}
+
+/* This is needed because IE7 in strict mode, <div align="center"> causes all the table cells enclosed to be centered
+ * However, we don't left align td because tr overrides fail. Good ole web standards and Microsoft */
+tr {
+	text-align: left;
+}
+
+img {
+	border: 0;
+}
+
+div.right_buttons {
+	margin-left: 1em;
+}
+div.right_buttons, .right {
+	float: right
+}
+div.right_buttons img {
+    cursor: pointer;
+}
+
+
+/* error_ignoreable do not stop form submission */
+/* error_validation should be stopped by validation.js */
+/* validation-advice is the default class used by validation.js */
+span.error, .error_ignoreable, span.error_validation, div.validation-advice {
+	color: #FF0000;
+}
+
+.copyright {
+	font-size: 11px;
+	font-family: Verdana, Arial;
+	color: #999999;
+}
+
+/* Choosebox - used for parent selection */
+table.choosebox {
+	border-collapse: collapse;
+	margin: 0;
+	border: 0;
+}
+table.choosebox td {
+	vertical-align: top;
+}
+
+.inline {
+	display: inline;
+}
+
+/* Login form */
+#login_page_wrap {
+    margin: 0px auto;
+    width: 750px;
+}
+#login_links {
+    padding-top: 15px;
+}
+#login_links table { margin: auto }
+#login_links td { width: 120px; text-align: center }
+#login_links img { margin: auto }
+#login_logo {
+    display: block;
+    margin: 0 auto 20px auto;
+}
+#login_form, #login_form_div {
+	font-size: 12px;
+	width: 319px;
+	height: 213px;
+	background: #eaeaea;
+    border: thin solid #c1c0c0;
+	color: #3e2155;
+	margin-left: auto;
+	margin-right: auto;
+	padding: 20px 30px 20px 30px;
+}
+#login_form #heading, #login_form_div #heading {
+	margin: 10px 0 20px 0;
+	font-size: 14px;
+    clear: both;
+    overflow: hidden;
+}
+#login_form_div div.formButtons {
+    margin: 10px 0 1em 0;
+}
+#login_form_div h3, #login_form_div span {
+    padding-bottom: 5px;
+    color: #c90041;
+    font-size: 12px;
+    font-weight: normal;
+}
+
+
+.centered { text-align: center; }
+
+/* Admin pages */
+ul.reorder {
+	padding-top: 1em;
+	padding-bottom: 1em;
+}
+
+ul.reorder li {
+	border: 1px solid #C5DEA1;
+	margin: 1px;
+	cursor: move;
+	background-color: #ECF3E1;
+}
+
+.leaf {
+	background: #c5bccc;
+}
+
+/* Need to set important because dragging onto an empty leaf hostgroup wasn't showing correctly */
+.dropable {
+	background-color: #d8d3dd !important;
+    background: none;
+}
+
+/* Drag and drop things, like hosts in hostgroup/servicegroup/monitoringserver */
+div.draggables {
+	position: relative;
+	text-decoration: none;
+	color: #4d0d78;
+	border: 1px solid #3e2155;
+	background: #c5bccc;
+    padding: 1px;
+	cursor: move;
+	float: left;
+	margin: 3px;
+}
+
+/* Drag and drop things, like hosts in hostgroup/servicegroup/monitoringserver */
+div.notdraggable {
+	position: relative;
+	text-decoration: none;
+	color: #4d0d78;
+	border: 1px solid #3e2155;
+	background: #fff;
+    padding: 1px;
+	cursor: move;
+	float: left;
+	margin: 3px;
+}
+
+/* Search box on most /admin/list forms */
+div#searchbox {
+	float: right;
+	height: 25px;
+	margin: 0;
+	padding: 0;
+}
+div#message,div#error_message {
+	font-size: 10pt;
+	padding: 3pt;
+	margin-left: auto;
+	margin-right: auto;
+	font-weight: bold;
+	text-align: center;
+	width: 350px;
+	border: 1px solid black;
+	margin-bottom: 1em;
+}
+div#message {
+	background-color: #FFFF66;
+}
+div#error_message {
+	background-color: #FF9966;
+}
+
+
+/* Common classes */
+.center {
+	text-align: center;
+}
+.left {
+	text-align: left;
+}
+table.center {
+	margin-left: auto;
+	margin-right: auto;
+}
+
+/* Common status definitions */
+.header   { background-color: #bbbbbb; }
+.odd      { background: #eaeaea; }
+.even     { background: #eaeaea; }
+.ok, .up  { background-color:#9ed515; }
+.warning  { background: #FFDB58; padding: 5px; }
+.critical, .down { background: #FF5555; padding: 5px; }
+.unknown, .unreachable  { background: #FFF8DC; padding: 5px; }
+.bgwarning  { background: #eaeaea; }
+.bgcritical { background: #eaeaea; }
+.bgunknown  { background: #eaeaea; }
+.warningnopadding { background: #FFDB58 }
+.criticalnopadding { background: #FF5555 }
+
+.shortbubble {
+	text-shadow:none;
+	-webkit-box-shadow:inset 0 0 3px #111111;
+	-moz-box-shadow:inset 0 0 3px #111111;
+	box-shadow:inset 0 0 3px #111111;
+
+	padding:2px 3px 2px 3px;
+    -webkit-border-radius: 5px;
+	-moz-border-radius: 5px;
+    border-radius: 5px;
+}
+
+table.common td.ok,
+table.common td.up,
+table.common td.warning,
+table.common td.unknown,
+table.common td.critical,
+table.common td.up,
+table.common td.down,
+table.common td.unreachable,
+div.status_box_common {
+	color: #222222;
+	text-shadow:none;
+	-webkit-box-shadow:inset 0 0 3px #111111;
+	-moz-box-shadow:inset 0 0 3px #111111;
+	box-shadow:inset 0 0 3px #111111;
+
+	padding:4px 6px 4px 6px;
+    -webkit-border-radius: 5px;
+	-moz-border-radius: 5px;
+    border-radius: 5px;
+}
+
+/* Remove colours from summary */
+tr.summary .ok, tr.summary .warning, tr.summary .critical, tr.summary .unknown, tr.summary .up, tr.summary .down, tr.summary .unreachable {
+background-image: none;
+}
+
+td.enabled { background-color: #9ED515; padding: 0; }
+td.disabled { background-color: #FF5555; padding: 0; }
+td.warning { background-color: #FFDB58; padding: 0; }
+
+.summary_info {
+	font-size: 10pt;
+	margin-top: 2em;
+	border: 1px solid grey;
+}
+
+/* Hierarchy hostgroups status pages */
+/* action_box is made to look like the popup menus */
+div.action_box {
+	float: right;
+	font-size: 8pt;
+	text-align: left;
+	padding: 2pt;
+	padding-top: 3pt;	/* This is needed for IE6, otherwise top of title is chopped */
+	margin-right: 1em;
+}
+div.action_box span {
+	border: 1px solid;
+	padding-top: 2pt;
+	padding-left: 2pt;
+	padding-right: 2pt;
+	padding-bottom: 1pt;
+	font-weight: bold;
+}
+div.action_box div.options {
+	border: 1px solid #333399;
+	background-color: #ccccff;
+	padding: 2pt;
+	margin-top: 1pt;
+}
+div.summary_box {
+	float: right;
+	font-size: 8pt;
+	text-align: center;
+	width: 200px;
+}
+div.summary_box tr {
+	text-align: center;
+	background-color: #c4c7c2;
+}
+div.summary_box table {
+	border: 1px solid grey;
+	margin-left: auto;
+	margin-right: auto;
+}
+#optionsBar{
+	text-align: left;
+}
+#optionsBar h2 {
+	color: #ff0000;
+	font-size: 110%;
+	font-family: arial;
+	margin: 10px 10px 10px 10px;
+	font-weight: bold;
+}
+#optionsBar ul#tabs {
+	display: none;
+}
+#optionsBar ul {
+	margin: 0 0 0 0;
+	padding: 0 0 0 0;
+}
+#optionsBar li {
+	margin: 0px 10px 3px 10px;
+	padding: 2px;
+	list-style-type: none;
+	display: block;
+	width: 177px;
+}
+#optionsBar {
+	position: absolute;
+	width: auto;
+	height: auto;
+	top: 0px;
+	right: 1px;
+}
+#optionsTab {
+	float: left;
+	height: 137px;
+	width: 20px;
+}
+#optionsContents {
+	float: left;
+	overflow: hidden !important;
+	width: 300px;	/* Match with optionsContentInner */
+	min-height: 137px;
+}
+#optionsContents, #optionsContents form.page {
+	border: 2px solid #e1e1e1;
+	background: url(../images/menubox_bg.gif);
+	padding: 5px;
+}
+#optionsContentsInner {
+	width: 300px;
+	font-size: 8pt;
+}
+#optionsContentsInner span {
+	font-size: 7pt;
+}
+#optionsContentsInner label {
+	display: block;
+	text-align: right;
+	float: left;
+	width: 75px;	/* Funny number because IE6 needs it, otherwise thresholds fields pushes button over */
+}
+#optionsContentsInner .input, #optionsContentsInner hr {
+	margin-left: 78px;
+}
+span.bnav {
+}
+div.graph_top_label {
+	border-left: 1px solid #666666;
+	padding-left: 2px;
+	border-right: 1px solid #666666;
+	padding-right: 2px;
+	border-top: 1px solid #666666;
+	background: #ffffcc;
+	margin-top: 10px;
+	margin-bottom: 0;
+	width: 300px;
+	height: 20px;
+}
+div.graph_top_label span {
+	display: block;
+	padding-top: 4px;
+	font-weight: bold;
+}
+
+div#infobox {
+	margin: 0;
+	padding-left: 2px;
+    line-height: 24px;
+	float: left;
+
+    /* Need to set a width so that the breadcrumbs do not fall onto next line if too long */
+    width: 778px;
+
+    /*
+	display: block;
+    margin-top: 3px;
+    */
+}
+div#infobox ul li {
+	margin-left: 0;
+	padding-left: 2px;
+	list-style: none;
+	display: inline;
+}
+div#infobox1 ul li:before {
+	content: "\0020 \0020 \0020 \00BB \0020";
+}
+div#infobox ul {
+	font-size: 8pt;
+	margin: 0;
+    padding: 0;
+}
+
+div#infobox a:visited {
+	font-size: 11px;
+	font-family: Verdana, Arial, Helvetica;
+	color: #313030;
+}
+
+
+div#hh {
+	background-color: white;
+}
+div#hh h1 {
+	margin-top: 2em;
+	text-align: center;
+	font-size: 12pt;
+	color: #333333;
+}
+div#hh h2 {
+	margin-top: 2em;
+	text-align: center;
+	font-size: 10pt;
+	color: #333333;
+}
+table.common {
+	border: none;
+	margin-left: auto;
+	margin-right: auto;
+}
+table.common th {
+	font-size: 10pt;
+}
+table.common th, .summary_box th {
+	color: #3e3e3e;
+	background: #d6d6d6;
+	padding: 5px;
+}
+table.hh th, .summary_box th {
+	text-align: center;
+}
+table.hh tr.handled_unhandled th {
+    font-size:7pt;
+    min-width:80px;
+}
+table.hh th.heading {
+	width: 200px;
+}
+/* Set default to centered, and use .left to left align if needed. This should be tr, not td, otherwise CSS will choose this td */
+table.common tr {
+	font-size: 8pt;
+}
+table.hh tr {
+	text-align: center;
+}
+table.configuration {
+	width: 100%;
+}
+table.configuration tr {
+	text-align: left;
+}
+table.common td, .summary_box td {
+	color: #222222;
+	padding: 3px;
+}
+table.hh tr.summary td.heading {
+	font-weight: bold;
+}
+table.hh tr.summary td {
+	padding: 3px;
+	background: #d6d6d6;
+}
+table.hh tr.summary, table.hh tr.summary span {
+	background-color: #C1C0C0;
+}
+table.hh th a:link, table.hh th a:visited, table.hh th a:hover, table.hh th a:active {
+	color: #3e3e3e;
+	background-color:transparent;
+	font-weight: bold;
+}
+table.hh td a:link, table.hh td a:visited, table.hh td a:hover, table.hh td a:active {
+	color: #222222;
+}
+table.hh td.buttons {
+	width: 16px;
+}
+
+/* Opsview viewport pages */
+div#viewport {
+	/* From login page - should be global? */
+	font-family: Tahoma, Arial, Helvetica, Verdana, sans-serif;
+	margin-left: 20px;
+	margin-right: 20px;
+	margin-top: 5px;
+	text-align: left;
+}
+div#viewport table tr {
+    font-size: 14px;
+}
+div#viewport h1 {
+	text-align: center;
+}
+
+div#viewport table.narrow {
+	width: 70%;
+	margin-left: auto;
+	margin-right: auto;
+}
+div#viewport table {
+	width: 100%;
+    border-collapse: separate;
+    border-spacing: 1px;
+}
+/* Due to IE7 not treating floats correctly, need a table within viewports to hold the contextual menu */
+/* But strangely, performance viewport doesn't need this inner table - don't understand why */
+div#viewport table.layout {
+    background-color: transparent;
+    background-image: none;
+    border-spacing: 0;
+}
+div#viewport table.layout td {
+    padding: 0;
+    border: 0;
+}
+
+div#viewport table, div#viewport td.none, div#viewport td.hidden, table.hh td.hidden {
+	background-color: white;
+    background-image: none;
+}
+div#viewport td.hidden {
+    border: 0;
+}
+div#viewport th {
+    text-align: left;
+	padding-right: 8px;
+	padding-left: 8px;
+	font-size: 14px;
+}
+div#viewport td {
+	padding: 8px;
+}
+
+div#viewport .output, div#viewport .acknowledgement, div#viewport .duration { font-size: 12px; }
+div#viewport .service_status { text-align: center; }
+div#viewport .output a:visited, div#viewport .output a:link { text-decoration: underline; }
+
+div#viewport tr.new {
+	border-top: solid 1pt;
+}
+
+div#viewport a:link { text-decoration: none; color: #333333; }
+div#viewport a:visited { text-decoration: none; color: #333333; }
+div#viewport a:hover { text-decoration: underline; }
+div#viewport a:active { text-decoration: underline; }
+
+div#viewport .shield {
+    position: relative;
+    /* Move spacing a bit to allow badges to appear */
+    padding-right: 24px;
+    padding-left: 24px;
+}
+div#viewport .handledbadge {
+    position: absolute;
+    top: 0px;
+    right: 0px;
+    width: 20px;
+    height: 20px;
+    background: url("../images/handled.png") no-repeat 0 0;
+}
+
+/* Moves Filter box to left */
+div.perftop .dataTables_filter {
+    float: left;
+    text-align: left;
+}
+
+div#viewport div#htmltagcloud {
+  margin: auto;
+}
+div#viewport div#htmltagcloud a {
+  line-height: 2;
+  margin: 3px;
+}
+div#viewport div#htmltagcloud a.ok {
+  background: #9ED515;
+}
+div#viewport div#htmltagcloud a.critical {
+  background: #FF5555;
+  color: #C1C0C0;
+}
+div#viewport div#htmltagcloud a.warning {
+  background: #FFDB58;
+}
+div#viewport div#htmltagcloud a.unknown {
+  background: #FFF8DC;
+}
+
+div#hierarchy_diagram div {
+	border: 2px solid #490a73;
+	margin: 1px;
+	padding: 5px;
+	float: left;
+	min-width: 100px;
+	cursor: move;
+    display: block;
+}
+
+div#hierarchy_diagram #hostgroup_1 {
+    clear: both;
+}
+div#hierarchy_diagram span.button {
+	margin-left: 0.5em;
+	cursor: pointer;
+}
+div#hierarchy_diagram div div {
+	border: 1px solid #490a73;
+}
+div#hierarchy_diagram div div div {
+	border: 1px solid #c08de8;
+}
+div#hierarchy_diagram div div div div {
+	border: 1px solid #da8d0f;
+}
+div#hierarchy_diagram div.row {
+	border: none;
+	padding: 0;
+	margin: 0;
+	clear: both;
+}
+div#hierarchy_diagram img { padding-left: 4px }
+
+div.row span.hhleftlink {
+	padding-top: 3px;
+    padding-bottom: 7px;
+	float: left;
+	text-align: left;
+}
+
+div.row span.hhmenuicon {
+	float: left;
+	margin-left: 8px;
+}
+
+.align_left {
+    float: left;
+}
+
+.float_right {
+    float: right;
+}
+
+
+div#hh_header {
+margin-bottom: 3px;
+margin-top: 3px;
+}
+div#filter_box {
+    float: left;
+    font-size: 8pt;
+    line-height: 26px;
+    padding-left: 10px;
+    /*
+    background-color: #DBDBDB;
+    border: solid 1px #333333;
+    padding: 2px;
+    max-width: 200px;
+    */
+}
+
+.popup_content {
+	font-family: verdana, helvetica, arial, sans-serif;
+	font-size: 12px;
+	margin: 5px;
+	padding: 5px;
+	border: thin solid #333333;
+	background: #eaeaea;
+}
+
+.popup_content hr {
+	height: 1px;
+	width: 90%;
+	border-top: 1px dashed #333333;
+	color: #333333;
+}
+
+.popup_content form {
+	margin-top: 10px;
+}
+
+.popup_content textarea {
+	border: thin solid #333333;
+    padding: 2px;
+}
+
+.mid {
+	text-align: center;
+}
+
+/* About page has a nice font */
+div.infobox {
+	font-size: 12px;
+    text-align: center;
+}
+div.infobox h2 {
+    text-align: center;
+}
+div.infobox div.licence {
+	width: 85%;
+    margin: auto;
+}
+
+#welcometext {
+    padding: 1em;
+}
+#welcomeimage {
+    float: right;
+    width: 461px;
+}
+#welcomefloat {
+    clear: both;
+}
+
+table.systembox {
+    margin: auto;
+    padding-bottom: 1em;
+}
+table.systembox thead td, table.systembox tfoot td {
+    background: #d6d6d6;
+    color: #3E3E3E;
+    padding: 5px;
+}
+table.common #for_float {
+    position: relative;
+}
+table.common #info_nub {
+    position: absolute;
+    top: 0;
+    right: 0;
+}
+table.systembox #critical {
+    color: #ff5555;
+}
+table.systembox #warning {
+    color: #ffdb58;
+}
+
+div#time_report {
+	text-align: center;
+}
+
+/* Avoid using tables for form layout */
+div.row {
+  clear: both;
+  padding-top: 2px;
+}
+
+div.spacer {
+  clear: both;
+	padding-top: 5px;
+}
+
+div#debug_info_link {
+	color: blue;
+	font-weight: normal;
+	text-decoration: none;
+	display: inline;
+	cursor: pointer;
+}
+div#debug_info_link:hover, div#debug_info_link:active {
+	color: red;
+	background: white;
+}
+div#debug_info {
+	width: 90%;
+	border-top: 1px dashed #499aff;
+	color: red;
+}
+
+/* Tabs */
+.panel {
+	clear: both;
+	display: none;
+}
+.panel.active-tab-body {
+	display: block;
+}
+
+#tabs {
+	height: 40px;
+	list-style: none;
+	margin-bottom: 0;
+	margin-left: 125px;	/* Form indentation */
+	padding-left: 0;
+}
+#tabs li {
+	float: left;
+}
+/* This is effectively an inactive tab */
+#tabs li.empty {
+	padding: 5px 8px;
+	margin-right: 6px;
+	background-color: #DCDCDC;
+	text-decoration: none;
+	color: #999999;
+}
+#tabs a {
+	float: left;
+	padding: 5px 8px;
+	margin-right: 6px;
+	background: #9e90aa;
+	border: 1px solid #4d0d78;
+	text-decoration: none;
+	color: #4d0d78;
+}
+#tabs a.active-tab {
+	background: #3e2155;
+	border: 1px solid #4d0d78;
+	color: #ffffff;
+}
+
+.nowrap {
+	white-space: pre;
+}
+
+/* autocomplete sections */
+div.autocomplete {
+    z-index: 200;
+	position: absolute;
+	width: auto !important;
+	background-color: white;
+	border: 1px solid #b4b4b4;
+	margin: 0px;
+	padding: 3px;
+	font-size: 11px;
+	color: #490a73;
+}
+div.autocomplete ul {
+	list-style-type: none;
+	margin: 0px;
+	padding: 0px;
+	text-indent: 0;
+}
+div.autocomplete ul li.selected {
+	color: #ffffff;
+	background-color: #f8b756;
+}
+div.autocomplete ul li {
+	list-style-type: none;
+	display: block;
+	margin: 0;
+	padding: 2px;
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+/* ODW stuff - will need to get migrated to opsview-reports web app */
+.smaller {
+	font-size: 80%;
+}
+
+/* Forms from admin.css - start migration to this stylesheet */
+/* form.page is the class you should be using for general forms used by all users */
+form.admin,.fakeform, .fakeform_status, form.page {
+    margin: 0 auto;
+}
+
+fieldset {
+    background-color: #eaeaea;
+	border: thin solid #333333;
+    padding-top: 16px;
+}
+
+fieldset legend {
+    background-color: #FFFFFF;
+    border: thin solid #333333;
+    padding: 5px;
+}
+/* Forms for status page should go to 100% so the table below matches */
+/* Setting 100% doesn't work, so do the reverse */
+form.admin, .fakeform, form.page {
+    width: 800px;
+}
+
+form.page select.objects {
+	width: 50%;
+	display: block;
+}
+form.admin hr, form.page hr, form.page select.objects {
+	margin-left: 125px;
+}
+form.admin hr {
+    margin-bottom: 12px;
+}
+
+form.admin input[type="text"], form.admin select, form.admin textarea, form.admin input[type="password"] {
+	background-color: #ffffff;
+	color: #313030;
+	border: 1px solid #989797;
+	padding: 3px;
+    margin-bottom: 0;
+}
+
+form.admin label.fields {
+    margin-top: 5px;
+}
+
+/* Collapsible sections */
+form.admin h3 {
+	margin-left: 110px;
+	text-align: left;
+	width: 150px;
+}
+form.admin h3 a {
+	text-decoration: none;
+	color: #333333;
+}
+form.admin h4, form.page h4 {
+	margin-left: 125px;
+	margin-bottom: 5px;
+}
+label.fieldslistnext, label.fieldslist, .fields, form.page label {
+	display: block;
+	text-align: right;
+	float: left;
+	width: 120px;
+}
+label.fieldslistnext {
+    clear: left;
+}
+label.fieldslistnext, label.fieldslist, label.fields, form.page label {
+	padding-right: 5px;
+	padding-top: 1px;
+	padding-bottom: 14px;
+	font-size: x-small;
+}
+label.fields, form.page label {
+	font-weight: bold;
+}
+span.code {
+	font-family: "courier new", courier, monospace;
+}
+br.clear {
+	clear: left;
+}
+div.fieldblock {
+    margin-left: 125px;
+}
+div.fieldblock br {
+    clear: right;
+}
+.buttonSubmit, div.formButtons {
+	margin-left: 125px;
+	margin-top: 1em;
+	margin-bottom: 1em;
+}
+div.formButtons input {
+  outline: none;
+  cursor: pointer;
+  margin: 0 2px;
+  text-align: center;
+  -webkit-border-radius: .5em;
+  -moz-border-radius: .5em;
+  border-radius: .5em;
+  border: solid 1px #555;
+  color: #fff;
+  background: #3e2155;
+  font: bold 12px Verdana, Arial, Helvetica, sans-serif;
+  padding: .4em 1.5em .42em;
+  display: inline-block;
+  zoom: 1;
+  vertical-align: baseline;
+}
+
+h1 a:link, h1 a:visited { text-decoration: none; color: #333333; }
+h1 a:hover { text-decoration: underline; }
+h1 a:active { text-decoration: underline; }
+
+/* Need this to stop validation failures on name and url to wrap onto different lines */
+div.managementurl_record div {
+	display: inline;
+}
+div.hostattributes_record, div.hostattributes_record div.argsfield, div.hostattributes_record div.argsfield div {
+    clear: both;
+}
+
+div.hostattributes_record, div.hostattributes_record div.argsfield {
+    margin: 10px 0;
+}
+
+
+/* There is a weird visual glitch in IE6&7 where if you go to the help pages
+ * the link stays underlined. Sigh */
+a:link.fields, a:link.subtle { text-decoration: none; color: #333333; }
+a:visited.fields, a:visited.subtle{ text-decoration: none; color: #333333; }
+a:hover.fields, a:hover.subtle { text-decoration: underline; }
+a:active.fields, a:active.subtle  { text-decoration: underline; }
+
+a.action:link, a.action:visited, div.action, span.action, div#snmpwalk div span {
+	color: #4d0d78;
+	font-weight: normal;
+	text-decoration: none;
+	display: inline;
+	cursor: pointer;
+}
+a.action:hover, div.action:hover, span.action:hover, div#snmpwalk div span:hover { color: white; background: #4d0d78; }
+
+/* Used for service_options which are not chosen yet */
+tr.unselected {
+	color: #555555;
+}
+.tickbox {
+	cursor: pointer;
+}
+/* This is temporary since servicenames cannot be changed easily, get perfnames to match */
+label.perfname {
+	color: #333333;
+}
+
+
+/* DM additions all for header area 19-10-09 */
+
+
+#wrapper_nav {
+	width: 100%;
+	height: 76px;
+    position: fixed;
+    z-index: 9999;
+    min-width:876px;
+}
+
+#wrapper_footer {
+    clear: both;
+    color: #999999;
+    font-size: 11px;
+    padding: 0px 0px 10px 0px;
+}
+
+#wrapper_footer p {
+    margin: 0.1em;
+}
+
+#nav_left {
+	overflow: hidden;
+	height: 40px;
+}
+
+#nav_right {
+	float: right;
+	padding: 10px 20px 0px 0px;
+}
+
+#tab_left, #tab_right {
+	position: absolute;
+	height: 67px;
+	top: 0;
+	background: #ffffff;
+}
+#tab_right {
+	background: url("../images/nav_right.gif") repeat scroll 0 -14px transparent;
+	right: 0;
+	width: 20px;
+}
+#tab_left {
+    background: url("../images/nav_left.gif") repeat scroll 0 -14px transparent;
+    left: 0;
+    width: 20px;
+}
+#tab_icon {
+    position: absolute;
+    top: -2px;
+    left: 22px;
+}
+
+#status, .statusline a:visited, .statusline a:active {
+	color: #cbcbcb;
+}
+#status {
+	clear: both;
+	text-align: right;
+	padding: 3px 20px 0px 0px;
+	font-family: Verdana, Arial, Helvetica;
+	font-size: 11px;
+}
+
+#nav {
+	padding: 10px 0px 0px 100px;
+}
+
+#page_bar {
+    /*
+    height: 30px;
+    padding-right: 40px;
+    */
+}
+#page_header {
+	color: #490a73;
+	font-size: 8pt;
+    line-height: 24px;
+    height: 24px;
+    /* Hide text that is too long */
+    overflow: hidden;
+}
+#toolbar_container a:hover img {
+    background-color: #C2CBE0;
+    border: 1px solid #0A246A;
+    padding: 1px;
+    cursor: pointer;
+
+    -webkit-border-radius: 5px;
+    -moz-border-radius: 5px;
+    border-radius: 5px;
+}
+#toolbar_container a img {
+    background-color: #fff;
+    border: 1px solid #fff;
+    padding: 1px;
+    cursor: default;
+
+    -webkit-border-radius: 5px;
+    -moz-border-radius: 5px;
+    border-radius: 5px;
+}
+
+
+
+
+#toolbar_container {
+    /*
+	width: 100%;
+	background: url("../images/subpage_bg.gif") repeat scroll 0 -33px transparent;
+    top: 95px;
+	height: 35px;
+	overflow: hidden;
+    */
+
+    background-color: #FFFFFF;
+    height: 26px;
+    padding-top: 2px;
+
+    position: relative;
+    min-width:876px;
+    padding-left: 30px;
+    padding-right: 30px;
+}
+#toolbar_container img.action_icon {
+    width: 20px;
+    height: 20px;
+}
+#list_pager_containter {
+    padding-left: 10px;
+    float: right;
+}
+
+#list_pager_containter p {
+    line-height: 26px;
+    margin: 0;
+}
+
+caption.action_icons {
+    text-align:left;
+    caption-side:top;
+}
+#toolbar_events_filter_summary {
+    float: left;
+    padding-left: 10px;
+    padding-right: 10px;
+    line-height: 26px;
+}
+#toolbar_events_extra_options {
+    float: left;
+}
+
+#toolbar_events_extra_options div {
+    float: left;
+    padding-left: 5px;
+}
+
+#toolbar_events_export_form {
+    float: right;
+    padding-left: 10px;
+}
+#toolbar_events_export_form select {
+    margin: 0;
+}
+
+.toolbar_filter_bar,
+.toolbar_filter_bar div {
+    float: left;
+    padding-left: 5px;
+    line-height: 26px;
+}
+#toolbar_monitoringserver_staus_link_container {
+    float: left;
+    padding-left: 5px;
+}
+#toolbar_reorder_container {
+    float: left;
+    padding-left: 5px;
+}
+
+#toolbar_options_button_container {
+    float: left;
+    padding-left: 5px;
+}
+#toolbar_action_icons {
+    float: left;
+    padding-left: 5px;
+}
+#toolbar_search_container {
+    float: right;
+}
+
+#toolbar_search_filter_form {
+    float: right;
+    padding-left: 10px;
+}
+
+#psearch_form {
+    display: inline;
+}
+#wrapper_page_nav {
+    /*
+	width: 100%;
+	background: url("../images/subpage_bg.gif") repeat scroll 0 -33px transparent;
+    top: 95px;
+	height: 35px;
+    padding-top: 2px;
+    */
+	height: 25px;
+    padding-top: 2px;
+    position: relative;
+    min-width:876px;
+	overflow: hidden;
+    padding-left: 30px;
+}
+#wrapper_page_nav.noheader {
+    top: 0;
+}
+#wrapper_top_push_down {
+    /* This is wrapper_nav + wrapper_page_nav height + wrapper_page_nav padding-top */
+    height: 76px;
+}
+#wrapper_top_push_down.noheader {
+    height: 34px; /* wrapper_page_nav height + wrapper_page_nav padding-top */
+}
+
+.middle {
+	vertical-align: middle;
+}
+
+.secs {
+	color: #3f3f3f;
+}
+
+/* top nav */
+
+
+#nav ul {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+#nav li {
+	display: inline;
+	padding: 0px;
+	margin: 0px;
+}
+
+#nav li.alt {
+	display: inline;
+	padding: 0px 0px 0px 19px;
+	margin: 0px;
+}
+
+#nav img {
+	float: left;
+}
+.topnavlink {
+	font-family: Arial, Verdana, Helvetica;
+	font-size: 11px;
+	font-weight: bold;
+    cursor: pointer;
+	color: #ffffff;
+	float: left;
+	display: block;
+	margin-top: 4px;
+	padding-bottom: 4px;
+}
+
+form.hsearch {
+	margin: 0px;
+}
+
+input.hsearch, form#psearch_form input {
+	color: #888888;
+	background: #ffffff;
+	font-size: 11px;
+	border: 1px solid #3f3f3f;
+	padding: 3px;
+	vertical-align: middle;
+	margin-right: 5px;
+}
+form#psearch_form input {
+	border: 1px solid #c0c0c0;
+}
+
+
+
+/* Links */
+
+
+a.statusline:link {
+	color: #da8d0e;
+	text-decoration: none;
+}
+
+a.statusline:visited {
+	color: #da8d0e;
+	text-decoration: none;
+}
+
+a.statusline:hover {
+	color: #da8d0e;
+	text-decoration: underline;
+}
+
+
+/* Drop down menu */
+
+.selectedanchor {
+	color: #da8d0e;
+    text-decoration: none;
+	font-family: Arial, Verdana, Helvetica;
+	font-size: 11px;
+	font-weight: bold;
+}
+.anylinkcss {
+	position: fixed;
+	left: 0;
+	top: 0;
+	width: 150px;
+	display: none;
+}
+.anylinkcss, #action_menu {
+    border: 1px solid #c2c2c2;
+    border-bottom-width: 0;
+    -moz-box-shadow: 0px 5px 15px #aaa;
+    -webkit-box-shadow: 0px 5px 15px #aaa;
+    box-shadow: 0px 5px 15px #aaa;
+	line-height: 18px;
+	z-index: 100;
+}
+
+.anylinkcss ul {
+	margin: 0;
+	padding: 0;
+	list-style-type: none;
+}
+
+.anylinkcss ul li a {
+    /* Width is menu width (150px) subtract padding (5+5px) */
+	width: 140px;
+}
+.anylinkcss ul li a, #action_menu a {
+	display: block;
+	border-bottom: 1px solid #c2c2c2;
+    color: #490a73;
+    background: transparent url(../images/greySemiTransparentMenu.png) repeat;
+    padding: 3px 5px;
+	text-decoration: none;
+}
+
+.anylinkcss a:hover, #action_menu a:hover {
+	background: url(../images/bg_nav_drop2.gif);
+	color: white;
+}
+#preloadimgs div {
+    background-repeat: no-repeat;
+    background-position: -1000px -1000px;
+}
+#preloadimgs1 { background-image: url(../images/bg_nav_drop.gif); }
+#preloadimgs2 { background-image: url(../images/bg_nav_drop2.gif); }
+
+/* View Options */
+
+#view_options {
+    z-index: 101;
+    min-width: 80px;
+}
+
+div#message_box {
+	font-size: 14px;
+	font-weight: bold;
+	font-family: Verdana, Arial, Helvetica;
+	color: #3E2155;
+	text-align: center;
+	background: url('../images/info_box_bg.png') bottom no-repeat;
+	width: 248px;
+	padding: 20px 20px 20px 20px;
+	border-top: 1px solid #e8e8e8;
+    position: fixed;
+    right: 20px;
+    top: 98px;
+    z-index: 1;
+}
+
+div#message_box a.small {
+    font-size: 10px;
+}
+
+.clickable {
+    cursor: pointer;
+}
+.hoverable {
+    cursor: pointer;
+}
+
+span.button_scale {
+	background: transparent url('../images/button_bg_end.gif') no-repeat top left;
+    font-family: Arial, Verdana, Helvetica;
+	display: block;
+	float: left;
+	font-weight: bold;
+	font-size: 12px;
+	line-height: 18px;
+	height: 26px;
+	padding-left: 9px;
+	color: #490a73;
+}
+
+span.button_scale span {
+	background: transparent url('../images/button_bg.gif') no-repeat top right;
+	display: block;
+	padding: 4px 12px 4px 2px;
+}
+
+.buttonwrapper {
+	overflow: hidden;
+	width: 100%;
+    cursor: pointer;
+}
+
+
+div.field {
+    display: block;
+    clear: both;
+    padding-top: 5px;
+}
+
+div.calendar {
+    z-index: 1000;
+}
+
+table#aboutbox {
+	background-color: #f1f1f1;
+	-moz-border-radius: 10px;
+	-webkit-border-radius: 10px;
+}
+div#thirdpartycomponents table {
+    margin: auto;
+}
+div#thirdpartycomponents img {
+    height: 50px;
+}
+table#interface_table {
+    font-size: 8pt;
+}
+
+.field_row {
+    width: 100%;
+    display: block;
+    margin-bottom: 8px;
+}
+
+div.opsview-timeline-output {
+ margin: 2px 0;
+ padding: 4px;
+}
+.markdown p {
+ margin: 0;
+}
+.markdown a {
+ text-decoration: underline;
+}
+
+div.helpNote {
+-moz-border-radius: 9px;
+-webkit-border-radius: 9px;
+background-color: #FAF1E6;
+border: 2px solid #D98D35;
+margin-left: 125px;
+margin-top: 0;
+margin-bottom: 0;
+padding: 5px 5px 5px 5px;
+}
+div.helpNote h3 {
+margin: 0;
+padding: 2px 0 5px 0;
+width: 100%;
+}
+div.helpNote a {
+text-decoration: underline;
+}
+
+div#toolbar_hostlimit_summary {
+    float: right;
+}
+div#toolbar_hostlimit_summary p {
+    line-height: 26px;
+    margin: 0;
+}
+div#toolbar_hostlimit_summary.error p a { color: red }
+
+div.status_box_common a {
+	color:#313030;
+}
+
+table.common td.ok,
+div.status_box_ok {
+	background:#9ed515;
+}
+
+table.common td.warning,
+div.status_box_warning {
+	background:#FFDB58;
+}
+
+table.common td.unknown,
+div.status_box_unknown {
+	background:#FFF8DC;
+}
+
+table.common td.critical,
+div.status_box_critical {
+	background:#ff5555;
+}
+
+table.common td.up,
+div.status_box_up {
+	background:#9ed515;
+}
+
+table.common td.down,
+div.status_box_down {
+	background:#ff5555;
+}
+
+table.common td.unreachable,
+div.status_box_unreachable {
+	background: #FFF8DC;
+}
+
+
+#login_main h2.mid {
+    color: #3e2155;
+}
+
+.bggrey10 {
+    background-color: #eaeaea;
+}
+
+.colorgrey30 {
+    color: #c1c0c0;
+}
+.fbold {
+    font-weight: bold;
+}
+
+#social_media {
+    position: relative;
+    margin: 100px 50px 0 0;
+    float: right;
+    width: 500px;
+    height: 60px;
+}
+
+#social_media .social_media_container {
+    float: right;
+    margin-left: 20px;
+}
+
+button.moveButtons {
+    margin-top: 2px;
+    margin-bottom: 2px;
+}
+
+a.bannerlink {
+    background: url("../../images/lozenge-button-left.png") no-repeat scroll left bottom transparent;
+    color: #FFFFFF !important;
+    display: inline-block;
+    font-size: 1.2em;
+    font-weight: bold;
+    height: 44px;
+    line-height: 44px;
+    overflow: hidden;
+    padding-left: 30px;
+    text-decoration: none !important;
+    width: auto;
+}
+
+a.bannerlink span {
+    background: url("../../images/lozenge-button.png") no-repeat scroll right bottom transparent;
+    display: block;
+    height: 44px;
+    padding-right: 30px;
+}
+a.bannerlink:hover {
+    background: url("../../images/lozenge-button-left.png") no-repeat scroll left top transparent;
+}
+a.bannerlink:hover span {
+    background: url("../../images/lozenge-button.png") no-repeat scroll right top transparent;
+}
+
+.service_exec_plugin_window {
+
+}
+
+.service_exec_plugin_header {
+    clear: both;
+}
+
+.service_exec_plugin_name {
+    font-weight: bold;
+    padding-right: 1em;
+}
+
+.service_exec_plugin_args {
+    width: 100%;
+}
+
+.service_exec_plugin_args input {
+    width: 100%;
+}
+
+#service_exec_plugin_button_wrapper {
+    margin: 1em 0;
+    float: right;
+    clear: both;
+}
+
+.service_exec_plugin_output {
+    clear: both;
+    width: 100%;
+    height: 265px;
+    overflow: auto;
+    font-family: "courier new", courier, monospace;
+    margin: 5px 0 0 0;
+    padding: 0;
+    white-space: pre;
+    border: thin solid #c1c0c0;
+    background: #333;
+    color: #fff;
+}
+
+.service_exec_arguments_hidden {
+    font-style: italic;
+}
+
+.service_exec_readonly_args {
+    font-style: italic;
+}
+
+div#viewport table.layout td {
+    padding: 3px;
+}
+
+div#ov-context-menu {
+	display: none;
+	width: 250px;
+	background: #ebe8ee;
+	padding: 5px;
+	border: thin solid #9e90aa;
+	-webkit-border-radius: 5px;
+	-moz-border-radius: 5px;
+	border-radius: 5px;
+	text-align: left;
+	font-size: 8pt;
+}
+
+.reloadtimingtitle {
+	font-weight: bold;
+	text-align: right;
+}

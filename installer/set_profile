@@ -1,0 +1,83 @@
+#!/bin/bash
+# 
+#
+# set_profile
+#
+#	Run as nagios user
+#	Do this here rather than in packages because slaves also need this checked
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+die() { echo $1; exit 1; }
+
+# must be run as nagios user
+id | grep nagios 1>/dev/null 
+if [ $? -ne 0 ]; then
+	die "Must be run as nagios user"
+fi
+
+devserver=
+
+while getopts ':dDvh' KEY $*
+do
+    case $KEY in
+      d) devserver=true;;
+      ?) echo "FATAL: Unknown option $OPTARG"; exit 1;;
+    esac
+done
+
+cd $HOME
+
+# create a local profile that will not be lost on an upgrade if it doesn't exist
+if [ ! -f /usr/local/nagios/etc/profile_local ]; then
+    echo "# Local profile - this file will not be changed in an upgrade" > /usr/local/nagios/etc/profile_local
+fi
+
+# make sure line is added to all files that exist, not just the first found
+# to fix problem with sudo on .deb based systems
+done=
+for FILE in .bashrc .bash_profile .bash_login .kshrc .profile
+do
+  if [ -f $FILE ]; then
+    if [ `grep -c nagios/bin/profile $FILE` -lt 1 ]; then
+      echo "test -f /usr/local/nagios/bin/profile && . /usr/local/nagios/bin/profile" >> $FILE
+    fi
+    if [[ -n "$devserver" ]] && [ `grep -c nagios/bin/profile_dev $FILE` -lt 1 ]; then
+      echo "test -f /usr/local/nagios/bin/profile_dev && . /usr/local/nagios/bin/profile_dev" >> $FILE
+    fi
+    done=1
+  fi
+done
+
+if [ "x$done" != "x" ]; then
+    exit 0
+fi
+
+# No shell files exist (possible in Debian because adduser --system doesn't create)
+for FILE in .profile .bashrc
+do
+  echo >> $FILE
+  echo "test -f /usr/local/nagios/bin/profile && . /usr/local/nagios/bin/profile" >> $FILE
+
+  if [[ -n "$devserver" ]]; then
+    echo "test -f /usr/local/nagios/bin/profile_dev && . /usr/local/nagios/bin/profile_dev" >> $FILE
+  fi
+done

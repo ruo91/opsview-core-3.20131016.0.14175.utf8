@@ -1,0 +1,58 @@
+#!/bin/bash
+#
+# Small check wrapper script to gather debug information 
+# Just insert before script to be debugged in nrpe.cfg
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+script=$1
+shift 1
+args=$@
+
+if [ ! -f $script ]; then
+    echo "CRITICAL: Cannot find $script"
+    exit 2
+fi
+
+if [ ! -x $script ]; then
+    echo "CRITICAL: Cannot execute $script"
+    exit 2
+fi
+
+$script $args
+exit_code=$?
+
+if [ $exit_code == 0 ]; then
+    exit $exit_code
+fi
+
+# exit code was non-zero so rerun and capture all output
+scriptname=$(basename $script)
+exec 1>/tmp/${scriptname}_debug.$$
+exec 2>&1
+
+echo "script=$script"
+echo "args=$args"
+echo "previous exit_code=$exit_code"
+echo "date=$(date)"
+echo
+
+$script -v -v -v $args
+echo "rerun exit_code=$?"
+
+# use stored code frmo first invocation
+exit $exit_code

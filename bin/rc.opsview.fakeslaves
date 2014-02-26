@@ -1,0 +1,18 @@
+#!/bin/sh
+# Swap this out for rc.opsview to get a fake slave
+# Just need to support reload
+
+case "$1" in
+
+	reload|force-reload)
+		echo "reload"
+		;;
+
+	*)
+		echo "Fake slave!"
+		exit 1
+		;;
+
+esac
+  
+# End of this script

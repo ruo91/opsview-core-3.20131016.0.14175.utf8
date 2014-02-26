@@ -1,0 +1,109 @@
+#!/usr/bin/perl -w
+#
+# SYNTAX:
+# 	check_app_memory
+#
+# DESCRIPTION:
+# 	Checks the total rss memory footprint from Unix process table under a given application process name
+#
+# AUTHORS:
+#    Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use strict;
+use warnings;
+
+use lib '/usr/local/nagios/perl/lib';
+use lib '/usr/local/nagios/lib';
+
+use Nagios::Plugin;
+use Proc::ProcessTable;
+
+my $VERSION = '0.01';
+
+my $np = Nagios::Plugin->new(
+    usage =>
+      qq{Usage: %s [-w <n>] [-c <n>] <application process name to check memory usage>},
+    shortname => 'APPLICATION MEMORY',
+    version   => $VERSION,
+    blurb =>
+      q{Check the sum total of rss memory in Kb of an application from Unix process table},
+);
+
+$np->add_arg(
+    spec => 'warning|w=s',
+    help => qq{-w, --warning=INTEGER
+    Warning limit to alert over (default: 1000)},
+    default => 1000,
+);
+
+$np->add_arg(
+    spec => 'critical|c=s',
+    help => qq{-c, --critical=INTEGER
+    Critical limit to alert over (default: 5000) },
+    default => 5000,
+);
+
+$np->getopts;
+
+my $process = shift;
+
+if ( !$process ) {
+    $np->nagios_die( 'Application process not provided' );
+}
+
+my $t = new Proc::ProcessTable;
+
+my $app_mem       = 0;
+my $process_found = 0;
+
+foreach my $p ( @{ $t->table } ) {
+    if ( $process =~ m/$p->{"fname"}/ ) {
+        $app_mem += $p->{"rss"} / 1024;
+        $process_found = 1;
+    }
+}
+
+if ( !$process_found ) {
+    $np->nagios_die( 'Application process not found in the process table' );
+}
+
+$np->add_perfdata(
+    label    => 'mem usage Kb',
+    value    => $app_mem,
+    critical => $np->opts->critical,
+    warning  => $np->opts->warning,
+);
+
+my $nagios_return_code = $np->check_threshold($app_mem);
+my $message            = "Memory usage within given Kb threshold";
+
+if ( $nagios_return_code == 1 ) {
+    $message = "Memory usage above given warning Kb threshold";
+}
+elsif ( $nagios_return_code == 2 ) {
+    $message = "Memory usage above given critical Kb threshold";
+}
+elsif ( $nagios_return_code == 3 ) {
+    $message = "Memory usage unknown";
+}
+
+$np->nagios_exit(
+    return_code => $nagios_return_code,
+    message     => $message,
+);

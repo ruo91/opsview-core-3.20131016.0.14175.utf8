@@ -1,0 +1,38 @@
+#!/bin/bash
+# 
+#
+# preinstall script
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+# NOTE: THIS DOES NOT APPEAR TO BE INVOKED. CLEANUP HERE!!!!!
+
+SCRIPT=$0
+SCRIPTDIR=$(cd ${SCRIPT%/*} 1>/dev/null ; pwd)
+SCRIPTNM=${SCRIPT##*/}
+
+die() { echo $1; exit 1; }
+
+# ensure the nagios user exists
+./create_nagios_users || die "Cannot create nagios user"
+
+# ensure all the prereq's are sorted for the nagios user
+su - nagios -c "PERL5LIB=/usr/local/nagios/perl/lib $SCRIPTDIR/check_reqs" || die "Requisite failure"

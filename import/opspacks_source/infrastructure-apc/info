@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.infrastructure_apc
+VERSION=1.0
+ALIAS=Infrastructure - APC
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

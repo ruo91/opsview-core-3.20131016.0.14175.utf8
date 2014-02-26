@@ -1,0 +1,191 @@
+#!/bin/sh
+# postinst script for opsview-core
+#
+# see: dh_installdeb(1)
+#
+# AUTHORS:
+#   Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+set -e
+
+# Include debconf
+. /usr/share/debconf/confmodule
+
+# summary of how this script can be called:
+#        * <postinst> `configure' <most-recently-configured-version>
+#        * <old-postinst> `abort-upgrade' <new version>
+#        * <conflictor's-postinst> `abort-remove' `in-favour' <package>
+#          <new-version>
+#        * <deconfigured's-postinst> `abort-deconfigure' `in-favour'
+#          <failed-install-package> <version> `removing'
+#          <conflicting-package> <version>
+# for details, see http://www.debian.org/doc/debian-policy/ or
+# the debian-policy package
+#
+
+die() {
+  echo $1
+  exit 1
+}
+
+# This function gets the root password for mysql
+# This should not be DB specific, but would rather not change this just yet
+db_getroot() {
+  proceed=0
+
+  db_subst opsview-core/db_rootpass db $1
+  db_subst opsview-core/db_rootpass dbhost $2
+  while [ ${proceed} -eq 0 ]; do
+    # Only prompts on db_go
+    # This works quite nicely because $RET will be empty, which is default mysql root
+    # so a fresh install should just work
+    db_get opsview-core/db_rootpass
+    mysql_root_pw=$RET
+
+    set +e
+    # Try to connect
+    echo exit | mysql -u root --password="${mysql_root_pw}" -h "$2" > /dev/null 2>&1
+    retval=$?
+    set -e
+
+    if [ ${retval} -ne 0 ]; then
+      echo "Failed to connect to mysql - requesting root password" >&2
+      db_reset opsview-core/db_rootpass
+      db_input critical opsview-core/db_rootpass
+      db_go || return 1;
+    else
+      proceed=1
+    fi
+  done
+
+  return ${retval};
+}
+
+install_tasks() {
+
+  # Get mysql root password
+  db_getroot opsview localhost
+
+  # Setup all the permissions for mysql
+  if ! su - nagios -c "/usr/local/nagios/bin/db_mysql -u root -p '${mysql_root_pw}'" > /dev/null ; then
+    die "Problem with db_mysql, exiting install"
+  fi
+
+  for db in opsview runtime; do
+    echo "Creating database $db"
+    su - nagios -c "/usr/local/nagios/bin/db_$db db_install" || die "Cannot create db $db"
+  done
+
+  # Remove passwords from package management
+  db_clear
+  db_unregister opsview-core/db_rootpass
+}
+
+upgrade_tasks() {
+  su - nagios -c '/usr/local/nagios/installer/upgradedb.pl' || die "Cannot upgradedb"
+
+  echo "Sending new files to slaves..."
+  # send2slaves to update slaves with new opsview code
+  su - nagios -c '/usr/local/nagios/bin/send2slaves'
+
+  echo "Updating plugin help information - there maybe warnings here but they can be ignored"
+  su - nagios -c '/usr/local/nagios/bin/populate_db.pl'
+}
+
+set_opsview_db_passwords() {
+  mysql_opsview_pw=`perl -I/usr/local/nagios/perl/lib -MData::UUID -i -e '$ug = new Data::UUID; print $ug->to_string( $ug->create )'`
+  su - nagios -c "/usr/local/nagios/installer/create_initial_opsview_conf ${mysql_opsview_pw}" || die "Cannot set initial opsview conf file"
+}
+
+set_profile() {
+  su - nagios -c /usr/local/nagios/installer/set_profile
+  return 0
+}
+
+opsview_postinst() {
+  # NOSTART so Debian will startup daemon itself
+  if [ -f /tmp/opsview4_upgrade_config_generation.lock ] ; then
+    echo "Upgrading to Opsview 4 - you must activate Opsview now before reloading"
+  else
+    echo "Generating configs"
+    su - nagios -c 'OPSVIEW_NOSTART=true /usr/local/nagios/bin/rc.opsview gen_config' || die "Error generating configuration"
+  fi
+
+  # If it exists, run the Opsview post install script
+  echo "Running common postinstall tasks"
+  test -f /usr/local/nagios/installer/postinstall_root && /usr/local/nagios/installer/postinstall_root 3>/dev/null
+  test -f /usr/local/nagios/installer/postinstall && su - nagios -c '/usr/local/nagios/installer/postinstall' 3>/dev/null
+  return 0
+}
+
+case "$1" in
+    install)
+    ;;
+
+    upgrade)
+    ;;
+
+    # We now create databases altogether. It used to be checked individually, but
+    # that is different from all the instructions we have for other platforms
+    configure)
+
+        set_profile || die "Cannot set_profile"
+    
+        # Flag to determine if opsview already exists
+        # This is required because otherwise deinstallation of a package and then
+        # reinstallation will wipe all the current data, which is dangerous
+        opsview_upgrade=1
+        echo "Checking if Opsview database already exists"
+
+        if su - nagios -c "/usr/local/nagios/bin/db_opsview db_exists" 2>/dev/null ; then
+            echo "Opsview DB already exists"
+        else
+            echo "No Opsview DB found"
+            opsview_upgrade=0
+        fi
+
+        if [ $opsview_upgrade -eq 0 ] ; then
+            echo "New install - creating databases with random passwords"
+            set_opsview_db_passwords
+            install_tasks
+        else
+            echo "Upgrading all databases"
+            upgrade_tasks
+        fi
+        opsview_postinst
+        rm -f /usr/local/nagios/var/upgrade.lock
+    ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+
+    ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+    ;;
+esac
+
+# dh_installdeb will replace this with shell code automatically
+# generated by other debhelper scripts.
+
+#DEBHELPER#
+
+exit 0

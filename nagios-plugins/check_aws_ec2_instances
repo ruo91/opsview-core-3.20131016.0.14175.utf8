@@ -1,0 +1,136 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#   Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+use strict;
+use warnings;
+use Nagios::Plugin;
+use Net::Amazon::EC2;
+use Data::Dump qw(dump);
+
+my $np = Nagios::Plugin->new(
+    shortname => "AMAZON EC2 INSTANCES",
+    usage =>
+      "%s --accesskey=key --secretkey=key [-w min:max] [-c min:max] [-r region]",
+    blurb => "Checks number of instances in Amazon EC2",
+    extra =>
+      "\nEXAMPLE\nIf -w 3:6 -c 2:9 and number of instances=2, will raise warning alert.\nAny value within warning and critical will be OK",
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help =>
+      "-w, --warning=min:max. Warning if current number of instances are outside warning range",
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help =>
+      "-c, --critical=min:max. Critical if current number of instances are outside critical range",
+);
+
+#mandatory argument access key
+$np->add_arg(
+    spec     => "accesskey|k=s",
+    help     => "-k, --accesskey=AWSAccessKey for authorisation",
+    required => 1,
+);
+
+#mandatory argument secret access key
+$np->add_arg(
+    spec     => "secretkey|s=s",
+    help     => "-s, --secretkey=AWSSecretAccessKey for authorisation",
+    required => 1,
+);
+
+#optional argument, regions
+$np->add_arg(
+    spec => "region|r=s",
+    help =>
+      "-r, --region=amazon ec2 region to be monitored. By default region set to 'us-east-1' ",
+    required => 0,
+);
+
+$np->getopts;
+my $access_key        = $np->opts->accesskey;
+my $secret_access_key = $np->opts->secretkey;
+my $extra_options     = {};
+if ( $np->opts->region ) {
+    $extra_options->{region} = $np->opts->region;
+}
+if ( $np->opts->verbose ) {
+    $extra_options->{debug} = 1;
+}
+
+my $ec2 = Net::Amazon::EC2->new(
+    AWSAccessKeyId  => $access_key,
+    SecretAccessKey => $secret_access_key,
+    %$extra_options,
+);
+
+#it is array of all running instances
+my $running_instances;
+eval { $running_instances = $ec2->describe_instances; };
+if ($@) {
+    $np->nagios_exit( UNKNOWN, "$@" );
+}
+
+#API return error message as HASH if authorisation failed
+if ( ref($running_instances) eq 'Net::Amazon::EC2::Errors' ) {
+    $np->nagios_exit( UNKNOWN,
+        "Authorisation failed - check access keys: "
+          . $running_instances->{errors}->[0]->{message}
+    );
+}
+my @index_list;
+my @instance_details;
+foreach my $reservation (@$running_instances) {
+    foreach my $instance ( $reservation->instances_set ) {
+        my $i_type  = $instance->instance_type;
+        my $i_state = $instance->instance_state->name;
+
+        unshift( @instance_details,
+            $instance->instance_id
+              . "(instance_type=>$i_type, instance_state=>$i_state)"
+        );
+
+        #appending the each instance index at index list
+        if ( $i_state eq "running" ) {
+            unshift( @index_list, $instance->instance_id );
+        }
+    }
+}
+my $value = scalar @index_list;
+
+#print "instances : ", scalar @index_list . "\n";
+my %index_list = map { ( $_ => 1 ) } @index_list;
+
+my $code = $np->check_threshold(
+    check    => $value,
+    warning  => $np->opts->warning,
+    critical => $np->opts->critical,
+);
+
+#adding performance data
+$np->add_perfdata(
+    label => 'running_instances',
+    value => $value,
+);
+$np->nagios_exit( $code, "Total running instances=$value" );

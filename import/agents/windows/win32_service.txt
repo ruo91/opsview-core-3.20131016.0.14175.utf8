@@ -1,0 +1,5 @@
+NRPE_NT Plugin, Service, GX Networks, Stephen Strudwick
+
+usage: service_nrpe_nt.exe "service name,service name,..." Do not include unnecesary white space it will not be removed
+
+example: service_nrpe_nt.exe "Event Log,Messenger"

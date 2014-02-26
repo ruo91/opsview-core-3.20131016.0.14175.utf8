@@ -1,0 +1,104 @@
+#!/usr/bin/perl
+#
+# Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+# This is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This software is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Opsview; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use warnings;
+use strict;
+use lib "/usr/local/nagios/perl/lib";
+use lib "/usr/local/nagios/lib";
+use lib "/usr/local/nagios/etc";
+
+use Opsview::Config;
+use Getopt::Long qw(:config no_ignore_case bundling no_auto_abbrev);
+
+my %options = (
+    'verbose|v' => 0,
+    'debug:+'   => 0,
+);
+
+GetOptions( \%options, keys(%options) ) || die "Invalid options", $/;
+
+my $db = shift;
+
+if ( !$db || $db !~ m/(?:Runtime|Opsview)/i ) {
+    die( "Database must be one of Opsview or Runtime\n" );
+}
+
+$db = ucfirst($db);
+
+eval "require $db";
+die $@ if $@;
+
+my $dbh = $db->db_Main;
+
+my $sql;
+my $sth;
+my @tables;
+
+$sth = $dbh->prepare( "SHOW TABLE STATUS" );
+$sth->execute;
+
+my %tables;
+my %limits = (
+    'tinyint'            => 127,
+    'tinyint unsigned'   => 255,
+    'smallint'           => 32767,
+    'smallint unsigned'  => 65535,
+    'mediumint'          => 8388607,
+    'mediumint unsigned' => 16777215,
+    'int'                => 2147483647,
+    'int unsigned'       => 4294967295,
+    'bigint'             => 9223372036854775807,
+    'bigint unsigned'    => 18446744073709551615,
+);
+
+while ( my $row = $sth->fetchrow_hashref() ) {
+    my $table = $row->{name};
+
+    $sql = "SHOW COLUMNS FROM $table WHERE extra LIKE '%auto_increment%'";
+    my $sth1 = $dbh->prepare($sql);
+    $sth1->execute || die 'Failed to run SQL';
+    my $row1 = $sth1->fetchrow_arrayref;
+
+    next if ( !$row1 );
+
+    my $col = $row1->[0];
+    next if ( !$col );
+    my $type = $row1->[1];
+    $type =~ s/\(.*?\)//;
+
+    $sth1->finish;
+
+    $sql  = "SELECT MAX($col) FROM $table";
+    $sth1 = $dbh->prepare($sql);
+    $sth1->execute || die 'Failed to run SQL';
+    $row1 = $sth1->fetchrow_arrayref;
+    my $max_id = $row1->[0];
+
+    next if ( !$max_id );
+
+    my $pct = sprintf( "%0.2f", ( $max_id / $limits{$type} ) * 100 );
+    if ( $pct > 75 ) {
+        print "** WARNING: $db.$table: type='$type' max $col = $max_id ($pct%)",
+          $/;
+    }
+    else {
+        if ( $options{verbose} ) {
+            print "$db.$table: type='$type' max $col = $max_id ($pct%)", $/;
+        }
+    }
+}

@@ -1,0 +1,16 @@
+{
+      "name" : "PROCESS",
+      "id" : "6",
+      "servicechecks" : [
+         {
+            "ref" : "/rest/config/servicecheck/92",
+            "name" : "Processes"
+         },
+         {
+            "ref" : "/rest/config/servicecheck/93",
+            "name" : "Windows Processes"
+         }
+      ],
+      "uncommitted" : 0,
+   }
+

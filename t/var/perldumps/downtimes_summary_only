@@ -1,0 +1,3 @@
+{
+  summary => { allrows => 13, num_hosts => 4, num_services => 9, rows => 13 },
+}

@@ -1,0 +1,48 @@
+{
+"summary": {
+   "page" : 1,
+   "allrows" : "103",
+   "totalrows" : "20",
+   "rows" : "6",
+   "totalpages" : 4
+   },
+   "list" : [
+      {
+         "ref" : "/rest/config/servicecheck/45",
+         "name" : "Check Loadavg",
+         "id" : "45",
+         "description" : "Checks Load Average"
+      },
+      {
+         "ref" : "/rest/config/servicecheck/44",
+         "name" : "Check Memory",
+         "id" : "44",
+         "description" : "Checks Memory Utilisation"
+      },
+      {
+         "ref" : "/rest/config/servicecheck/36",
+         "name" : "CORBA",
+         "id" : "36",
+         "description" : "Checks TCP port 683"
+      },
+      {
+         "ref" : "/rest/config/servicecheck/35",
+         "name" : "IIOP",
+         "id" : "35",
+         "description" : "Checks TCP port 535"
+      },
+      {
+         "ref" : "/rest/config/servicecheck/9",
+         "name" : "Jakarta Tomcat",
+         "id" : "9",
+         "description" : "Checks Tomcat on TCP port 8080"
+      },
+      {
+         "ref" : "/rest/config/servicecheck/34",
+         "name" : "JBoss",
+         "id" : "34",
+         "description" : "Checks TCP port 8080"
+      }
+   ]
+
+}

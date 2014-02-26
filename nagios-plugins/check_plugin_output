@@ -1,0 +1,99 @@
+#!/usr/bin/perl
+### BEGIN OPSVIEW INFO
+# Macros: HOSTNAME,SERVICEDESC
+### END OPSVIEW INFO
+# SYNTAX:
+#   check_plugin_output {actual plugin call}
+#
+# DESCRIPTION:
+#   Runs the plugin with parameters and logs stdout and stderr
+#   to a log file before returning results to Nagios
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    Inspired by capture_plugin.pl by Wolfgang Wagner at
+#    http://www.waggy.at/nagios/capture_plugin.txt
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+use IPC::Open3;
+
+unless (@ARGV) {
+    print "Need plugin arguments to run\n";
+    exit 3;
+}
+
+if ( $ARGV[0] eq "-h" || $ARGV[0] eq "--help" ) {
+    print <<EOF;
+
+check_plugin_output
+
+This provides a wrapper around a Nagios plugin and logs both stdin
+and stdout so that you can diagnose errors. Only use during the 
+troubleshooting.
+
+Logs will be written to /tmp/check_plugin_output.log
+
+EOF
+
+    exit 0;
+}
+
+my @CMD_ARGS = @ARGV;
+if ( $CMD_ARGS[0] !~ m%^/% ) {
+    $CMD_ARGS[0] = "/usr/local/nagios/libexec/" . $CMD_ARGS[0];
+}
+my $log_file = "/tmp/check_plugin_output.log";
+
+my ( $wrt, $rdr );
+my $out = "";
+my $pid = open3( $wrt, $rdr, undef, @CMD_ARGS );
+waitpid $pid, 0;
+my $original_return_code = $? >> 8;
+my $return_code          = $original_return_code;
+if ( $return_code > 3 ) {
+    $return_code = 2;
+}
+
+{
+    local $/ = undef;
+    $out = <$rdr> if $rdr;
+}
+
+unless ( open LOG, ">>", $log_file ) {
+    print "Cannot open logfile";
+    exit 3;
+}
+my $hostname    = $ENV{NAGIOS_HOSTNAME}    || "";
+my $servicename = $ENV{NAGIOS_SERVICEDESC} || "";
+print LOG ( scalar localtime(time) ) . "
+hostname = $hostname
+servicedesc = $servicename
+cmd = @CMD_ARGS
+output = $out
+original return code = $original_return_code
+return code = $return_code
+------
+";
+close LOG;
+
+print $out;
+exit $return_code;

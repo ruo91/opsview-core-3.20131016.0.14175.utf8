@@ -1,0 +1,221 @@
+#!/bin/bash
+# $Id: setup_cpan 2564 2007-06-19 16:27:29Z ton $
+#
+# Script:
+#   setup_cpan
+#
+# Usage:
+#   from command line, run by hnd at nagios install time
+#
+# Options:
+#   -v   - print version and exit
+#   -h   - print help text and exit
+#   -d   - print debug output while running the script
+#   -u <url>[,...]  - urllist parameter to use
+#   -r <file> - file to get SVN repository from for the install
+#   -p <dif> - directory to install into for packaging purposes
+#
+# Parameters:
+#   N/A
+#
+# Purpose:
+#   Initialise CPAN config file.  Must be run as nagios user.
+#
+# Processing:
+#
+# Dependencies:
+#   Installed and working perl
+#
+# Limitations:
+#
+# Enhancements:
+#
+# Notes:
+#
+# Authors and Copyright:
+#    Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    This software is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+############################################################################
+PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/usr/ccs/bin:/usr/sfw/bin:/opt/sfw/bin
+
+VERSION=$(
+	echo '$Revision: 0.01 $ ($Date: 2007-06-19 17:27:29 +0100 (Tue, 19 Jun 2007) $)' | \
+	sed -e 's/$Revision: //' \
+	-e 's/$Date: //' \
+	-e 's/ \$//g'
+)
+
+SCRIPT=${0}
+SCRIPTDIR=$(cd ${SCRIPT%/*} 1>/dev/null ; pwd)
+SCRIPTNM=${0##*/}
+
+# After getting correct path, set remaining directories relative to here, 
+# assuming this script is running out of the bin directory
+BIN=${SCRIPTDIR%/*}/bin
+ETC=${SCRIPTDIR%/*}/etc
+LIB=${SCRIPTDIR%/*}/lib
+LOG=/var/local/$SCRIPTNM
+PERLBASEDIR=/usr/local/nagios/perl
+
+DATE=$(date '+%d%m%y')
+TIME=$(date '+%H%M%S')
+
+# leave -d (debug) as a hidden option
+USAGE="Usage: ${SCRIPTNM} [vh] <params> [...]"
+
+# Sort all command line options
+while getopts ':dDvhu:p:r:' KEY $*
+do
+	case $KEY in
+		v)	echo "$SCRIPTNM: $VERSION" ; exit 0 ;;
+		d)	DEBUG="low";;
+		D)	DEBUG="high"; set -vx;;
+    u)  URLLIST=$OPTARG;;
+    p)  DESTDIR=$OPTARG;;
+    r)  URLLIST=$(cat $OPTARG);;
+
+		# Note - have to do it this way as case in ksh cannot "fall through"
+		h)	echo "$USAGE" ; exit 0 ;;
+		?)	echo "FATAL: Unknown option $OPTARG"; echo "$USAGE" ; exit 0 ;;
+	esac
+done
+
+# Remove all options catered for above from command line
+shift $(($OPTIND - 1))
+
+# some useful functions
+die()  { echo "$@" ; exit 1; }
+warn() { echo "$@" ; }
+
+# Start script here
+
+warn "==============================================================="
+warn "WARNING: this process will remove any previous user CPAN config"
+warn "==============================================================="
+sleep 5
+
+# remove all existing CPAN stuff in the $HOME/.cpan area
+rm -rf $HOME/.cpan
+
+if [[ ! -d $HOME/.cpan/CPAN ]]; then
+  mkdir -p $HOME/.cpan/CPAN
+fi
+
+# if DESTDIR is set, assume packaging stage, if not then assume
+# installing normally
+
+# make sure this is run as nagios user
+if [[ "$LOGNAME" != "nagios" ]]; then
+  if [[ "x$DESTDIR" = "x" ]]; then
+    die "-p <dir> not used to specify destination directory"
+  else
+    MMDESTDIR="DESTDIR=$DESTDIR"
+    MBDESTDIR="--destdir $DESTDIR"
+    warn ""
+    warn "Setting up for packaging by installing into $DESTDIR"
+    warn ""
+  fi
+
+#  if [[ -d $PERLBASEDIR/lib ]]; then
+#    die "Cannot safely package perl modules on a server with $PERLBASEDIR/"
+#  fi
+else
+  if [[ "x$PERL5LIB" == "x" ]] && [[ "x$DESTDIR" = "x" ]]; then
+    die "PERL5LIB is not set - profile not correctly set up"
+  fi
+  warn ""
+  warn "Setting up for installing to $PERLBASEDIR"
+fi
+
+# if the URLLIST is empty, put in a reasonable default
+if [[ -z "$URLLIST" ]]; then
+  URLLIST="http://svn.hub.altinity/minicpan/trunk/minicpan"
+fi
+
+# check URLLIST to see if its fully qualified.  If not, poke in what 
+# is required
+if ! echo $URLLIST | grep "^http:" 1>/dev/null; then
+	# if URLLIST doesn't start with a number or it contains the word 'HEAD'
+	# then its an internal release, else its public
+	if echo $URLLIST | grep -e "^[a-zA-Z]" -e "HEAD" > /dev/null; then
+		URLLIST="http://svn.hub.altinity/minicpan/$URLLIST/minicpan"
+	else
+		URLLIST="http://cpan.opsview.org/$URLLIST"
+	fi
+fi
+
+# initialise config module so it will be used; set up defaults 
+if [[ "$USER" == "root" ]]; then
+	config=Config.pm
+else
+	config=MyConfig.pm
+fi
+if [[ ! -f $HOME/.cpan/CPAN/$config ]]; then
+  cat > $HOME/.cpan/CPAN/$config <<-!EOF!
+\$CPAN::Config = {
+
+  'cpan_home' => q[$HOME/.cpan],
+
+  'ncftpget' => q[],
+  'prerequisites_policy' => q[follow],
+  'scan_cache' => q[never],
+  'build_cache' => q[20],
+
+  'urllist' => [q[$URLLIST]],
+
+  'makepl_arg' => q[$MMDESTDIR PREFIX=$PERLBASEDIR LIB=$PERLBASEDIR/lib INSTALLDIRS=site INSTALLSITEMAN1DIR=$PERLBASEDIR/man1 INSTALLSITEMAN3DIR=$PERLBASEDIR/man3],
+
+  'mbuild_arg' => q[],
+  'mbuild_install_arg' => q[],
+  'mbuild_install_build_command' => q[./Build],
+  'mbuildpl_arg' => q[$MBDESTDIR --install_base $PERLBASEDIR --install_path lib=$PERLBASEDIR/lib],
+};
+1;
+__END__
+!EOF!
+fi
+
+# initialise CPAN module
+# do it this way and not directly via perl becausse CPAN module has radically
+# changed internally, but externally should be the same and this will catch 
+# any missing options
+perl -I$HOME/.cpan -MCPAN -e 'shell' <<!EOF!
+no
+exit
+!EOF!
+
+# second pass so that the config file can be changed (note this may write to a different 
+# config file, so respecify everything to be on safe side
+{
+  # Normal options
+  echo "o conf prerequisites_policy follow"
+  echo "o conf scan_cache never"
+  echo "o conf build_cache 20"
+#  echo "o conf make_install_arg $MMDESTDIR SITEPREFIX=$PERLBASEDIR"
+#  echo "o conf makepl_arg '$MMDESTDIR PREFIX=$PERLBASEDIR INSTALLDIRS=site LIB=$PERLBASEDIR/lib'"
+  echo "o conf makepl_arg '$MMDESTDIR PREFIX=$PERLBASEDIR LIB=$PERLBASEDIR/lib INSTALLDIRS=site INSTALLSITEMAN1DIR=$PERLBASEDIR/man1 INSTALLSITEMAN3DIR=$PERLBASEDIR/man3'"
+
+  # Module::Build options
+  echo "o conf mbuild_arg ''"
+  echo "o conf mbuild_install_arg ''"
+  echo "o conf mbuild_install_build_command ./Build"
+  echo "o conf mbuildpl_arg '$MBDESTDIR --install_base $PERLBASEDIR --install_path lib=$PERLBASEDIR/lib'"
+  echo "o conf ncftpget ''"
+  echo "o conf commit"
+  echo "o conf"
+  echo "exit"
+} | perl -I$HOME/.cpan -MCPAN -e 'shell'

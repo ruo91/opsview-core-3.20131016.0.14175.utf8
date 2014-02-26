@@ -1,0 +1,56 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+# 	refresh_status
+#
+# DESCRIPTION:
+#	This will allow a passive check to be resubmitted, so that re-notifications
+#	will occur.
+# 	Execute this as a freshness check: set the service with check_freshness=1,
+#	freshness_threshold=notification_interval*interval_length and
+#	check_command=this script
+#	Will return the current state, based on	the environment variables.
+#	Requires Nagios 2.x.
+#	Inspired by Check_Service_Status by Gerd Mueller on http://www.nagiosexchange.org
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+
+my ( $output, $perfdata, $status_code );
+
+# This decides whether it is a host or a service problem
+if ( $ENV{NAGIOS_SERVICEDESC} ) {
+    $output      = $ENV{NAGIOS_SERVICEOUTPUT};
+    $perfdata    = $ENV{NAGIOS_SERVICEPERFDATA};
+    $status_code = $ENV{NAGIOS_SERVICESTATEID};
+}
+else {
+    $output      = $ENV{NAGIOS_HOSTOUTPUT};
+    $perfdata    = $ENV{NAGIOS_HOSTPERFDATA};
+    $status_code = $ENV{NAGIOS_HOSTSTATEID};
+}
+
+$output .= "|" . $perfdata if ( $perfdata ne "" );
+print $output, "\n";
+
+exit $status_code;

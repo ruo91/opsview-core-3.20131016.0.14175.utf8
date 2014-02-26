@@ -1,0 +1,278 @@
+#!/usr/bin/perl -w
+#
+# SYNTAX:
+# 	check_opsview_update
+#
+# DESCRIPTION:
+# 	Checks the latest version of Opsview and compares it to the version
+# 	currently running.
+#
+# AUTHORS:
+#    Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use strict;
+use warnings;
+
+use lib '/usr/local/nagios/perl/lib';
+use lib '/usr/local/nagios/lib';
+
+use Nagios::Plugin;
+use Opsview::Utils::UpdateChecker;
+
+my $VERSION = '0.01';
+
+my $updater = Opsview::Utils::UpdateChecker->new();
+
+my $np = Nagios::Plugin->new(
+    usage =>
+      "Usage: %s [--donotsenddata] [--showstats=level] [--proxy <url>] \n   Checks for Opsview updates over HTTP using "
+      . $updater->{hostname},
+    shortname => "UPDATES",
+    version   => $VERSION,
+);
+
+$np->add_arg(
+    spec => "updatetype|u=s",
+    help => qq{-u, --updatetype=<update_type>
+   Deprecated.},
+    default => 'm',
+);
+
+$np->add_arg(
+    spec => "os|o=s",
+    help => qq{-o, --os=<os>
+   Deprecated.},
+    required => 0,
+);
+
+$np->add_arg(
+    spec => "donotsenddata",
+    help => qq{--donotsenddata
+   Do not send any data back regardless of systempreferences setting },
+    default => 0,
+);
+
+$np->add_arg(
+    spec => "showstats=i",
+    help => qq{--showstats=LEVEL
+   Prints all the stats data to stdout for viewing in system preference pane. 1=basic stats, 2=full stats },
+    default => 0,
+);
+
+$np->add_arg(
+    spec => "proxy|p=s",
+    help => qq{-p, --proxy <url>
+   Uses a proxy server at the given url to access the web. When omitted uses proxy settings from enviroment variables
+   in the form http_proxy=<url>. },
+    default => '',
+);
+
+$np->getopts;
+
+if ( !( $np->opts->updatetype =~ /^[pmM]$/ ) ) {
+    $np->nagios_exit(
+        return_code => 3,
+        message     => "invalid option for updatetype",
+    );
+}
+
+my $include_advanced_stats = 0;
+if ( $np->opts->showstats ) {
+    if ( $np->opts->showstats == 2 ) {
+        $include_advanced_stats = 1;
+    }
+}
+else {
+    if ( !$np->opts->donotsenddata ) {
+        $include_advanced_stats = 1;
+    }
+}
+
+$updater->set_options(
+    {
+        include_advanced_stats => $include_advanced_stats,
+        proxy                  => $np->opts->proxy,
+        timeout                => $np->opts->timeout,
+    }
+);
+
+my $stats = $updater->collect_stats();
+
+if ($include_advanced_stats) {
+
+    # no perfdata at this time as graphs are not produced for anything
+    # run less often than hourly.  To be sorted out in a later release.
+    if (0) {
+        $np->add_perfdata(
+            label => 'num_hosts',
+            value => $stats->{num_hosts},
+        );
+
+        $np->add_perfdata(
+            label => 'num_services',
+            value => $stats->{num_services},
+        );
+
+        $np->add_perfdata(
+            label => 'num_contacts',
+            value => $stats->{num_contacts},
+        );
+
+        $np->add_perfdata(
+            label => 'num_slaves',
+            value => $stats->{num_slaves},
+        );
+
+        $np->add_perfdata(
+            label => 'num_slavenodes',
+            value => $stats->{num_slavenodes},
+        );
+
+        $np->add_perfdata(
+            label => 'num_keywords',
+            value => $stats->{num_keywords},
+        );
+
+        $np->add_perfdata(
+            label => 'num_logins',
+            value => $stats->{num_logins},
+        );
+
+        $np->add_perfdata(
+            label => 'num_snmptraps',
+            value => $stats->{snmptraps},
+        );
+    }
+}
+
+# if showstats
+if ( $np->opts->showstats ) {
+    my ( $k, $v, $i );
+    foreach my $k ( sort keys %$stats ) {
+        my $v = $stats->{$k};
+        if ( ref($v) eq 'ARRAY' ) {
+            foreach $i ( @{$v} ) { print "$k=$i\n"; }
+        }
+        else {
+            print "$k=$v\n";
+        }
+    }
+    exit(0);
+}
+
+my $local_opsview_version = $updater->stats->{version};
+
+# Stop actual send if development. Check after showstats
+if ( !$local_opsview_version ) {
+    $np->nagios_exit(
+        return_code => 0,
+        message     => 'Development instance - not checking for updates',
+    );
+}
+
+# validate local opsview version format
+if ( !( $local_opsview_version =~ m/^([0-9]+\.){3}[0-9]+/ ) ) {
+    $np->nagios_exit(
+        return_code => 3,
+        message =>
+          "Local opsview version $local_opsview_version is not in a recognised format",
+    );
+}
+
+my $survey_info_sent = 0;
+
+# if have user permission add stats to stats to send
+if ($include_advanced_stats) {
+    $survey_info_sent = 1;
+}
+
+# post to update site
+$updater->post_stats();
+
+# check returned
+unless ( $updater->is_success ) {
+
+    # Special error cases
+    # 500 = Server error. LWP::UserAgent uses this for no network connection or bad hostname.
+    # $response->message handles the output
+    # Messages seen:
+    #   * Can't connect to 192.168.101.144:80 (No route to host)
+    #   * Can't connect to downloads444.opsview.org:80 (Bad hostname)
+    if ( $updater->code == 500 ) {
+        $np->nagios_exit(
+            return_code => 1,
+            message     => $updater->message . ". Please review your settings",
+        );
+    }
+
+    if ( $np->opts->verbose >= 2 ) {
+        $_ = $updater->content;
+        s/\n.*//;
+        print "Response: $_\n";
+    }
+    $np->nagios_exit(
+        return_code => 0,
+        message     => "Cannot retrieve update information - will retry later",
+    );
+}
+
+# Check result
+my $result = $updater->result;
+
+if ( $result->{unknown_state_message} ) {
+    $np->nagios_exit(
+        return_code => 3,
+        message     => $result->{unknown_state_message},
+    );
+}
+
+# Finally compare versions
+my $opsview_version   = $result->{new_version};
+my $additional_output = $result->{additional_output};
+my $return_code       = $result->{return_code};
+
+# when update available
+my @outputs;
+unshift @outputs, "Survey information sent" if ($survey_info_sent);
+
+if ( $updater->newer_version_available ) {
+    unshift @outputs, "(running $local_opsview_version)";
+    unshift @outputs, "[ $additional_output ]" if $additional_output;
+    unshift @outputs, "New Opsview version $opsview_version is available";
+    $np->nagios_exit(
+        return_code => $return_code,
+        message     => join( " ", @outputs ),
+    );
+}
+
+if ( defined $additional_output ) {
+    unshift @outputs, $additional_output;
+    $np->nagios_exit(
+        return_code => $return_code,
+        message     => join( " ", @outputs ),
+    );
+}
+
+unshift @outputs, "Opsview version is $local_opsview_version.";
+
+# no updates available
+$np->nagios_exit(
+    return_code => 0,
+    message     => join( " ", @outputs ),
+);

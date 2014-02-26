@@ -1,0 +1,356 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+# 	migrate_rrds [-y] [-t]
+#
+# DESCRIPTION:
+# 	Migrates Opsview 2 style rrds to Opsview 3 style
+#	Will be invoked during the upgrade and run in the background
+# 	insert.pl will use the new style rrds if available
+#	Takes about 0.5 seconds to migrate the rrd, so possible loss of data during this window
+#	-y will run the migration. Otherwise, will just show you what it would do
+#	-t will run in test mode. Creates the files in /tmp/migrate_rrds and does not remove the original files
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use lib "/usr/local/nagios/lib", "/usr/local/nagios/perl/lib";
+use strict;
+use RRDs;
+use Opsview::Host;
+use Opsview::Servicecheck;
+use XML::LibXML;
+use Getopt::Std;
+
+# Cache all hostnames and servicenames for faster checking later
+my $hostnames = {};
+my $it        = Opsview::Host->retrieve_all;
+while ( my $h = $it->next ) {
+    $_ = $h->name;
+    $hostnames->{$_}++;
+}
+my $servicenames = {};
+$it = Opsview::Servicecheck->retrieve_all;
+while ( my $s = $it->next ) {
+    $_ = $s->name;
+    $servicenames->{$_}++;
+}
+
+my $opts = {};
+getopts( "ty", $opts );
+
+my $rrddir     = "/usr/local/nagios/var/rrd";
+my $temp_file  = "/tmp/migrate_rrds.dump";
+my $temp_xml   = "/tmp/migrate_rrds.xml";
+my $target_dir = $rrddir;
+if ( $opts->{t} ) {
+    $target_dir = "/tmp/migrate_rrds.test";
+    mkdir $target_dir unless ( -d $target_dir );
+}
+
+opendir D, "$rrddir" or die "Cannot open $rrddir: $!";
+my @files = grep /\.rrd$/, readdir D;
+closedir D;
+
+my $now = scalar localtime;
+print "$now: Starting RRD migration\n";
+my $rrd_migration_flag = "/usr/local/nagios/var/rrd_migration.flag";
+open F, "> $rrd_migration_flag" or die "Cannot create migration flag";
+close F;
+
+foreach my $file (@files) {
+    my ( $hostname, $servicename, $db ) =
+      ( $file =~ /^([^_]+)_([^_]+)_([^_]+)?\.rrd/ );
+    my $found = 0;
+    if ($hostname) {
+        $found = 1;
+    }
+    else {
+
+        # Try every host_service combination to find a match
+        LOOP: foreach my $h ( keys %$hostnames ) {
+            $h = urlencode($h);
+            foreach my $s ( keys %$servicenames ) {
+                $s = urlencode($s);
+
+                # With a known hostname/servicename, can check for anything after the _ as Nagiosgraph may fill that value in
+                if ( $file =~ /^${h}_${s}_(.*)?\.rrd$/ ) {
+                    $hostname    = $h;
+                    $servicename = $s;
+                    $db          = $1;
+                    $found       = 1;
+                    last LOOP;
+                }
+            }
+        }
+    }
+    unless ($found) {
+        print "ERROR: $file - cannot match to a hostname or servicename\n";
+        next;
+    }
+
+    my $time = scalar localtime;
+    print "$time: hostname=$hostname, servicename=$servicename, db=$db\n";
+
+    # Dump the rrd, save to file
+    my $rrd = RRDs::dump( "$rrddir/$file", $temp_file );
+    if (RRDs::error) {
+        die "Got error: " . RRDs::error;
+    }
+
+    # We ignore loading external dtds
+    my $parser = XML::LibXML->new( load_ext_dtd => 0 );
+    my $xpath = XML::LibXML::XPathContext->new;
+
+    my $original_rrd = $parser->parse_file($temp_file);
+
+    # Get the node from /rrd/rra onwards
+    my ($node_rra) = $xpath->findnodes( "//rrd/rra", $original_rrd );
+
+    # Get the list of ds
+    my @ds         = $xpath->findnodes( "//rrd/ds/name", $original_rrd );
+    my $thresholds = {};
+    my $index      = 1;
+    my $slice      = {};
+    my $index_to_thresholds = {};
+
+    # Foreach ds name
+    foreach my $element (@ds) {
+        my $dsname = $element->textContent;
+        $dsname =~ s/^\s+//;
+        $dsname =~ s/\s+$//;
+        my $metric = $dsname;
+
+        # If suffixed with _warn and _crit, add to a hash $thresholds->{dsname}->{warning|critical} = {ds index}
+        if ( $dsname =~ /^(.*)_(warn|crit)$/ ) {
+            $metric = $1;
+            my $level;
+            if ( $2 eq "warn" ) {
+                $level = "warning";
+            }
+            else {
+                $level = "critical";
+            }
+            $thresholds->{$metric}->{$level} = $index;
+            $index_to_thresholds->{$index} = $level;
+        }
+        else {
+            $thresholds->{$metric}->{index} = $index;
+        }
+        $index++;
+    }
+
+    # Due to name truncation, if any metric name is >=14 chars and contains thresholds but not an index
+    # value, then make a best guess on where the threshold stuff should be
+    foreach my $metric ( keys %$thresholds ) {
+        if ( length $metric == 14 ) {
+            if (
+                (
+                       exists $thresholds->{$metric}->{critical}
+                    || exists $thresholds->{$metric}->{warning}
+                )
+                && !exists $thresholds->{$metric}->{index}
+              )
+            {
+
+                # Find the first metric which is a substr and does not have a critical/warning value and merge in
+                foreach my $m ( keys %$thresholds ) {
+                    if (
+                           $metric ne $m
+                        && $metric eq substr( $m, 0, 14 )
+                        && !(
+                               exists $thresholds->{$m}->{warning}
+                            || exists $thresholds->{$m}->{critical}
+                        )
+                      )
+                    {
+                        $thresholds->{$m} = {
+                            %{ $thresholds->{$m} },
+                            %{ $thresholds->{$metric} }
+                        };
+                        delete $thresholds->{$metric};
+                        last;
+                    }
+                }
+            }
+        }
+    }
+
+    # Very hairy, all this pot stuff.
+    # Basically, XPath was taking too long to remove specific parts of data, so
+    # we use perl techniques to get the textContent for each database and merge it
+    # back in
+
+    # Foreach thresholds, work out which pot the rra/database/row/v should go into
+    my $pot_for_thresholds = {};
+    my $pot_for_metric     = {};
+    my $p                  = 0;
+    foreach my $metric ( keys %$thresholds ) {
+        $pot_for_metric->{$p} = $metric;
+        $slice->{ $thresholds->{$metric}->{index} } = $p++;
+        my $flag = 0;
+        if ( exists( $thresholds->{$metric}->{warning} ) ) {
+            $slice->{ $thresholds->{$metric}->{warning} } = $p;
+            $flag++;
+        }
+        if ( exists( $thresholds->{$metric}->{critical} ) ) {
+            $slice->{ $thresholds->{$metric}->{critical} } = $p;
+            $flag++;
+        }
+        if ($flag) {
+            $pot_for_metric->{$p} = $metric;
+            $pot_for_thresholds->{$p}++;
+            $p++;
+        }
+    }
+
+    # Create xml string for each database/row/v and stick in this list
+    my %temp_hash = map { ( $_ => 1 ) } values %$slice;
+    my @allpots = keys %temp_hash;
+
+    my $pot_to_index = {};
+    map { push @{ $pot_to_index->{ $slice->{$_} } }, $_ } keys %$slice;
+    my @pot;
+    my $num_ds = scalar @ds;
+    my $p      = 0;
+    foreach my $node_database (
+        $xpath->findnodes( "//rrd/rra/database", $original_rrd ) )
+    {
+        my %subpot = map { ( $_ => [] ) } values %$slice;
+        $pot[ $p++ ] = \%subpot;
+        my @pots = keys %subpot;
+
+        # We used to use $node_database->textContent, but at some point, this broke because spaces were not added
+        # to separate values. We now get the toString, which includes the XML, but we strip all XML to get an array of values
+        my $textContent = $node_database->toString;
+        while ( my $count = $textContent =~ s/<.*?>/ /g ) {1}
+        $textContent =~ s/^\s+//g; # Some blank space at beginning
+        my @values = split( /\s+/, $textContent );
+        map { push @{ $subpot{$_} }, "<row>" } @pots;
+        for ( my $i = 0; $i < scalar @values; $i++ ) {
+            my $m = ( $i % $num_ds ) + 1;
+            if ( $m == 1 && $i != 0 ) {
+                map { push @{ $subpot{$_} }, "</row><row>" } @pots;
+            }
+            push @{ $subpot{ $slice->{$m} } }, "<v>" . $values[$i] . "</v>";
+        }
+        map { push @{ $subpot{$_} }, "</row>" } @pots;
+    }
+
+    foreach my $i (@allpots) {
+        my $newrrd = $original_rrd->cloneNode(1);
+
+        # Rename {metric} to "value" or
+        # Rename _warn and _crit to warning_end and critical_end
+        # Need to do this before the deletions because otherwise the positional conditionals are no longer true
+        foreach my $j ( @{ $pot_to_index->{$i} } ) {
+            if ( exists $index_to_thresholds->{$j} ) {
+                my $level = $index_to_thresholds->{$j};
+                foreach my $node (
+                    $xpath->findnodes( "//rrd/ds[position()=$j]", $newrrd ) )
+                {
+                    my $new_name_node = XML::LibXML::Element->new( "name" );
+                    $new_name_node->appendText( " ${level}_end " );
+                    map { $node->replaceChild( $new_name_node, $_ ) }
+                      ( $node->getChildrenByTagName("name") );
+                }
+            }
+            else {
+                foreach my $node (
+                    $xpath->findnodes( "//rrd/ds[position()=$j]", $newrrd ) )
+                {
+                    my $new_name_node = XML::LibXML::Element->new( "name" );
+                    $new_name_node->appendText( " value " );
+                    map { $node->replaceChild( $new_name_node, $_ ) }
+                      ( $node->getChildrenByTagName("name") );
+                }
+            }
+        }
+
+        my $conditional =
+          join( " and ", map {"position()!=$_"} @{ $pot_to_index->{$i} } );
+
+        # Delete the irrelevant ds parts and the database data
+        # Brilliant! XPath takes care of finding the right bits to delete
+        foreach my $node (
+            $xpath->findnodes( "//rrd/ds[$conditional]",              $newrrd ),
+            $xpath->findnodes( "//rrd/rra/cdp_prep/ds[$conditional]", $newrrd ),
+            $xpath->findnodes( "//rrd/rra/database",                  $newrrd ),
+          )
+        {
+            $node->unbindNode;
+        }
+
+        # This adds in all the sliced data as a balanced chunk of XML
+        my $position = 0;
+        foreach my $node_rra ( $xpath->findnodes( "//rrd/rra", $newrrd ) ) {
+            my $newdb_xml = join( "",
+                "<database>", @{ $pot[ $position++ ]->{$i} },
+                "</database>" );
+            my $node_newdb = $parser->parse_balanced_chunk($newdb_xml);
+            $node_rra->appendChild($node_newdb);
+        }
+
+        open F, "> $temp_xml" or die "Cannot open $temp_xml for writing: $!";
+        print F $newrrd->toString;
+        close F;
+
+        # RRDrestore to create the new rrd - create directory structure first
+        my $metric  = $pot_for_metric->{$i};
+        my $rrdname = "value";
+        if ( $pot_for_thresholds->{$i} ) {
+            $rrdname = "thresholds";
+        }
+        if ( $opts->{t} || $opts->{y} ) {
+            create_rrd_dir( $hostname, $servicename, $metric );
+            RRDs::restore( $temp_xml,
+                "$target_dir/$hostname/$servicename/$metric/$rrdname.rrd",
+                "-f" );
+            if (RRDs::error) {
+                die "Got error: " . RRDs::error;
+            }
+        }
+
+        print "Created $metric - $rrdname\n";
+    }
+
+    # Delete the original rrd
+    unlink "$rrddir/$file" if ( !$opts->{t} && $opts->{y} );
+    print "...done\n";
+}
+
+unlink $rrd_migration_flag;
+$now = scalar localtime;
+print "$now: Finished migration\n";
+
+# From insert.pl
+sub urlencode {
+    $_[0] =~ s/([\W])/"%" . uc(sprintf("%2.2x",ord($1)))/eg;
+    return $_[0];
+}
+
+sub create_rrd_dir {
+    my ( $hostname, $servicename, $dsname ) = @_;
+    mkdir "$target_dir/$hostname" unless ( -d "$target_dir/$hostname" );
+    mkdir "$target_dir/$hostname/$servicename"
+      unless ( -d "$target_dir/$hostname/$servicename/$dsname" );
+    mkdir "$target_dir/$hostname/$servicename/$dsname"
+      unless ( -d "$target_dir/$hostname/$servicename/$dsname" );
+}

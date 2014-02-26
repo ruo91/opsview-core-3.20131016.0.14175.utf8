@@ -1,0 +1,60 @@
+
+
+HELLO
+PROTOCOL: 2
+AGENT: NDOMOD
+AGENTVERSION: 1.4b7
+STARTTIME: 1353330301
+DISPOSITION: REALTIME
+CONNECTION: FILE
+CONNECTTYPE: INITIAL
+INSTANCENAME: default
+STARTDATADUMP
+
+
+210:
+1=604
+2=0
+3=0
+4=1353330301.664660
+89=1
+117=1353330301.664659
+33=0.0
+53=bob
+114=Unix disk: /srv/released
+134=admin/02test-snp
+127=notify-by-email
+13=
+87=0
+118=1
+95=DISK WARNING - free space: /srv/released 14253 MB (9% inode=99%):
+5=
+6=
+999
+
+
+210:
+1=604
+2=0
+3=0
+4=1353330301.664660
+89=1
+117=1353330301.664659
+33=0.0
+53=bob
+114=Unix disk: /srv/released
+134=admin/02test-snp
+127=notify-by-email
+13=
+87=0
+118=1
+95=DISK WARNING - free space: /srv/released 14253 MB (9% inode=99%):
+5=
+6=
+999
+
+
+1000
+ENDTIME: 1353330306
+GOODBYE
+

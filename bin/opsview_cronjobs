@@ -1,0 +1,207 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+#	opsview_cronjobs {daily | 4hourly}
+#
+# DESCRIPTION:
+#	Run on any opsview server, master or slave
+#	For the daily one, master is invoked via rc.opsview housekeep
+#	On slave, invoked directly from crontab
+#	For the 4hourly one, invoked from crontab on master and slave - make sure
+#	 you source /usr/local/nagios/bin/profile to get environment variables
+#	Should not cause problems if run too often
+#	Requires instance.cfg in etc/ to get variables
+#	Specify type of housekeep, defaults to daily
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+# Need this dummy class for Module::Pluggable to work
+# Don't want to use Opsview, because this has to work on slaves
+package Dummy;
+use lib "/usr/local/nagios/perl/lib";
+use Module::Pluggable
+  search_path => ["Opsview::Plugin"],
+  require     => 1;
+
+package main;
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib "/usr/local/nagios/perl/lib";
+use lib $Bin, "$Bin/../lib", "$Bin/../etc";
+use DBI;
+use File::Glob ':glob';
+use File::Find;
+use Carp;
+
+my $frequency = shift @ARGV || "daily";
+
+my $rootdir    = "/usr/local/nagios";
+my $dbfile     = "$rootdir/var/traps.db";
+my $statfile   = "$rootdir/var/opsview_cronjobs.stat";
+my $start_time = time();
+
+our $archive_retention_days          = 180;
+our $rrd_retention_days              = 30;
+our $snmptrap_tracing_retention_days = 7;
+our $report_retention_days           = 365;
+our $nmis_retention_days             = 90;
+do "instance.cfg" || die "Cannot read instance.cfg";
+
+# Need this test because slaves do not have full libraries
+my $server_type = "master";
+if ( !-e "$rootdir/etc/opsview.conf" ) {
+    $server_type = "slave";
+}
+
+if ( $frequency eq "daily" ) {
+    delete_old_files( "$rootdir/var/archives", $archive_retention_days );
+    delete_old_files_and_empty_directories( "$rootdir/var/rrd",
+        $rrd_retention_days );
+    delete_old_files_and_empty_directories( "$rootdir/tmp",
+        $rrd_retention_days );
+    delete_old_files( "$rootdir/var/mrtg",   $rrd_retention_days );
+    delete_old_files( "$rootdir/share/mrtg", $rrd_retention_days );
+    delete_old_files_and_empty_directories( "$rootdir/var/plugins",
+        $rrd_retention_days );
+
+    # remove old nmis report html docs and database rrd files
+    delete_old_files( "$rootdir/nmis/htdocs/reports", $report_retention_days );
+    delete_old_files_and_empty_directories( "$rootdir/nmis/database",
+        $report_retention_days );
+
+    # remove old host data files (not event files)
+    if ( -d "$rootdir/nmis/var" ) {
+        system(
+            'find',                  "$rootdir/nmis/var",
+            '-name',                 '*.dat',
+            '!',                     '-name',
+            '*event*',               '-mtime',
+            "+$nmis_retention_days", '-exec',
+            'rm',                    '{}',
+            ';'
+          ) == 0
+          or die 'Error removing old nmis dat files';
+    }
+
+    # remove old unused atom files
+    delete_old_files_and_empty_directories( "$rootdir/atom",
+        $rrd_retention_days );
+
+    # remove old unused rss files
+    if ( -d "$rootdir/rss" ) {
+        system( 'rm', 'rf', "$rootdir/rss" );
+    }
+    if ( -e $dbfile ) {
+        my $dbh        = DBI->connect( "dbi:SQLite:dbname=$dbfile" );
+        my $last_timev = time - 60 * 60 * 24 * $snmptrap_tracing_retention_days;
+        $dbh->do( "DELETE FROM tracing WHERE unixtime < $last_timev" );
+    }
+
+    if ( !-e "$rootdir/var/log/rsync_nmis_database.log" ) {
+        open F, ">>", "$rootdir/var/log/rsync_nmis_database.log"
+          or die "Cannot touch rsync_nmis_database.log";
+        close F;
+    }
+
+    # We discard this file on slaves, because a slave only records in nagios.log - the master will insert into auditlogs via opsviewd
+    if ( $server_type eq "slave" && -s "$rootdir/var/opsview_proxy_audit.log" )
+    {
+        open F, ">", "$rootdir/var/opsview_proxy_audit.log";
+        close F;
+    }
+
+    # Find other logrotate plugins
+    my @plugins = bsd_glob( "/usr/local/nagios/opsview-plugins/logrotate/*" );
+    system(
+        "logrotate -s /usr/local/nagios/var/logrotate.status /usr/local/nagios/etc/logrotate.conf @plugins"
+    );
+
+    # Record runtime in statfile
+    open( my $stfile, '>', $statfile );
+    print $stfile time() - $start_time, "\n";
+    close $stfile;
+}
+
+# Redirect all output to log file
+my $cronjob_logfile = "$rootdir/var/log/opsview_cronjobs.log";
+open( STDOUT, ">>", $cronjob_logfile )
+  || die "Can't reopen STDOUT to $cronjob_logfile: $!";
+open( STDERR, ">>", $cronjob_logfile )
+  || die "Can't reopen STDERR to $cronjob_logfile: $!";
+
+# Check for any plugins that have cronjobs for this frequency
+foreach my $plugin ( Dummy->plugins ) {
+    my $method = "run_cronjobs_$frequency";
+    next unless $plugin->can($method);
+    $plugin->$method;
+}
+
+sub delete_old_files_and_empty_directories {
+    my ( $path, $retention_limit ) = @_;
+    croak 'No retention limit specified' if ( !defined $retention_limit );
+    croak 'No path specified'            if ( !defined $path );
+
+    return unless ( -d $path );
+
+    finddepth(
+        {
+            wanted => sub {
+                my $path = $File::Find::name;
+                if ( -f $path ) {
+                    my $age_days = ( -M $path );
+                    if ( $age_days > $retention_limit ) {
+                        unlink $path;
+                    }
+                    return;
+                }
+                return unless ( -d $path );
+                if ( $path eq $File::Find::topdir ) {
+
+                    # Don't do anything with topdir
+                }
+                else {
+                    my @files;
+                    opendir D, $path;
+                    @files = grep !/^\.\.?\z/, readdir D;
+                    closedir D;
+                    unless (@files) {
+                        rmdir $path;
+                    }
+                }
+            },
+            no_chdir => 1,
+        },
+        $path,
+    );
+}
+
+sub delete_old_files {
+    my ( $path, $retention_limit ) = @_;
+    croak 'No retention limit specified' if ( !defined $retention_limit );
+    croak 'No path specified'            if ( !defined $path );
+
+    return unless ( -d $path );
+
+    system( 'find', $path, '-type', 'f', '-mtime', "+$retention_limit", '-exec',
+        'rm', '{}', ';' ) == 0
+      or die "Error deleting files from $path over $retention_limit days old";
+}

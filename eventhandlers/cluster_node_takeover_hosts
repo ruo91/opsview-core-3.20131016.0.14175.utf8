@@ -1,0 +1,299 @@
+#!/usr/bin/perl
+#
+# SYNTAX:
+#	cluster_node_takeover_hosts [-d] [-f] [hosts]
+#
+# -f - keep in foreground
+#
+# DESCRIPTION:
+#	Will tell Nagios to enable or disable active servicechecks for the specified
+#	hosts. Works this out via environment variables
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib "$Bin/../lib",    "$Bin/../etc",    "$Bin/../perl/lib";
+use lib "$Bin/../../lib", "$Bin/../../etc", "$Bin/../../perl/lib";
+use Log::Log4perl;
+use Getopt::Std;
+use Opsview::Slave::Host;
+use Opsview::Slave::Node;
+use Opsview::Slave::NodeStatus;
+use Opsview::Slave::Config;
+use Opsview::Utils::NagiosSyncStatus;
+use IPC::Run qw(run);
+use File::Copy;
+
+my $opts = {};
+getopts( "fb", $opts ) or die "Incorrect options";
+
+my $prefix    = "/usr/local/nagios";
+my $cmd       = "$prefix/var/rw/nagios.cmd";
+my $vardir    = "$prefix/var";
+my $sync_file = "$vardir/sync.dat";
+my $logfile   = "$vardir/log/cluster_node_takeover_hosts.log";
+my $tmpdir    = "$prefix/tmp";
+
+my $this_host = $ENV{NAGIOS_HOSTNAME};
+
+Log::Log4perl::init( "$prefix/etc/Log4perl-slave.conf" );
+my $log = Log::Log4perl->get_logger( "cluster_node_takeover_hosts" );
+$log->info( "Starting for host: $this_host" );
+
+# Run in background
+if ( !$opts->{f} ) {
+    my $pid = fork;
+
+    # parent
+    if ($pid) {
+        print 'Backgrounded process', $/;
+        exit;
+    }
+    die "Couldn't fork: $!" unless defined $pid;
+
+    require POSIX;
+    POSIX::setsid() or $log->logdie( "Can't start a new session: $!" );
+}
+
+$SIG{__DIE__} = sub {
+    if ($^S) {
+
+        # In eval
+        return;
+    }
+    if ($log) {
+        $log->fatal(@_);
+    }
+    die @_;
+};
+END { $log->info("Finished") if $log }
+
+my $slavenodename = $ENV{NAGIOS_SERVICEDESC};
+$slavenodename =~ s/Cluster-node: //;
+
+my @hosts;
+
+open TAKEOVER, "/usr/local/nagios/etc/takeover.dat"
+  or die( "Cannot open takeover.dat: $!" );
+while (<TAKEOVER>) {
+    my ( $nodename, $hostlist ) = split( ":", $_ );
+    if ( $nodename eq $slavenodename ) {
+        @hosts = split( ",", $hostlist );
+        last;
+    }
+}
+close TAKEOVER;
+
+$log->info( "Acting against node: $slavenodename" );
+$log->info( "Acting for hosts: @hosts" );
+$log->debug( "SERVICESTATETYPE=$ENV{NAGIOS_SERVICESTATETYPE}" );
+$log->debug( "SERVICESTATE=$ENV{NAGIOS_SERVICESTATE}" );
+
+# Used to exit if no hosts, but logic is fine if no hosts to take over - will gracefully move on
+#exit unless @ARGV;
+
+if ( $ENV{NAGIOS_SERVICESTATETYPE} ne "HARD" ) {
+    $log->info( "Not executing takeover because state is not HARD" );
+    exit;
+}
+
+open NMIS_HOSTS, "/usr/local/nagios/nmis/conf/nodes.csv"
+  or die "Cannot open nmis nodes.csv: $!";
+my @nmis_hosts = <NMIS_HOSTS>;
+close NMIS_HOSTS;
+my %hosts = map { ( $_->name, $_->ip ) } ( Opsview::Slave::Host->retrieve_all );
+
+my $node =
+  Opsview::Slave::NodeStatus->find_or_create( { name => $slavenodename } );
+open CMD, "> $cmd";
+if ( $ENV{NAGIOS_SERVICESTATE} eq "OK" ) {
+    $log->info( "Node recovered - returning checks to $slavenodename" );
+
+    # The disable below do not work in Nagios 3 because host check results are spooled and checked at a later time,
+    # but the enable/disable is processed immediately
+    # We leave the disable, but that will be removed on the next reload
+    print CMD "[" . time . "] ENABLE_PASSIVE_HOST_CHECKS;$slavenodename\n";
+    print CMD "[" . time
+      . "] PROCESS_HOST_CHECK_RESULT;$slavenodename;0;Recovery noticed by slave cluster node: $this_host\n";
+    print CMD "[" . time
+      . "] ENABLE_PASSIVE_SVC_CHECKS;$slavenodename;Cluster-node: $this_host\n";
+    print CMD "[" . time
+      . "] PROCESS_SERVICE_CHECK_RESULT;$slavenodename;Cluster-node: $this_host;0;Recovery noticed by slave cluster node: $this_host\n";
+
+    #print CMD "[".time."] DISABLE_PASSIVE_HOST_CHECKS;$slavenodename\n";
+
+    foreach my $host (@hosts) {
+        print CMD "[" . time . "] DISABLE_HOST_CHECK;$host\n";
+        print CMD "[" . time . "] DISABLE_HOST_SVC_CHECKS;$host\n";
+        print CMD "[" . time . "] DISABLE_PASSIVE_HOST_CHECKS;$host\n";
+
+        # These are missing commands from Nagios (see OPS-1171)
+        #print CMD "[" . time . "] DISABLE_PASSIVE_HOST_SVC_CHECKS;$host\n";
+        print CMD "[" . time . "] DISABLE_HOST_NOTIFICATIONS;$host\n";
+        print CMD "[" . time . "] DISABLE_HOST_SVC_NOTIFICATIONS;$host\n";
+
+        #print CMD "[" . time . "] DISABLE_HOST_SVC_EVENT_HANDLER;$host\n";
+
+        # This is very messy - very dependant on how NMIS structures its nodes.csv file
+        # but then again, so is nagconfgen
+        foreach my $line (@nmis_hosts) {
+            @_ = split( "\t", $line );
+            $_[0] = "false" if ( $_[9] eq $hosts{$host} );
+            $line = join( "\t", @_ );
+        }
+    }
+
+    # Re-syncs all latest data from this node to the recovered node
+    sub resync_recovered_node {
+
+        my $active_hosts = { map { ( $_ => "" ) } @hosts };
+        my $sync         = Opsview::Utils::NagiosSyncStatus->new;
+        my $status_file  = Opsview::Slave::Config->status_dat;
+
+        unless ( -e $status_file ) {
+            $log->error( "No status file found" );
+            return;
+        }
+
+        $sync->generate(
+            {
+                status_file  => $status_file,
+                targetdir    => $tmpdir,
+                slave_lookup => $active_hosts,
+                suffix       => "for_$slavenodename",
+            }
+        );
+
+        my @nodes = Opsview::Slave::Node->retrieve_all;
+        my $recovered_node;
+        foreach my $n (@nodes) {
+            $recovered_node = $n if ( $n->name eq "$slavenodename" );
+        }
+
+        unless ($recovered_node) {
+            $log->error( "No node found for $slavenodename" );
+            return;
+        }
+
+        $log->info( "Sending to " . $recovered_node->name );
+        my @command = (
+            "scp",
+            "-B",
+            "$tmpdir/sync.dat.for_$slavenodename",
+            $recovered_node->ip
+              . ":/usr/local/nagios/tmp/sync.dat.node.from$this_host"
+        );
+        $log->debug( "Command = @command" );
+        my ( $in, $out, $err );
+        run( \@command, \$in, \$out, \$err );
+        my $rc = $?;
+
+        sub print_rc_error {
+            if ( $rc != 0 ) {
+                $log->error(
+                        "Node: "
+                      . $recovered_node->name
+                      . " failed, system() return code: $rc"
+                );
+                $log->error( "out=$out" );
+                $log->error( "err=$err" );
+                return 1;
+            }
+            return 0;
+        }
+
+        print_rc_error() && return;
+
+        $log->info( "Node " . $recovered_node->name . " successful transfer" );
+        @command = (
+            "ssh", $recovered_node->ip,
+            "/usr/local/nagios/bin/sync_nagios_now",
+            "sync.dat.node.from$this_host"
+        );
+        $log->debug( "SSH command = @command" );
+        run( \@command, \$in, \$out, \$err );
+        $rc = $?;
+
+        print_rc_error() && return;
+
+        $log->info( "Node " . $recovered_node->name . " synchronised" );
+    }
+
+    resync_recovered_node();
+
+    $node->status( "active" );
+    $node->update;
+
+    # Must update status before running rsync
+    system(
+        "/usr/local/nagios/bin/rsync_nmis_database -R $slavenodename >> $logfile 2>&1"
+    );
+
+}
+else {
+    $log->info( "Node failed - taking over checks on $slavenodename" );
+    print CMD "[" . time . "] ENABLE_PASSIVE_HOST_CHECKS;$slavenodename\n";
+    print CMD "[" . time
+      . "] PROCESS_HOST_CHECK_RESULT;$slavenodename;1;Take over by slave cluster node: $this_host\n";
+    print CMD "[" . time
+      . "] ENABLE_PASSIVE_SVC_CHECKS;$slavenodename;Cluster-node: $this_host\n";
+    print CMD "[" . time
+      . "] PROCESS_SERVICE_CHECK_RESULT;$slavenodename;Cluster-node: $this_host;1;Take over by slave cluster node: $this_host\n";
+
+    # See above for why this is commented out
+    #print CMD "[".time."] DISABLE_PASSIVE_HOST_CHECKS;$slavenodename\n";
+
+    # Load the cluster nodes' sync.dat.node.{nodename} file
+    my $latest_state_file_for_node = "$vardir/sync.dat.node.$slavenodename";
+    if ( -e $latest_state_file_for_node ) {
+        $log->info( "Syncing last state for $slavenodename" );
+        copy $latest_state_file_for_node, $sync_file;
+        print CMD "[" . time . "] SYNC_STATE_INFORMATION\n";
+    }
+
+    foreach my $host (@hosts) {
+        print CMD "[" . time . "] ENABLE_HOST_CHECK;$host\n";
+        print CMD "[" . time . "] ENABLE_HOST_SVC_CHECKS;$host\n";
+        print CMD "[" . time . "] ENABLE_PASSIVE_HOST_CHECKS;$host\n";
+
+        #print CMD "[" . time . "] ENABLE_PASSIVE_HOST_SVC_CHECKS;$host\n";
+        print CMD "[" . time . "] ENABLE_HOST_NOTIFICATIONS;$host\n";
+        print CMD "[" . time . "] ENABLE_HOST_SVC_NOTIFICATIONS;$host\n";
+
+        #print CMD "[" . time . "] ENABLE_HOST_SVC_EVENT_HANDLER;$host\n";
+
+        foreach my $line (@nmis_hosts) {
+            @_ = split( "\t", $line );
+            $_[0] = "true" if ( $_[9] eq $hosts{$host} );
+            $line = join( "\t", @_ );
+        }
+    }
+    $node->status( "offline" );
+    $node->update;
+}
+close CMD;
+
+open NMIS_HOSTS, ">", "/usr/local/nagios/nmis/conf/nodes.csv"
+  or die "Cannot open nmis nodes.csv for writing: $!";
+print NMIS_HOSTS @nmis_hosts;
+close NMIS_HOSTS;

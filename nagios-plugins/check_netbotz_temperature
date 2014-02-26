@@ -1,0 +1,324 @@
+#!/usr/bin/perl
+#
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use Net::SNMP 4.1.0 qw(DEBUG_ALL);
+use Getopt::Std;
+
+$script  = 'check_cpuavg';
+$version = '1.0';
+
+$metric  = 1;
+$Sensor1 = ".1.3.6.1.4.1.5528.100.4.1.1.1.7.1095346743";
+$Sensor2 = ".1.3.6.1.4.1.5528.100.4.1.1.1.7.1382714849";
+$Sensor3 = ".1.3.6.1.4.1.5528.100.4.1.1.1.7.1382714850";
+$Sensor4 = ".1.3.6.1.4.1.5528.100.4.1.1.1.7.1382714851";
+$Sensor5 = ".1.3.6.1.4.1.5528.100.4.1.1.1.7.1382714852";
+
+$SensorLabel1 = ""; # This is always the sensor pod
+$SensorLabel2 = ".1.3.6.1.4.1.5528.100.3.1.1.3.1091136147";
+$SensorLabel3 = ".1.3.6.1.4.1.5528.100.3.1.1.3.1091136148";
+$SensorLabel4 = ".1.3.6.1.4.1.5528.100.3.1.1.3.1091136149";
+$SensorLabel5 = ".1.3.6.1.4.1.5528.100.3.1.1.3.1091136150";
+
+$label  = "Not Defined";
+$label1 = "Sensor Pod";
+$label2 = "Not Defined";
+$label3 = "Not Defined";
+$label4 = "Not Defined";
+$label5 = "Not Defined";
+
+$ipaddress     = "192.168.10.30";
+$version       = "1";
+$community     = "public";
+$timeout       = 2;
+$warning_temp  = 90;
+$critical_temp = 95;
+$status        = 0;
+$returnstring  = "";
+my $port = 161;
+
+# Do we have enough information?
+if ( @ARGV < 1 ) {
+    print "Too few arguments\n";
+    usage();
+}
+
+getopts( "hH:C:w:c:p:" );
+if ($opt_h) {
+    usage();
+    exit(0);
+}
+if ($opt_H) {
+    $hostname = $opt_H;
+
+    # print "Hostname $opt_H\n";
+}
+else {
+    print "No hostname specified\n";
+    usage();
+}
+if ($opt_C) {
+    $community = $opt_C;
+
+    # print "Using community $opt_C\n";
+}
+else {
+
+    # print "Using community $community\n";
+}
+if ($opt_w) {
+    $warning_temp = $opt_w;
+
+    # print "Warning threshold: $opt_w%\n";
+}
+if ($opt_c) {
+    $critical_temp = $opt_c;
+
+    # print "Critical threshold: $opt_c%\n";
+}
+if ($opt_p) {
+    $port = $opt_p;
+}
+
+# Create the SNMP session
+my ( $s, $e ) = Net::SNMP->session(
+    -community => $community,
+    -hostname  => $hostname,
+    -version   => $version,
+    -timeout   => $timeout,
+    -port      => $port,
+);
+
+main();
+
+# Close the session
+$s->close();
+
+if ( $returnstring eq "" ) {
+    $status = 3;
+}
+
+if ( $status == 0 ) {
+    print "Status is OK - $returnstring\n";
+
+    # print "$returnstring\n";
+}
+elsif ( $status == 1 ) {
+    print "Status is a WARNING level - $returnstring\n";
+}
+elsif ( $status == 2 ) {
+    print "Status is CRITICAL - $returnstring\n";
+}
+else {
+    print "Status is UNKNOWN\n";
+}
+
+exit $status;
+
+sub main {
+
+    $temperature = "";
+    $label       = "";
+    $warning     = 0;
+    $critical    = 0;
+
+    if ( !defined( $s->get_request($Sensor1) ) ) {
+    }
+    else {
+        foreach ( $s->var_bind_names() ) {
+            $temperature = $s->var_bind_list()->{$_};
+            if ( $temperature > 0 ) {
+                $label      = "Sensor Pod";
+                $newstring  = sprintf "($label: %.1f C)", $temperature;
+                $tempstring = $tempstring . $newstring;
+
+                if ( $temperature > $warning_temp ) {
+                    $warning = 1;
+                }
+                if ( $temperature > $critical_temp ) {
+                    $critical = 1;
+                }
+            }
+        }
+    }
+
+    $temperature = "";
+    $label       = "";
+
+    if ( !defined( $s->get_request($Sensor2) ) ) {
+    }
+    else {
+        foreach ( $s->var_bind_names() ) {
+            $temperature = $s->var_bind_list()->{$_};
+        }
+    }
+    if ( !defined( $s->get_request($SensorLabel2) ) ) {
+    }
+    else {
+        foreach ( $s->var_bind_names() ) {
+            $label = $s->var_bind_list()->{$_};
+            if ( $temperature > 0 ) {
+                $newstring = sprintf "($label: %.1f C)", $temperature;
+                $tempstring = $tempstring . $newstring;
+
+                if ( $temperature >= $warning_temp ) {
+                    $warning = 1;
+                }
+                if ( $temperature >= $critical_temp ) {
+                    $critical = 1;
+                }
+
+            }
+        }
+    }
+
+    $temperature = "";
+    $label       = "";
+
+    if ( !defined( $s->get_request($Sensor3) ) ) {
+    }
+    else {
+        foreach ( $s->var_bind_names() ) {
+            $temperature = $s->var_bind_list()->{$_};
+        }
+    }
+
+    if ( !defined( $s->get_request($SensorLabel3) ) ) {
+    }
+    else {
+        foreach ( $s->var_bind_names() ) {
+            $label = $s->var_bind_list()->{$_};
+            if ( $temperature > 0 ) {
+                $newstring = sprintf "($label: %.1f C)", $temperature;
+                $tempstring = $tempstring . $newstring;
+
+                if ( $temperature >= $warning_temp ) {
+                    $warning = 1;
+                }
+                if ( $temperature >= $critical_temp ) {
+                    $critical = 1;
+                }
+
+            }
+        }
+    }
+
+    $temperature = "";
+    $label       = "";
+
+    if ( !defined( $s->get_request($Sensor4) ) ) {
+    }
+    else {
+        foreach ( $s->var_bind_names() ) {
+            $temperature = $s->var_bind_list()->{$_};
+        }
+    }
+
+    if ( !defined( $s->get_request($SensorLabel4) ) ) {
+    }
+    else {
+        foreach ( $s->var_bind_names() ) {
+            $label = $s->var_bind_list()->{$_};
+            if ( $temperature > 0 ) {
+                $newstring = sprintf "($label: %.1f C)", $temperature;
+                $tempstring = $tempstring . $newstring;
+
+                if ( $temperature >= $warning_temp ) {
+                    $warning = 1;
+                }
+                if ( $temperature >= $critical_temp ) {
+                    $critical = 1;
+                }
+
+            }
+        }
+    }
+
+    $temperature = "";
+    $label       = "";
+
+    if ( !defined( $s->get_request($Sensor5) ) ) {
+    }
+    else {
+        foreach ( $s->var_bind_names() ) {
+            $temperature = $s->var_bind_list()->{$_};
+        }
+    }
+    if ( !defined( $s->get_request($SensorLabel5) ) ) {
+    }
+    else {
+        foreach ( $s->var_bind_names() ) {
+            $label = $s->var_bind_list()->{$_};
+            if ( $temperature > 0 ) {
+                $newstring = sprintf "($label: %.1f C)", $temperature;
+                $tempstring = $tempstring . $newstring;
+
+                if ( $temperature >= $warning_temp ) {
+                    $warning = 1;
+                }
+                if ( $temperature >= $critical_temp ) {
+                    $critical = 1;
+                }
+
+            }
+        }
+    }
+
+    #$temp = sprintf "Temperatures: ($label1: %.1f C), ($label2: %.1f C), ($label3: %.1f C), ($label4: %.1f C), ($label5: %.1f C)", $temperature1, $temperature2, $temperature3, $temperature4, $temperature5 ;
+    append($tempstring);
+
+    if ( $critical == 1 ) {
+        $status = 2;
+    }
+    elsif ( $warning == 1 ) {
+        $status = 1;
+    }
+    else {
+        $status = 0;
+    }
+
+}
+
+sub usage {
+    print << "USAGE";
+
+$script v$version
+Usage: $script -H <hostname> -c <community> [...]
+Options: -H 		Hostname or IP address
+         -p 		Port (default: 161)
+         -C 		Community (default is public)
+         -w 		Warning threshold (as %)
+         -c 		Critical threshold (as %)
+USAGE
+    exit 1;
+}
+
+sub append {
+    my $appendstring = @_[0];
+    $returnstring = "$returnstring$appendstring";
+}
+
+sub errorhandler {
+    my $returnstring = @_[0];
+    print "$returnstring\n";
+}

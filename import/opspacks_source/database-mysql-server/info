@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.database_mysql_server
+VERSION=1.0
+ALIAS=Database - MySQL Server
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

@@ -1,0 +1,204 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+#	import_ndologsd
+#
+# DESCRIPTION:
+#	Imports NDO logs into database
+#	Allows Nagios to continue processing while this is asynchronously working
+#	Will import files from the var/ndologs directory
+#	in filename order (which should be timestamped)
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use warnings;
+use strict;
+use FindBin qw($Bin);
+use lib $Bin, "$Bin/../lib", "$Bin/../etc", "$Bin/../perl/lib";
+use Log::Log4perl;
+use POSIX;
+use Cwd qw(abs_path);
+use Time::HiRes qw(gettimeofday);
+use Opsview::Utils::NDOLogsImporter;
+
+my $MAX_RUN_TIME = 3600 * 24;   # once a day
+my $REAL_PATH    = abs_path($0);
+
+# close-on-exec
+$^F = 2;
+
+my $rootdir    = "/usr/local/nagios";
+my $import_dir = "$rootdir/var/ndologs";
+
+Log::Log4perl::init_and_watch( "$rootdir/etc/Log4perl.conf", 30 );
+
+my $logger = Log::Log4perl->get_logger( "import_ndologsd" );
+
+$logger->info( "Starting" );
+
+my $pidfile = "/usr/local/nagios/var/import_ndologsd.pid";
+if ( -e $pidfile ) {
+    open( my $fh, "< $pidfile" )
+      or $logger->logdie( "Cannot read pid file - is daemon running?" );
+    my $pid = <$fh>;
+    close $fh;
+    if ( $pid && kill 0, $pid ) {
+        unless ( scalar @ARGV ) {
+            $logger->logdie( "import_ndologsd already running as process $pid"
+            );
+        }
+    }
+    else {
+        $logger->warn( "Crash from previous run. Deleting pid file" );
+        unlink $pidfile or $logger->logdie( "Cannot delete pidfile" );
+    }
+}
+
+$0 = "import_ndologsd";
+
+$SIG{__DIE__} = \&cleanup;
+
+my $pid = fork;
+exit if $pid;
+$logger->logdie("Couldn't fork: $!") unless defined $pid;
+POSIX::setsid() or $logger->logdie( "Cannot daemonize" );
+
+$logger->info( "Daemonised" );
+
+open PID, "> $pidfile" or die "Could not write to pid file $pidfile";
+print PID "$$";
+close PID;
+
+for my $handle ( *STDIN, *STDOUT, *STDERR ) {
+    open( $handle, "+<", "/dev/null" )
+      || die "can't reopen $handle to /dev/null: $!";
+}
+
+# Two ways of doing this: open a pipe (but I think it gets slower over time...)
+# or invoke file2sock each time
+# Invoking causes a connect/disconnect message in syslog each time
+# Neither seem ideal and probably cause more problems
+# Create pipe
+#open(FILE2SOCK, "|-", $file2sock, "-s", "-", "-d", $ndo_socket, "-t", "unix") or $logger->logdie("Could not setup file2sock");
+
+my $break = 0;
+$SIG{PIPE} = sub { $logger->logdie("file2sock died?") };
+$SIG{INT}  = \&catch_signals;
+$SIG{TERM} = \&catch_signals;
+
+my $importer = Opsview::Utils::NDOLogsImporter->new(
+    logger => $logger,
+    break  => \$break
+);
+
+chdir($import_dir) or $logger->logdie( "Cannot chdir: $!" );
+my $last_update = 0;
+my $c           = 0;
+my $started_at  = time();
+MAINLOOP:
+until ($break) {
+
+    # Not sure why, but can't use IMPORT_DIR filehandle
+    my $dir_update = ( stat(".") )[9];
+    my $found      = 0;
+    if ( $dir_update != $last_update ) {
+        opendir( IMPORT_DIR, "." ) or $logger->logdie( "Cannot open dir: $!" );
+        my @files =
+          grep { !/^\.\.?\z/ && -f "./$_" && !/\.(?:processing|ignored)$/ }
+          readdir IMPORT_DIR;
+        closedir IMPORT_DIR;
+        foreach my $file ( sort @files ) {
+            last MAINLOOP if $break;
+            my $start     = gettimeofday();
+            my $file_size = -s $file;
+            unless ($file_size) {
+                $logger->debug( "Ignore $file as size 0" );
+                unlink $file;
+                next;
+            }
+
+            # Send the log to NDO. Blocks if connection refuses until either it can, or $break is set
+            # file processed successfully
+            if ( $importer->send_log( $file, $file_size ) ) {
+                if ( $logger->is_debug() ) {
+                    my $debug_dir = "/usr/local/nagios/var/ndologs.archive";
+                    unless ( -d $debug_dir ) {
+                        mkdir $debug_dir;
+                    }
+                    rename( $file, "$debug_dir/$file" );
+                }
+                else {
+                    unlink $file;
+                }
+                my $duration = gettimeofday() - $start;
+                $logger->debug( "Finished $file. Duration=$duration" );
+                if ( $duration > 5 ) {
+                    my $nice_duration = sprintf( "%0.2f", $duration );
+                    $logger->warn(
+                        "Import of $file, size=$file_size, took $nice_duration seconds > 5 seconds"
+                    );
+                }
+            }
+            else {
+                $logger->warn( "Failed to import $file" );
+                unless ( $importer->db_connected ) {
+                    unlink($file);
+                }
+            }
+            $found = 1;
+            last MAINLOOP if $break;
+        }
+        $last_update = $dir_update;
+    }
+
+    # re-execute itself if running for more then $MAX_RUN_TIME
+    if ( time() - $started_at > $MAX_RUN_TIME ) {
+        $logger->info(
+            "Restarting after running for more then $MAX_RUN_TIME seconds"
+        );
+        exec( $^X, $REAL_PATH, 'restart' );
+        die "Cannot exec: $!";
+    }
+
+    # Directory would have changed from our last import, so expect above if to succeed
+    # But allows a next check to run if more files have been added
+    sleep 1 unless $found;
+}
+
+cleanup();
+
+sub cleanup {
+    return if ( $^S == 1 );
+
+    $logger->info("Error found: $@") if $@;
+    $logger->info( "Stopping $0" );
+    unlink $pidfile;
+}
+
+sub catch_signals {
+    if ( $break++ == 0 ) {
+        $logger->warn( "Received kill signal - gracefully shutting down" );
+    }
+    else {
+        $logger->logdie( "Received kill signal - forced death" );
+    }
+}

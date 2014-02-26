@@ -1,0 +1,61 @@
+{
+      "all_hosts" : "0",
+      "hosts" : [
+         {
+            "ref" : "/rest/config/host/7",
+            "name" : "cisco"
+         },
+         {
+            "ref" : "/rest/config/host/8",
+            "name" : "cisco1"
+         },
+         {
+            "ref" : "/rest/config/host/9",
+            "name" : "cisco2"
+         },
+         {
+            "ref" : "/rest/config/host/10",
+            "name" : "cisco3"
+         },
+         {
+            "ref" : "/rest/config/host/11",
+            "name" : "cisco4"
+         }
+      ],
+      "contacts" : [
+         {
+            "ref" : "/rest/config/contact/10",
+            "name" : "viewkeywords"
+         },
+         {
+            "ref" : "/rest/config/contact/11",
+            "name" : "viewkeywords2"
+         }
+      ],
+      "all_servicechecks" : "0",
+      "style" : "group_by_host",
+      "name" : "cisco",
+      "description" : "cisco devices",
+      "servicechecks" : [
+         {
+            "ref" : "/rest/config/servicecheck/82",
+            "name" : "Another exception"
+         },
+         {
+            "ref" : "/rest/config/servicecheck/79",
+            "name" : "Coldstart"
+         },
+         {
+            "ref" : "/rest/config/servicecheck/95",
+            "name" : "Interface"
+         },
+         {
+            "ref" : "/rest/config/servicecheck/81",
+            "name" : "Test exceptions"
+         }
+      ],
+      "id" : "2",
+      "enabled" : "1",
+      "uncommitted" : "1"
+   }
+

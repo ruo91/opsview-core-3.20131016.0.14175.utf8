@@ -1,0 +1,411 @@
+#!/usr/bin/perl
+#
+# $Id$
+#
+
+# NOTES:
+#
+# "perldoc perlpod" for more info on using POD
+# "perldoc Getopt::Long" for more info on using command line options
+#   and imposing limits on what can be used with which switches
+# Any $<text>$ is a CVS/SVN keyword - do not alter!
+# When script is complete, use "perltidy -b -i=2 <script>" to format correctly
+
+# all "use" statements
+use strict;   # ALWAYS USE! Helps to catch bugs and problems much faster
+use warnings; # ALWAYS USE! Helps to catch bugs and problems much faster
+
+# find the path to the script directory and the script name
+use Cwd;
+my ( $script, $scriptname, $scriptdir );
+( $scriptname = $0 ) =~ s!^.*/!!;
+( $scriptdir = Cwd::abs_path($0) ) =~ s!/[^/]+$!!;
+$script = "$scriptdir/$scriptname";
+
+# Pull in functions to use inline POD as output for help options
+use Pod::Usage;
+
+# Pull in functions to parse the command line options
+# Configure command line options to be case sensitive, and allow
+# -v -a -x as -vax (different to --vax).  Long options must also use --'s
+# Also stop long options being abreviated to uniqueness
+use Getopt::Long qw(:config no_ignore_case bundling no_auto_abbrev);
+
+# Version information, as from CVS
+my $_VERS = sprintf( "%d.%d", q$Revision: 0.01 $ =~ m!(\d+)\.(\d+)! );
+my $_DATE = sprintf( "%s %s",
+    q$Date: 2000/01/01 00:00:00 $ =~ m!(\d.../\d./\d.) (\d.:\d.:\d.)! );
+
+my $VERSION = "$_VERS $_DATE"; # Combined for script version (-V output)
+
+$| = 1;                        # disable output buffering
+
+# script specific modules
+use lib "/usr/local/nagios/perl/lib";
+use lib "/usr/local/nagios/lib";
+use lib "/usr/local/nagios/etc";
+
+use Data::Dump qw(dump);
+use Opsview::Servicecheck;
+
+# Start of POD (Perl Online Documentation)
+#   Use "perldoc <script>" or "<script> --help" to read POD
+
+=head1 NAME
+
+create_fakehosts
+
+=head1 SYNOPSIS
+
+S< create_fakehosts [-?hV] >
+
+=head1 DESCRIPTION
+
+Script to create N fake hosts and their checks, spread across slaves provided.
+
+Various options are set randomly (such as notification periods).  Betwen 1 and 10
+service checks will be applied to each host, along with between 1 and 10 host templates
+
+=head1 OPTIONS
+
+=over
+
+=cut
+
+#### Set up default options available for all scripts,
+# i.e. "<script> --version" or "<script> --help"
+# All command line options are stored within a hash for easy access
+# This initialises hash and defines some entries in one go
+# See "perldoc perldata" for more info
+my %options = (
+    'help|h|?'  => 0,
+    'man'       => 0,
+    'version|V' => 0,
+    'debug:+'   => 0,
+);
+
+#### Document default options
+
+=item --help, -?, -h
+
+Display basic help 
+
+=item --man
+
+Display man page
+
+=item --debug [0-9], --debug [--debug [...]]
+
+Enable debugging mode (using more than once increases verbosity, or specify
+a level explicitly to a maximum of level 8) 
+
+=item --version, -V
+
+Show version information
+
+=cut
+
+#### Addition options, documented as necessary
+$options{'number|n=i'} = "";
+
+=item --number <n>, -n <n>
+
+Number of fake hosts to create.  Defaults to 20.
+
+=cut
+
+$options{'slaves|s=s'} = "";
+
+=item --slaves <slave>[,...], -s <slave>[,...]
+
+Number of fake hosts to create. NOTE: not activated yet
+
+=cut
+
+#### End of options
+
+=back
+
+=cut
+
+#=head1 ARGUMENTS
+#
+#=over
+#
+#=item <5 char string>
+#
+#The first argument must be a string exactly 5 characters in length
+#
+#=item [ARG2]
+#
+#Further options arguments
+#
+#=back
+#
+#=cut
+
+#### start of perl code ####
+
+# Getopt::Long can limit/expand on how switches are used.  This step
+# normalises the options hash to remove optional specifiers used by
+# Getopts::Long.  Show usage (from the inline POD) if any options unrecognised
+GetOptions( \%options, keys(%options) ) || pod2usage( -verbose => 1 );
+
+# output version and exit
+# i.e. "<script> --version" or "<script> -v"
+die("Version: $VERSION\n") if ( $options{version} );
+
+# output basic help text when -?, --help or -h used
+pod2usage( -verbose => 1 ) if ( $options{'?'} || $options{help} );
+
+#output complete help text when -m|--man|-H|--HELP used
+pod2usage( -verbose => 2 ) if ( $options{HELP} || $options{man} );
+
+#### global variables ####
+# Initialise debug variable correctly if not already set by --debug
+$options{debug} ||= 0;
+
+# Set an arbitrary max level of 8 for debug
+$options{debug} = 8 if ( $options{debug} > 8 );
+
+#### all sub-routines ####
+
+# description:
+#   given a level and a message, if level <= debug level, output message
+#   Allows for progressivly more output the higher the debug level, as
+#   given by the use of --debug. Saves on "expensive" 3rd party module
+# parameters:
+#   $1 = level --> level (to match debug level)
+#   $2 .. $n   --> list to pass to print
+# returns:
+#   nothing
+sub logmsg($@) {
+    print @_, $/ if ( shift() <= $options{debug} );
+}
+
+{
+    my $previous;
+
+    sub logstat($@) {
+        my $current = shift;
+        print "\n" if ( $previous && $previous ne $current );
+
+        #print @_, " " x 20, "\n";
+        print @_, " " x 20, "\r";
+        $previous = $current;
+    }
+}
+
+sub rand_item(\@) {
+    my $array = shift;
+
+    my $length = scalar(@$array);
+    my $item   = int( rand($length) );
+    return $array->[$item];
+}
+
+#### main ####
+
+# example command line check for validity of arguments
+$options{number} = 20 if ( !$options{number} );
+
+logstat( "cleanout", "Removing all previous keywords" );
+Opsview::Keyword->retrieve_all()->delete_all;
+logstat( "cleanout", "Removing all previous hosts" );
+Opsview::Host->search_like( name => "host_%" )->delete_all;
+logstat( "cleanout", "Removing all previous hostgroups" );
+Opsview::Hostgroup->search_like( name => "Hostgroup%" )->delete_all;
+logstat( "cleanout", "Removing all previous host templates" );
+Opsview::Hosttemplate->retrieve_all()->delete_all;
+
+# generate a few lists we might need
+logstat( "initial", "Loading in service check " );
+my @servicechecks = Opsview::Servicecheck->retrieve_all();
+logstat( "initial", "Loading in time periods " );
+my @timeperiods = Opsview::Timeperiod->retrieve_all();
+logstat( "initial", "Loading in host checks " );
+my @host_check_commands = Opsview::HostCheckCommand->retrieve_all();
+logstat( "initial", "Loading in icons " );
+my @icons = Opsview::Icon->retrieve_all();
+
+# create ($options{number} / 4) keywords for later reference
+my @keywords;
+for ( my $i = 0; $i < $options{number} / 4; $i++ ) {
+    logstat( "keyword", "Creating keyword: $i" );
+    $keywords[$i] = "Keyword_$i";
+}
+
+# create between 1 and ($options{number} / 5) host templates with between
+# 1 and 10 service checks applied
+
+for ( my $i = 0; $i < int( rand( $options{number} / 5 ) + 1 ); $i++ ) {
+    logstat( "template", "Creating host template: $i" );
+
+    my $ht =
+      Opsview::Hosttemplate->find_or_create( { name => "host_template_$i", } );
+    $ht->description( "Generated template number $i" );
+
+    for ( my $n = 0; $n < int( rand(10) + 1 ); $n++ ) {
+        logstat( "template", "Creating host template: $i service check $n" );
+        Opsview::HosttemplateServicecheck->find_or_create(
+            {
+                hosttemplateid => $ht,
+                servicecheckid => rand_item(@servicechecks),
+            }
+        );
+    }
+
+    $ht->update();
+
+    logstat( "template", "Created ", $i + 1, " host templates" );
+}
+
+logstat( "initial", "Loading in host templates" );
+my @host_templates = Opsview::Hosttemplate->retrieve_all();
+
+my $hostgroup_parent =
+  Opsview::Hostgroup->search( { name => "Opsview", } )->first;
+
+# empty out all previous info
+
+for ( my $i = 0; $i < int( rand( $options{number} / 4 ) + 1 ); $i++ ) {
+    logstat( "hostgroups", "Creating host group: $i" );
+
+    my $hg = Opsview::Hostgroup->find_or_create(
+        {
+            name        => "Hostgroup $i",
+            parentid    => $hostgroup_parent,
+            uncommitted => 1,
+        }
+    );
+    logstat( "hostgroups", "Created ", $i + 1, " hostgroups" );
+}
+
+# only use hostgroups we have created
+logstat( "initial", "Loading in hostgroups" );
+my @hostgroups = Opsview::Hostgroup->search_like( name => "Hostgroup%" );
+
+# now create some hosts, 50% of which will have a template on, the rest
+# will have random service checks on
+for ( my $i = 0; $i < $options{number}; $i++ ) {
+    logstat( "host", "Creating host $i" );
+
+    my $check_command;
+    $check_command = rand_item(@host_check_commands)->id
+      while ( !$check_command || $check_command == 6 );
+
+    # use a random host check command too
+    my $h = Opsview::Host->find_or_create(
+        {
+            name          => "host_$i",
+            check_command => $check_command,
+        }
+    );
+
+    my $subnet = int( $i / 200 );
+    my $ip     = int( $i % 200 ) + 10;
+
+    $h->ip( "127.0.$subnet.$ip" );
+    $h->alias( "Generated Host $i" );
+    $h->hostgroup( rand_item(@hostgroups), )
+      ; # normalise hostgroup number to those we created
+    $h->icon( rand_item(@icons)->name );
+    $h->notification_period( int( rand( scalar(@timeperiods) ) ) + 1 );
+    $h->notification_interval(60);
+    $h->notification_options( "u,d,r" );
+    $h->uncommitted(1);
+
+    # randomly add in a keyword
+    if ( int( rand(100) ) gt 50 ) {
+        $h->set_keywords_to(
+            split( / +/, rand_item(@keywords) . " " . $h->list_keywords(" ") )
+        );
+    }
+
+    $h->update();
+
+    if ( int( rand(100) ) le 50 ) {
+        Opsview::HostHosttemplate->find_or_create(
+            {
+                hostid         => $h,
+                hosttemplateid => rand_item(@host_templates),
+            }
+        );
+    }
+    else {
+        for ( my $n = 0; $n < int( rand(10) + 1 ); $n++ ) {
+            logstat( "host", "Creating host: $i service check $n" );
+            my $sc = rand_item(@servicechecks);
+            Opsview::HostServicecheck->find_or_create(
+                {
+                    hostid         => $h,
+                    servicecheckid => $sc,
+                }
+            );
+
+            # add in the keyword(s) from the host
+            if ( $h->list_keywords ) {
+                $sc->set_keywords_to(
+                    split(
+                        / +/,
+                        $h->list_keywords(" ") . " " . $sc->list_keywords(" ")
+                    )
+                );
+                $sc->update();
+            }
+        }
+    }
+}
+
+# enable the appropriate keywords
+for my $kw ( Opsview::Keyword->retrieve_all() ) {
+    logstat( "keywords", "Enabling keyword ", $kw->name );
+    $kw->enabled(1);
+    $kw->description( "Generated keyword" );
+    $kw->update();
+}
+logstat( "keywords", "All keywords enabled" );
+
+logstat( "program ended", "" );
+
+__END__
+# Remaining POD for man page/help text
+
+=head1 NOTES
+
+Any further notes on running this code, its use, where it came from or who's
+bad idea it was.
+
+=head1 FILES
+
+Any (optional?) files referenced or used by the script
+
+=head1 AUTHOR AND COPYRIGHT
+
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+
+This is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This software is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with Opsview; if not, write to the Free Software
+Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+=back
+
+=head1 KNOWN BUGS
+
+Any known issues
+
+=head1 SEE ALSO
+
+L<perl>
+
+=cut

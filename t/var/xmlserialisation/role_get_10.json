@@ -1,0 +1,58 @@
+{
+      "contacts" : [
+         {
+            "ref" : "/rest/config/contact/1",
+            "name" : "admin"
+         }
+      ],
+      "monitoringservers" : [],
+      "hostgroups" : [
+         {
+            "ref" : "/rest/config/hostgroup/1",
+            "name" : "Opsview"
+         }
+      ],
+      "name" : "Admin",
+      "id" : "10",
+      "description" : "Administrator access",
+      "accesses" : [
+         {
+            "ref" : "/rest/config/access/1",
+            "name" : "VIEWALL"
+         },
+         {
+            "ref" : "/rest/config/access/3",
+            "name" : "ACTIONALL"
+         },
+         {
+            "ref" : "/rest/config/access/6",
+            "name" : "NOTIFYSOME"
+         },
+         {
+            "ref" : "/rest/config/access/7",
+            "name" : "CONFIGUREHOSTS"
+         },
+         {
+            "ref" : "/rest/config/access/8",
+            "name" : "RELOADACCESS"
+         },
+         {
+            "ref" : "/rest/config/access/9",
+            "name" : "ADMINACCESS"
+         },
+         {
+            "ref" : "/rest/config/access/12",
+            "name" : "CONFIGUREVIEW"
+         },
+         {
+            "ref" : "/rest/config/access/13",
+            "name" : "CONFIGURESAVE"
+         },
+         {
+            "ref" : "/rest/config/access/14",
+            "name" : "PASSWORDSAVE"
+         }
+      ],
+      "uncommitted" : "0"
+   }
+

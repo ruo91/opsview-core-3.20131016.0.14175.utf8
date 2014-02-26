@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.management_puppet
+VERSION=1.0
+ALIAS=Management - Puppet
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

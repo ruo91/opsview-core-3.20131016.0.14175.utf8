@@ -1,0 +1,119 @@
+# sh compatible profile for nagios user. Sourced at rc.opsview, nagios user
+# login # and crontabs which need the profile
+#
+##############################################################################
+#### DO NOT CHANGE THIS FILE - make changes via etc/profile_local instead ####
+##############################################################################
+#
+# AUTHORS:
+#    Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+##############################################################################
+#### DO NOT CHANGE THIS FILE - make changes via etc/profile_local instead ####
+##############################################################################
+OPSVIEW_BASE=/usr/local/nagios
+export OPSVIEW_BASE
+OPSVIEW_PERLLIB="$OPSVIEW_BASE/lib:$OPSVIEW_BASE/perl/lib:/opt/opsview/perl/lib/perl5"
+PERL5LIB=$OPSVIEW_PERLLIB
+export PERL5LIB
+PERLTIDY=$OPSVIEW_BASE/.perltidyrc
+export PERLTIDY
+
+# Temporary fix for Redhat/CentOS systems. See Jira OPS-130
+DBIC_NO_WARN_BAD_PERL=1
+export DBIC_NO_WARN_BAD_PERL
+
+# Temporary fix for DBIx::Class::UTF8Columns warnings
+DBIC_UTF8COLUMNS_OK=1
+export DBIC_UTF8COLUMNS_OK
+
+PKG_CONFIG_PATH=/usr/lib/pkgconfig
+
+add_to_path() {
+    if [ -d $1 ] && [ "`echo $PATH | grep -c -w "$1/"`" = 0 ] && [ "`echo $PATH | grep -c -w "$1"`" = 0 ]; then
+        if [ "x$REVERSE" = "x" ] ; then
+            PATH=$PATH:$1
+        else
+            PATH=$1:$PATH
+        fi
+    fi
+}
+
+# only add to PATH if the directory isnt already there
+for P in \
+    $OPSVIEW_BASE/bin \
+    $OPSVIEW_BASE/perl/bin \
+    /opt/opsview/perl/bin \
+    $HOME/bin \
+    /usr/local/opsview-web/bin \
+    /usr/local/bin \
+    /usr/sbin
+do
+    add_to_path $P
+done
+export PATH
+
+alias cdn="cd $OPSVIEW_BASE"
+alias cdw="cd /usr/local/opsview-web"
+alias wndo='watch "ls $OPSVIEW_BASE/var/ndologs | wc -l ; ls -la $OPSVIEW_BASE/var/ndologs/"'
+
+# enable coredumps for the user
+# We ignore any errors because local policy may disallow this from happening successfully
+ulimit -c unlimited > /dev/null 2>&1
+
+# Required for perl on Solaris to work properly on builds
+if [ "`uname -s`" = "SunOS" ]; then
+    REVERSE=true
+    for P in \
+        /usr/ccs/bin \
+        /usr/sfw/bin \
+        /opt/sfw/bin \
+        /usr/xpg4/bin \
+        /usr/local/netpbm/bin \
+        /usr/local/mysql/bin \
+        /usr/local/bin \
+        /usr/local/sbin \
+        /usr/local/rrdtool-1.2.19/bin \
+        /opt/csw/bin \
+        /opt/sfw/netpbm/bin/
+    do
+        add_to_path $P
+    done
+
+    LD_LIBRARY_PATH=/usr/local/netpbm/lib:$LD_LIBRARY_PATH
+    PKG_CONFIG_PATH=$PKG_CONFIG_PATH:/usr/local/lib/pkgconfig
+    export LD_LIBRARY_PATH PKG_CONFIG_PATH
+
+    PERL_VERS=`perl -le 'printf "%vd", $^V'`
+    if [ "$PERL_VERS" = "5.8.4" ]; then
+        PERL5OPT="-I/usr/perl5/$PERL_VERS/lib/Sun/Solaris/PerlGcc"
+        export PERL5OPT
+    fi
+    unset PERL_VERS
+fi
+
+# check to see if there is a local profile and source that, also
+if [ -f $OPSVIEW_BASE/etc/profile_local ]; then
+    . $OPSVIEW_BASE/etc/profile_local
+fi
+
+# Must return ok
+##############################################################################
+#### DO NOT CHANGE THIS FILE - make changes via etc/profile_local instead ####
+##############################################################################

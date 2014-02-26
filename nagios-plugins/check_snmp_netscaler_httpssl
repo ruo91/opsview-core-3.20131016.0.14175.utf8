@@ -1,0 +1,370 @@
+#!/usr/bin/perl
+#
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+use strict;
+use warnings;
+
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+use Time::HiRes qw(gettimeofday);
+
+my $np = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => "check_snmp_netscaler_httpssl",
+    version   => "2.1.1",
+    blurb     => "Returns Netscaler server connections",
+    snmp      => {
+        "snmp-version" => 1,
+        "snmp-timeout" => 2,
+    },
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w, --warning=INTEGER
+    Warning threshold - HTTP requests / min},
+    default => 100,
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c, --critical=INTEGER
+    Critical threshold - HTTP requests / min},
+    default => 200,
+);
+
+$np->getopts;
+
+my $warning  = $np->opts->warning;
+my $critical = $np->opts->critical;
+
+my $s = $np->snmp;
+
+my $oid_sysDescr             = ".1.3.6.1.2.1.1.1.0";
+my $oid_featuressloffloading = ".1.3.6.1.4.1.5951.4.1.1.20.9.0";
+my $oid_sslenginestatus      = ".1.3.6.1.4.1.5951.4.1.1.47.2.0";
+my $oid_totalsslsessions     = ".1.3.6.1.4.1.5951.4.1.1.47.3.0";
+my $oid_totalunacksyn        = ".1.3.6.1.4.1.5951.1.2.1.15.0";
+my $oid_totalhttprequests    = ".1.3.6.1.4.1.5951.1.2.1.18.1.0";
+my $oid_featurecompression   = ".1.3.6.1.4.1.5951.4.1.1.20.7.0";
+my $oid_totalcompression     = ".1.3.6.1.4.1.5951.1.7.1.1";
+
+my $status       = 0;
+my $returnstring = "";
+
+my $configfilepath = "/usr/local/nagios/etc";
+my $statusfile =
+  "/usr/local/nagios/var/status_netscaler_" . $s->hostname() . ".db";
+my $firsttime;
+
+main();
+
+# Close the session
+$s->close();
+
+if ( $returnstring eq "" ) {
+    $status = 3;
+}
+
+if ( $status == 0 ) {
+    print "Status is OK - $returnstring\n";
+
+    # print "$returnstring\n";
+}
+elsif ( $status == 1 ) {
+    print "Status is a WARNING level - $returnstring\n";
+}
+elsif ( $status == 2 ) {
+    print "Status is CRITICAL - $returnstring\n";
+}
+else {
+    print "Status is UNKNOWN\n";
+}
+
+exit $status;
+
+####################################################################
+# This is where we gather data via SNMP and return results         #
+####################################################################
+
+sub main {
+    my $prev_time                 = "";
+    my $prev_httprequests         = "";
+    my $prev_unacksyn             = "";
+    my $sslenginestatus           = "";
+    my $totalsslsessions          = "";
+    my $totalunacksyn             = "";
+    my $totalcompression          = "";
+    my $totalhttprequests         = "";
+    my $featurecompression        = "";
+    my $string_sslenginestatus    = "";
+    my $string_featurecompression = "";
+    my $time                      = "";
+    my $diff_httprequests         = "";
+    my $diff_time                 = "";
+    my $httprequests_min          = 0;
+    my $diff_unacksyn             = "";
+    my $unacksyn_min              = "";
+
+    if ( !defined( $s->get_request($oid_sslenginestatus) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+
+            #return 1;
+        }
+        else {
+
+            #$returnstring = "SNMP OID does not exist $oid_sslenginestatus";
+            #$status = 1;
+            #return 1;
+        }
+    }
+    else {
+        foreach ( $s->var_bind_names() ) {
+            $sslenginestatus = $s->var_bind_list()->{$_};
+        }
+    }
+    if ( $sslenginestatus eq "1" ) {
+        if ( !defined( $s->get_request($oid_totalsslsessions) ) ) {
+            if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+                $returnstring = "SNMP agent not responding";
+                $status       = 1;
+
+                #return 1;
+            }
+            else {
+
+                #$returnstring = "SNMP OID does not exist $oid_totalsslsessions";
+                #$status = 1;
+                #return 1;
+            }
+        }
+        else {
+            foreach ( $s->var_bind_names() ) {
+                $totalsslsessions = $s->var_bind_list()->{$_};
+            }
+        }
+    }
+
+    if ( !defined( $s->get_request($oid_totalunacksyn) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+
+            #return 1;
+        }
+        else {
+
+            #$returnstring = "SNMP OID does not exist $oid_totalunacksyn";
+            #$status = 1;
+            #return 1;
+        }
+    }
+    else {
+        foreach ( $s->var_bind_names() ) {
+            $totalunacksyn = $s->var_bind_list()->{$_};
+        }
+    }
+
+    if ( !defined( $s->get_request($oid_totalcompression) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+
+            #return 1;
+        }
+        else {
+
+            #$returnstring = "SNMP OID does not exist $oid_totalcompression";
+            #$status = 1;
+            #return 1;
+        }
+    }
+    else {
+        foreach ( $s->var_bind_names() ) {
+            $totalcompression = $s->var_bind_list()->{$_};
+        }
+    }
+
+    if ( !defined( $s->get_request($oid_totalhttprequests) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+
+            #return 1;
+        }
+        else {
+
+            #$returnstring = "SNMP OID does not exist $oid_totalhttprequests";
+            #$status = 1;
+            #return 1;
+        }
+    }
+    else {
+        foreach ( $s->var_bind_names() ) {
+            $totalhttprequests = $s->var_bind_list()->{$_};
+        }
+    }
+
+    if ( !defined( $s->get_request($oid_featurecompression) ) ) {
+        if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+            $returnstring = "SNMP agent not responding";
+            $status       = 1;
+
+            #return 1;
+        }
+        else {
+
+            #$returnstring = "SNMP OID does not exist $oid_featurecompression";
+            #$status = 1;
+            #return 1;
+        }
+    }
+    else {
+        foreach ( $s->var_bind_names() ) {
+            $featurecompression = $s->var_bind_list()->{$_};
+        }
+    }
+
+    #    if ($serverconnections >= $critical){
+    #        $status = 2;
+    #    }
+    #    elsif ($serverconnections >= $warning){
+    #        $status = 1;
+    #    }
+
+    $status = 0;
+
+    if ( $sslenginestatus eq "1" ) {
+        $string_sslenginestatus = "OK";
+    }
+    else {
+        $string_sslenginestatus = "error";
+    }
+
+    if ( $featurecompression eq "1" ) {
+        $string_featurecompression = "OK";
+    }
+    else {
+        $string_featurecompression = "not enabled";
+    }
+
+    ( $prev_time, $prev_httprequests, $prev_unacksyn ) = readstatus();
+    $time = Time::HiRes::gettimeofday;
+
+    if ( $totalhttprequests ne "" ) {
+        $diff_httprequests = $totalhttprequests - $prev_httprequests;
+        $diff_time         = $time - $prev_time;
+
+        $httprequests_min = ( ( $diff_httprequests / $diff_time ) * 60 );
+        $httprequests_min = sprintf "%0.3lf", $httprequests_min;
+
+        append( "(HTTP request/min: $httprequests_min), " );
+    }
+
+    if ( $totalsslsessions ne "" ) {
+        append( "(Total SSL sessions: $totalsslsessions), " );
+    }
+    if ( $totalcompression ne "" ) {
+        append( "(Total compression: $totalcompression), " );
+    }
+    if ( $totalunacksyn ne "" ) {
+        $diff_unacksyn = $totalunacksyn - $prev_unacksyn;
+        $diff_time     = $time - $prev_time;
+
+        $unacksyn_min = ( ( $diff_unacksyn / $diff_time ) * 60 );
+        $unacksyn_min = sprintf "%0.3lf", $unacksyn_min;
+
+        append( "(Unacknowledged syn/min: $unacksyn_min), " );
+    }
+    append( "(SSL engine status: $string_sslenginestatus), " );
+    append( "(Compression: $string_featurecompression)" );
+
+    writestatus( $totalhttprequests, $totalunacksyn );
+
+    if ( $httprequests_min > $critical ) {
+        $status = 2;
+    }
+    elsif ( $httprequests_min > $warning ) {
+        $status = 1;
+    }
+
+    #print "$returnstring\n";
+}
+
+####################################################################
+# Reads in previous status information                             #
+####################################################################
+
+sub readstatus {
+    my $prev_time         = "";
+    my $prev_httprequests = "";
+    my $prev_unacksyn     = "";
+    my @statusdata;
+
+    if ( -e "$statusfile" ) {
+        open STATUSFILE, "<$statusfile"
+          or die "Can't open file $statusfile: $1";
+        @statusdata = <STATUSFILE>;
+        close STATUSFILE;
+
+        ( $prev_time, $prev_httprequests, $prev_unacksyn ) =
+          split( /:/, $statusdata[0] );
+
+        return ( $prev_time, $prev_httprequests, $prev_unacksyn );
+    }
+    else {
+        $firsttime = 1;
+        return ( 0, 0, 0 );
+    }
+}
+
+####################################################################
+# Writes out status information                                    #
+####################################################################
+
+sub writestatus {
+    my $httprequests = $_[0];
+    my $unacksyn     = $_[1];
+    my $time         = gettimeofday;
+
+    open STATUSFILE, ">$statusfile" or die "Can't open file $statusfile: $1";
+    print STATUSFILE "$time:$httprequests:$unacksyn:\n";
+    close STATUSFILE;
+}
+
+####################################################################
+# Appends string to existing $returnstring                         #
+####################################################################
+
+sub append {
+    my $appendstring = $_[0];
+    $returnstring = "$returnstring$appendstring";
+}
+
+####################################################################
+# Returns the SNMP community string for a given hostname / IP      #
+####################################################################
+

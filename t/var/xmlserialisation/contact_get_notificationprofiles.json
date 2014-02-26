@@ -1,0 +1,106 @@
+{
+      "language" : "",
+      "servicegroups" : [
+         {
+            "ref" : "/rest/config/servicegroup/2",
+            "name" : "freshness checks"
+         },
+         {
+            "ref" : "/rest/config/servicegroup/1",
+            "name" : "Operations"
+         }
+      ],
+      "all_servicegroups" : "1",
+      "name" : "somehosts",
+      "variables" : [
+         {
+            "value" : "1",
+            "name" : "RSS_COLLAPSED"
+         },
+         {
+            "value" : "1440",
+            "name" : "RSS_MAXIMUM_AGE"
+         },
+         {
+            "value" : "30",
+            "name" : "RSS_MAXIMUM_ITEMS"
+         }
+      ],
+      "username" : "somehosts",
+      "all_hostgroups" : "0",
+      "keywords" : [],
+      "comment" : "",
+      "hostgroups" : [
+         {
+            "ref" : "/rest/config/hostgroup/5",
+            "name" : "Leaf2"
+         }
+      ],
+      "notificationprofiles" : [
+         {
+            "host_notification_options" : "d",
+            "servicegroups" : [
+               {
+                  "ref" : "/rest/config/servicegroup/1",
+                  "name" : "Operations"
+               }
+            ],
+            "ref" : "/rest/config/notificationprofile/12",
+            "name" : "Non work hours sms",
+            "all_servicegroups" : "0",
+            "all_hostgroups" : "0",
+            "keywords":[],
+            "hostgroups" : [
+               {
+                  "ref" : "/rest/config/hostgroup/5",
+                  "name" : "Leaf2"
+               }
+            ],
+            "service_notification_options" : "c",
+            "id" : "12",
+            "notification_level" : "1",
+            "uncommitted" : "1",
+            "notificationmethods":[
+             { "name":"AQL", "ref":"/rest/config/notificationmethod/1" },
+             ],
+            "notification_period" : {
+               "ref" : "/rest/config/timeperiod/3",
+               "name" : "nonworkhours"
+            }
+         },
+         {
+            "host_notification_options" : "u,d,r,f",
+            "servicegroups" : [],
+            "ref" : "/rest/config/notificationprofile/4",
+            "name" : "Default",
+            "all_servicegroups" : "1",
+            "all_hostgroups" : "0",
+            "keywords":[],
+            "hostgroups" : [
+               {
+                  "ref" : "/rest/config/hostgroup/5",
+                  "name" : "Leaf2"
+               }
+            ],
+            "service_notification_options" : "w,c,r,u,f",
+            "id" : "4",
+            "notification_level" : "1",
+            "uncommitted" : "1",
+            "notificationmethods":[
+             { "name":"RSS", "ref":"/rest/config/notificationmethod/4" },
+             ],
+            "notification_period" : {
+               "ref" : "/rest/config/timeperiod/1",
+               "name" : "24x7"
+            }
+         }
+      ],
+      "realm" : "local",
+      "id" : "4",
+      "role" : {
+         "ref" : "/rest/config/role/12",
+         "name" : "View some, change some"
+      },
+      "uncommitted" : "1"
+   }
+

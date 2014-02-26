@@ -1,0 +1,5 @@
+NAME=com.opsview.opspack.service_provider_slicehost
+VERSION=1.0
+ALIAS=Service Provider - Slicehost
+DEPENDENCIES=
+OPSVIEW_MIN_VERSION=

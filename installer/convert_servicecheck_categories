@@ -1,0 +1,78 @@
+#!/usr/bin/perl
+#
+#
+# SYNTAX:
+# 	convert_service_categories
+#
+# DESCRIPTION:
+# 	Converts service categories into servicegroups
+#	Expect to be run interactively. Will prompt before changing
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use FindBin qw($Bin);
+use lib "/usr/local/nagios/perl/lib";
+use lib "$Bin/../lib", "$Bin/../etc";
+use Opsview::Servicecheck;
+
+my $it         = Opsview::Servicecheck->retrieve_all;
+my $categories = {};
+while ( my $s = $it->next ) {
+    $categories->{ $s->category }++;
+}
+
+print "Categories with number of servicechecks: ", $/;
+foreach my $k ( sort keys %$categories ) {
+    print "  $k: ", $categories->{$k}, $/;
+}
+
+print "Press ENTER to convert these categories into servicegroups", $/;
+my $input = <STDIN>;
+
+my $sg_it         = Opsview::Servicegroup->retrieve_all;
+my $servicegroups = {};
+while ( my $sg = $sg_it->next ) {
+    $servicegroups->{ $sg->name } = $sg;
+}
+
+$it->reset;
+while ( my $s = $it->next ) {
+    my $category = $s->category;
+    if ( !$category ) {
+        $category = 'Unknown';
+        warn
+          'Detected a plugin with an unknown category; setting to "Unknown".',
+          $/;
+        warn 'Please amend the Service Group for service check "', $s->name,
+          '" from the Service Checks list page.', $/;
+    }
+    next if $category eq "Migrated";
+    if ( !$servicegroups->{$category} ) {
+        $servicegroups->{$category} =
+          Opsview::Servicegroup->create( { name => $category } );
+    }
+    $s->servicegroup( $servicegroups->{$category} );
+    $s->category( "Migrated" );
+    $s->update;
+}
+
+print "Done", $/;

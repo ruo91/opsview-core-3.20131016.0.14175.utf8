@@ -1,0 +1,113 @@
+#!/bin/sh -x
+#
+# Takes version number of packages to build, and directory containing unpacked
+# upstream sources with debian/ dir from subversion.
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+# Args (we'll check these in a mo)
+version="$1"
+short_version=`echo $version | sed -e 's/-.*//'`
+src_dir="$2"
+
+# Variables
+this_dir=$PWD
+package="opsview-core"
+build_timestamp=`date +build-%Y%m%d-%H%M`
+log_file="$this_dir/build/${build_timestamp}.log"
+changelog_msg="New upstream release of ${version%*-*}"
+msg_subject="build: ${package} - ${build_timestamp}"
+
+usage() {
+  echo -e "Usage:\t`basename $0` <version> <sourcedir>" >&2
+  exit 1
+}
+
+log() {
+  echo "$@" >> $log_file
+}
+
+build_fail() {
+  echo "$1" >&2
+  exit 1
+}
+
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+  usage
+fi
+
+if [ "$1" = "" ]; then
+  echo "Must specify package version number!"
+  exit 1
+fi
+
+if ! [ -d "$2" ]; then
+  echo "Must specify valid source directory!" >&2
+  exit 1
+fi
+
+# Build commands run from source dir
+cd ${src_dir} || (echo "Could not cd to ${src_dir}"; exit 1)
+
+# No patches required - removing this
+#echo "Applying patches"
+#for patch in `ls $this_dir/patches/*.diff`; do
+#  echo "  - ${patch}..."
+#  patch -p0 < ${patch}
+#  if [ $? -ne 0 ]; then
+#    echo "Patching failed!"
+#    build_fail "Could not apply patch ${patch} before build!"
+#    exit
+#  fi
+#done
+
+# We copy rc.opsview to use as an init script
+# (Do this after patching in case this file was patched)
+#cp bin/rc.opsview debian/opsview.init.d
+
+# Let's start the build
+echo "Package build starting"
+
+# Update changelog
+echo "Updating changelog" >> ${log_file}
+dch --newversion="${version}`lsb_release -cs`1" "${changelog_msg}" >> ${log_file} 2>&1 || \
+  build_fail "Couldn't update changelog, see log file in ${log_file}"
+
+# Update package version dependencies
+sed -e "s/PKG_VERSION/${short_version}/g" debian/control > debian/control.new
+mv debian/control.new debian/control
+
+# This file is now deprecated, but we'll support building older versions for now
+test -e etc/atom.cfg && echo '/usr/local/nagios/etc/atom.cfg' >> debian/conffiles
+
+# Build the .deb
+{
+    dpkg-buildpackage -I.svn -i.svn -rfakeroot -uc -us 2>&1
+} | tee ${log_file}
+
+tail -5 ${log_file} | egrep "error|failure|abort|\] Error [0-9]" 1>/dev/null
+
+# Success?
+if [ $? -ne 0 ]; then
+  echo "Packages built successfully"
+else
+  build_fail "Package building failed, see log file in ${log_file}"
+fi

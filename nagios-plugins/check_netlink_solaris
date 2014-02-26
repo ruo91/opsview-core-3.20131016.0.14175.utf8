@@ -1,0 +1,186 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#	Written by Neil Ferguson
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use strict;
+use Encode;
+use Getopt::Std;
+use Storable qw(lock_store lock_retrieve);
+
+# About us
+my $script         = "check_netlink_solaris";
+my $script_version = "0.1";
+my $script_description =
+  "Checks interface speed and duplex settings for a particular interface";
+
+my $retval      = 0;  # Innocent until proven guilty
+my $retmsg      = ""; # Text to return from plugin
+my $speed       = "";
+my $duplex      = "";
+my $prev_speed  = "";
+my $prev_duplex = "";
+my $user_speed  = "";
+my $user_duplex = "";
+my $changemon   = 0;
+my $interface;
+
+# Our data store
+my $store;
+my $store_dir = "/usr/local/nagios/var";
+my $store_fn  = "$store_dir/$script.dat";
+my $storename;
+
+# Command line arguments
+our ( $opt_h, $opt_i, $opt_s, $opt_d, $opt_c );
+getopts( "hi:s:d:c" );
+if ($opt_h) {
+    usage();
+    exit 0;
+}
+if ($opt_i) {
+    $interface = $opt_i;
+}
+else {
+    print "Must specify network interface to check I/O for\n";
+    usage();
+    exit 3;
+}
+if ($opt_s) {
+    $user_speed = $opt_s;
+}
+if ($opt_d) {
+    $user_duplex = $opt_d;
+}
+if ($opt_c) {
+    if ( $opt_s || $opt_d ) {
+        print "Must specify -s/-d OR -c\n";
+        usage();
+        exit 3;
+    }
+
+    $changemon = 1;
+}
+
+# Ensure we have either -c or -s/-d
+if ( !$opt_c && ( !$opt_s || !$opt_d ) ) {
+    print
+      "Must specify an interface speed and duplex setting, or -c to monitor for changes\n";
+    usage();
+    exit 3;
+}
+
+# We do this after option parsing so that we can display help output
+# even if this Solaris-specific module is not available
+eval "use Sun::Solaris::Kstat";
+if ($@) {
+    print $@;
+    exit 3;
+}
+
+sub usage {
+    print <<EOF
+--------------------------------------------------------------------
+$script $script_version
+
+$script_description
+
+Usage: $script -i interface [...]
+
+Options: -i     Interface to check
+         -s     Speed interface should be set to 
+         -d     Duplex interface should be set to
+         -c     Monitor for speed/duplex changes rather than a
+                specific speed (specify -s/-d OR this option)
+
+--------------------------------------------------------------------     
+Copyright (C) 2003-2013 Opsview Limited. All rights reserved  
+         
+This program is free software; you can redistribute it or modify
+it under the terms of the GNU General Public License
+------------------------------------------------------------------
+EOF
+
+}
+
+my $kstat = Sun::Solaris::Kstat->new();
+
+my $if_type = $interface;
+$if_type =~ s/(.*)[0-9]+$/$1/;
+
+my $if_num = $interface;
+$if_num =~ s/^$if_type(.*)$/$1/;
+
+if ( !exists( $kstat->{$if_type} ) || !exists( $kstat->{$if_type}{$if_num} ) ) {
+    print "UNKNOWN - Interface $interface could not be found\n";
+    exit 3;
+}
+
+# Current values
+# Convert speed from bps to Mbps
+$speed  = $kstat->{$if_type}{$if_num}{$interface}{ifspeed} / 1000000;
+$duplex = $kstat->{$if_type}{$if_num}{$interface}{duplex};
+
+# Duplex seems 0x00 padded
+$duplex =~ s/([a-z0-9]+).*/$1/;
+
+# Retrieve previous info if it exists
+$storename = "interface_${interface}";
+if ( -f $store_fn ) {
+    $store = lock_retrieve($store_fn);
+}
+
+if ($store) {
+    $prev_speed  = $store->{$storename}[0];
+    $prev_duplex = $store->{$storename}[1];
+}
+else {
+    $prev_speed  = $speed;
+    $prev_duplex = $duplex;
+}
+
+$store->{$storename} = [ $speed, $duplex ];
+lock_store( $store, $store_fn );
+
+# Default response
+$retmsg = "- Interface $interface is at $speed $duplex\n";
+
+# If we're monitoring changes, and one has occurred...
+if ( $changemon && ( $speed ne $prev_speed || $duplex ne $prev_duplex ) ) {
+    $retmsg =
+      "- $interface changed from $prev_speed $prev_duplex to $speed $duplex\n";
+    $retval = 2;
+}
+elsif ( !$changemon
+    && ( $duplex !~ m/^$user_duplex$/ || $speed ne $user_speed ) )
+{
+    $retval = 2;
+}
+
+# Show appropriate message
+if ( $retval == 0 ) {
+    print "OK $retmsg";
+}
+else {
+    print "CRITICAL $retmsg";
+}
+
+exit $retval;

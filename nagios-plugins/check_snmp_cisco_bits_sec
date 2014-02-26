@@ -1,0 +1,204 @@
+#!/usr/bin/perl
+#
+# AUTHORS:
+#	Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+#
+
+use FindBin qw($Bin);
+use lib "/opt/opsview/perl/lib/perl5", "$Bin/../lib";
+use Net::SNMP;
+use Opsview::NagiosPlugin::SNMP;
+
+my $np = Opsview::NagiosPlugin::SNMP->new(
+    usage     => "Usage: %s",
+    shortname => "check_snmp_cisco_bits_sec",
+    version   => "0.2",
+    blurb =>
+      "Checks five minute throughput avg (inbound and outbound) for a Cisco interface",
+    snmp => {
+        "snmp-version" => "2c",
+        "snmp-timeout" => 5,
+        "v1-fallback"  => 1,
+    },
+);
+
+$np->add_arg(
+    spec => "warning|w=s",
+    help => qq{-w, --warning=INTEGER
+    Inbound warning threshold (as %)
+   },
+);
+
+$np->add_arg(
+    spec => "critical|c=s",
+    help => qq{-c, --critical=INTEGER
+    Inbound critical threshold (as %)
+   },
+);
+
+$np->add_arg(
+    spec => "x=s",
+    help => qq{-x=INTEGER
+    Outbound warning threshold (as %)
+   },
+);
+
+$np->add_arg(
+    spec => "d=s",
+    help => qq{-d=INTEGER
+    Outbound critical threshold (as %)
+   },
+);
+
+$np->add_arg(
+    spec => "interface|i=s",
+    help => qq{-i, --interface=INTEGER
+    Interface to be checked against
+   },
+);
+
+$np->getopts; # This should already exist from the $np bit at beginning
+
+my $bi_warning  = $np->opts->warning;
+my $bi_critical = $np->opts->critical;
+
+my $bo_warning  = $np->opts->x;
+my $bo_critical = $np->opts->d;
+
+my $ifname = $np->opts->interface;
+
+my $s = $np->snmp;
+
+my $oid_sysDescr =
+  ".1.3.6.1.2.1.1.1.0"; # Used to check whether SNMP is actually responding
+my $oid_sysUptime = ".1.3.6.1.2.1.1.3.0";     # SNMP agent uptime
+my $oid_base      = "1.3.6.1.4.1.9.2.2.1.1."; # Where all the interface data is
+my $oid_in        = "6.";
+my $oid_out       = "8.";
+my @interface_list = ( ".1.3.6.1.2.1.2.2.1.2" ); # List all interfaces
+my $interface_id   = -1;
+
+if (   $bi_warning eq ''
+    || $bi_critical eq ''
+    || bo_warning   eq ''
+    || $bo_critical eq '' )
+{
+    print
+      "Must specify warning and critical levels for both inbound and outbound traffic\n";
+    exit 3;
+}
+
+# Scans a device and populates the db with a list of interfaces for this
+# device, along with their states
+sub get_ifindex {
+    my $iface       = shift(@_);
+    my $found_index = -1;
+
+    # Get a list of interfaces (by index)
+    $s->get_entries( -columns => \@interface_list );
+
+    $interface_data = $s->var_bind_list();
+
+    for ( keys %$interface_data ) {
+        if ( $interface_data->{$_} eq $iface ) {
+            $found_index = $_;
+            last;
+        }
+    }
+
+    if ( $found_index == -1 ) {
+        return -1;
+    }
+
+    $found_index =~ s/.*\.//;
+
+    return $found_index;
+}
+
+if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+    if ( !defined( $s->get_request($oid_sysDescr) ) ) {
+        print "Agent not responding, tried SNMP v1 and v2\n";
+        exit 3;
+    }
+}
+
+# Found out the interface index
+unless ( $ifname eq "" ) {
+    $interface_id = get_ifindex($ifname);
+}
+
+# Index not found?
+if ( $interface_id == -1 ) {
+    print
+      "UNKNOWN - The interface specified could not be found on this device!\n";
+    exit 3;
+}
+
+# Get information from switch
+# Inbound traffic
+my $oid_in_bits  = "$oid_base" . "$oid_in" . "$interface_id";
+my $oid_out_bits = "$oid_base" . "$oid_out" . "$interface_id";
+
+$s->get_request($oid_in_bits);
+$bits_in = $s->var_bind_list()->{$oid_in_bits};
+$s->get_request($oid_out_bits);
+$bits_out = $s->var_bind_list()->{$oid_out_bits};
+$perfdata = "bits_sec_in=$bits_in, bits_sec_out=$bits_out";
+
+# Select the correct status
+if ( $bits_in < $bi_warning && $bits_out < $bo_warning ) {
+    $status = "OK -";
+    $retval = 0;
+}
+else {
+
+    #Something is up
+    if ( $bits_in > $bi_critical || $bits_out > $bo_critical ) {
+        $retval = 2;
+        $status = "CRITICAL - ";
+    }
+    else {
+        $retval = 1;
+        $status = "WARNING - ";
+    }
+
+    if ( $bits_in > $bi_critical ) {
+        $status .= "Inbound traffic is critical. ";
+    }
+    elsif ( $bits_in > $bi_warning ) {
+        $status .= "Inbound traffic is warning. ";
+    }
+    else {
+        $status .= "Inbound traffic is OK. ";
+    }
+
+    if ( $bits_out > $bo_critical ) {
+        $status .= "Outbound traffic is critical. ";
+    }
+    elsif ( $bits_out > $bo_warning ) {
+        $status .= "Outbound traffic is warning. ";
+    }
+    else {
+        $status .= "Outbound traffic is OK. ";
+    }
+
+}
+
+print "$status $bits_in b/sec in, $bits_out bits/sec out | $perfdata\n";
+exit $retval;

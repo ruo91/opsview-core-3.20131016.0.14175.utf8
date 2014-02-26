@@ -1,0 +1,101 @@
+#!/usr/bin/perl -w
+#
+# SYNTAX:
+# 	check_nagios_stats
+#
+# DESCRIPTION:
+# 	Returns perf data re: Nagios
+#	Will work for Nagios 2 and Nagios 3, just returns less data
+#
+# AUTHORS:
+#    Copyright (C) 2003-2013 Opsview Limited. All rights reserved
+#
+#    This file is part of Opsview
+#
+#    Opsview is free software; you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation; either version 2 of the License, or
+#    (at your option) any later version.
+#
+#    Opsview is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with Opsview; if not, write to the Free Software
+#    Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
+
+use strict;
+use warnings;
+use FindBin qw($Bin);
+use lib "$Bin/../perl/lib";
+
+use Nagios::Plugin;
+
+my $np = Nagios::Plugin->new(
+    usage     => "Usage: %s\n   Returns Nagios performance data",
+    shortname => "NAGIOSTATS",
+    version   => "1.0",
+);
+
+$np->getopts;
+
+my @vars =
+  qw(STATUSFILEAGETT MAXACTSVCLAT AVGACTSVCLAT MAXPSVSVCLAT AVGPSVSVCLAT USEDCMDBUF HIGHCMDBUF AVGACTSVCEXT MAXACTSVCEXT NUMSVCACTCHK60M NUMSVCPSVCHK60M);
+my $labels = {
+    STATUSFILEAGETT => "age",
+    MAXACTSVCLAT    => "maxactsvclatency",
+    AVGACTSVCLAT    => "avgactsvclatency",
+    MAXPSVSVCLAT    => "maxpsvsvclatency",
+    AVGPSVSVCLAT    => "avgpsvsvclatency",
+    USEDCMDBUF      => "cmdbuf",
+    HIGHCMDBUF      => "maxcmdbuf",
+    AVGACTSVCEXT    => "avgactsvcexect",
+    MAXACTSVCEXT    => "maxactsvcexect",
+    NUMSVCACTCHK60M => "numsvcactchk60m",
+    NUMSVCPSVCHK60M => "numsvcpsvchk60m"
+};
+my $uoms = {
+    STATUSFILEAGETT => "s",
+    MAXACTSVCLAT    => "s",
+    AVGACTSVCLAT    => "s",
+    MAXPSVSVCLAT    => "s",
+    AVGPSVSVCLAT    => "s",
+    AVGACTSVCEXT    => "s",
+    MAXACTSVCEXT    => "s"
+};
+my $multiplier = {
+    MAXACTSVCLAT => 1 / 1000,
+    AVGACTSVCLAT => 1 / 1000,
+    MAXPSVSVCLAT => 1 / 1000,
+    AVGPSVSVCLAT => 1 / 1000,
+    AVGACTSVCEXT => 1 / 1000,
+    MAXACTSVCEXT => 1 / 1000
+};
+
+my $command = "/usr/local/nagios/bin/nagiostats -m -d " . join( ",", @vars );
+
+my $output;
+open COMMAND, "$command |"
+  or $np->nagios_die( CRITICAL, "Cannot call nagiostats" );
+{ local $/ = undef; $output = <COMMAND>; }
+close COMMAND or $np->nagios_die( UNKNOWN, "Cannot get nagiostats output" );
+
+my @values = split( "\n", $output );
+my $values = {};
+foreach my $var (@vars) {
+    my $v = shift @values;
+    $values->{$var} = $v;
+}
+
+foreach my $var (@vars) {
+    my %args = ( label => $labels->{$var} );
+    $_ = $values->{$var};
+    $_ *= $multiplier->{$var} if exists $multiplier->{$var};
+    $args{value} = $_;
+    $args{uom} = $uoms->{$var} if exists $uoms->{$var};
+    $np->add_perfdata(%args);
+}
+
+$np->nagios_exit( OK, "" );
